@@ -1,3 +1,4 @@
+from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, calcsize
 
@@ -96,107 +97,109 @@ class Frame:
             else:
                 return
 
-def scanbus(maxno):
-    data = create_frame([
-        (1, 0, -i, 0, b"\0\0\0\0")
-        for i in range(maxno)])
-    sock.sendto(data, addr)
-    ret = sock.recv(1024)
-    print_frame(ret)
+class AsyncBase:
+    async def __new__(cls, *args, **kwargs):
+        ret = super().__new__(cls)
+        await ret.__init__(*args, **kwargs)
+        return ret
 
-def eeprom_wait(position):
-    f = Frame([(1, 0, position, 0x502, "H")])
-    while True:
-        f.roundtrip(sock, addr)
-        if not f[0][0] & 0x8000:
-            return
+class EtherCat(Protocol, AsyncBase):
+    async def __init__(self, network):
+        self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
+        self.send_queue = Queue()
+        self.idle = Event()
+        await get_event_loop().create_datagram_endpoint(
+            lambda: self, family=AF_PACKET, proto=0xA488)
 
-def eeprom_read_one(position, start):
-    f = Frame([(4, 0, position, 0x502, "H")])
-    f[0] = 0x8000
-    while f[0][0] & 0x8000:
-        f.roundtrip(sock, addr)
-    f = Frame([(5, 0, position, 0x502, "H"),
-               (5, 0, position, 0x504, "I")])
-    f[0] = 0x100  # read
-    f[1] = start
-    f.roundtrip(sock, addr)
-    f = Frame([(4, 0, position, 0x502, "H"),
-               (4, 0, position, 0x508, "8s"),
-               (4, 0, position, 0x504, "I")])
-    f[0] = 0x8000
-    while f[0][0] & 0x8000:
-        f.roundtrip(sock, addr)
-    return f[1][0]
+    async def sendloop(self):
+        ret = [None]
+        size = 2
+        while True:
+            *dgram, data, future = await self.send_queue.get()
+            done = size > 1000 or self.send_queue.empty()
+            ret.append(pack("<BBhHHH", *dgram,
+                            len(data) | ((not done) << 15), 0))
+            ret.append(data)
+            ret.append(b"\0\0")
+            self.dgrams.append((size + 10, size + len(data) + 10, future))
+            size += len(data) + 12
+            if done:
+                ret[0] = pack("<H", size | 0x1000)
+                self.idle.clear()
+                self.transport.sendto(b"".join(ret), self.addr)
+                await self.idle.wait()
+                assert len(self.dgrams) == 0
 
-sock = socket(AF_PACKET, SOCK_DGRAM, 0xA488)
-addr = ("eth0", 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
-sock.bind(addr)
-data = create_frame([
-    (1, 9, 0, 0x110, b"\0\0"),
-    (1, 10, 0, 0x130, b"\0\0"),
-    (7, 4, 0, 0, b"\0\0\0\0"),
-    (1, 4, 0, 0x502, b"\0\0"),
-    ])
-print_frame(data)
+                ret = [None]
+                size = 2
 
-# set adresses
-f = Frame([
-    (2, 9, 0, 0x10, "H"),
-    (2, 9, -1, 0x10, "H"),
-    (2, 9, -2, 0x10, "H"),
-    ])
-f[0] = 7
-f[1] = 5
-f[2] = 22
-f.roundtrip(sock, addr)
+    async def roundtrip(self, cmd, pos, offset, fmt, *args, index=0):
+        future = Future()
+        if args:
+            data = pack("<" + fmt, *args)
+        elif isinstance(fmt, str):
+            data = b"\0" * calcsize(fmt)
+        else:
+            data = fmt
+        self.send_queue.put_nowait((cmd, index, pos, offset, data, future))
+        ret = await future
+        if args or isinstance(fmt, str):
+            return unpack("<" + fmt, ret)
+        else:
+            return ret
 
-# configure mailbox
-print("configure mailbox")
-f = Frame([
-    (5, 2, 22, 0x800, "HHBBBB"),
-    (5, 2, 22, 0x808, "HHBBBB"),
-    ])
-f[0] = 0x1000, 0x80, 2, 0, 1, 0
-f[1] = 0x1080, 0x80, 6, 0, 1, 0
-f.roundtrip(sock, addr)
-print(f)
+    def connection_made(self, transport):
+        transport.get_extra_info("socket").bind(self.addr)
+        self.transport = transport
+        self.dgrams = []
+        self.idle.set()
+        ensure_future(self.sendloop())
 
-# request state
-f = Frame([
-    (5, 2, 7, 0x120, "H"),
-    (5, 2, 5, 0x120, "H"),
-    (5, 2, 22, 0x120, "H"),
-    (4, 2, 7, 0x130, "HHH"),
-    (4, 2, 5, 0x130, "HHH"),
-    (4, 2, 22, 0x130, "HHH"),
-    (4, 2, 22, 0x800, "HHBBBB"),
-    (4, 2, 22, 0x808, "HHBBBB"),
-    (4, 2, 22, 0x810, "HHBBBB"),
-    (4, 2, 22, 0x818, "HHBBBB"),
-    ])
-f[0] = 1
-f[1] = 1
-f[2] = 1
-f.roundtrip(sock, addr)
-print(f)
-f.roundtrip(sock, addr)
-print(f)
+    def datagram_received(self, data, addr):
+        for start, stop, future in self.dgrams:
+            future.set_result(data[start:stop])
+        self.dgrams = []
+        self.idle.set()
 
+    async def eeprom_read_one(self, position, start):
+        while (await self.roundtrip(4, position, 0x502, "H"))[0] & 0x8000:
+            pass
+        await self.roundtrip(5, position, 0x502, "HI", 0x100, start)
+        busy = 0x8000
+        while busy & 0x8000:
+            busy, data = await self.roundtrip(4, position, 0x502, "H4x8s")
+        return data
 
-pos = 0x40
-for i in range(16):
-    data = eeprom_read_one(22, pos)
-    hd, ws = unpack("<HH4x", data)
-    #print(hd, ws, data)
-    if hd == 0xffff:
-        break
-    pos += 2
-    cont = b""
-    for j in range(int((ws + 3) // 4)):
-        cont += eeprom_read_one(22, pos + j * 4)
-    cont = cont[:ws * 2]
-    print(hd, ":", " ".join(f"{c:02x}" for c in cont))
-    pos += ws
+    async def read_eeprom(self, position):
+        async def get_data(size):
+            nonlocal data, pos
 
+            while len(data) < size:
+                data += await self.eeprom_read_one(position, pos)
+                pos += 4
+            ret, data = data[:size], data[size:]
+            return ret
 
+        pos = 0x40
+        data = b""
+        eeprom = {}
+
+        while True:
+            hd, ws = unpack("<HH", await get_data(4))
+            if hd == 0xffff:
+                return eeprom
+            eeprom[hd] = await get_data(ws * 2)
+
+async def main():
+    ec = await EtherCat("eth0")
+    await gather(
+        ec.roundtrip(2, 0, 0x10, "H", 8),
+        ec.roundtrip(2, -1, 0x10, "H", 3),
+        ec.roundtrip(2, -2, 0x10, "H", 21),
+        )
+
+    print(await gather(ec.read_eeprom(21), ec.read_eeprom(3), ec.read_eeprom(8)))
+
+if __name__ == "__main__":
+    loop = get_event_loop()
+    loop.run_until_complete(main())
