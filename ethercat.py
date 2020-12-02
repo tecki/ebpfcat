@@ -2,106 +2,13 @@ from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protoc
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, calcsize
 
-def create_frame(datagrams):
-    ret = [None]
-
-    for i, (cmd, idx, pos, offset, data) in enumerate(datagrams):
-        if isinstance(data, int):
-            data = b"\0" * data
-        ret.append(pack("<BBhHHH", cmd, idx, pos, offset,
-                        len(data) | ((i != len(datagrams) - 1) << 15), 0))
-        ret.append(data)
-        ret.append(b"\0\0")
-    size = sum(len(r) for r in ret[1:])
-    ret[0] = pack("<H", size | 0x1000)
-    return b"".join(ret)
-
-def print_frame(frame):
-    i = 2
-    while True:
-        cmd, idx, pos, offset, size, irq = unpack("<BBhHHH", frame[i : i+10])
-        i += 10
-        print(f"cmd {cmd} idx {idx} {pos:04x}:{offset:04x} irq {irq}")
-        nxt = size & 0x8000 != 0
-        size &= 0x7ff
-        print("data", size, frame[i : i+size], " ".join(f"{f:02x}" for f in frame[i : i+size]),
-              " ".join(f"{f:08b}" for f in frame[i : i+size]))
-        i += size
-        wkc, = unpack("<H", frame[i : i+2])
-        i += 2
-        print("wkc", wkc)
-        if not nxt:
-            break
-
-class Frame:
-    def __init__(self, datagrams):
-        ret = [None]
-        self.blocks = []
-        self.formats = []
-
-        j = 12
-
-        for i, (cmd, idx, pos, offset, data) in enumerate(datagrams):
-            data = "<" + data
-            size = calcsize(data)
-            ret.append(pack("<BBhHHH", cmd, idx, pos, offset,
-                            size | ((i != len(datagrams) - 1) << 15), 0))
-            ret.append(b"\0" * size)
-            self.blocks.append(j)
-            self.formats.append(data)
-            ret.append(b"\0\0")
-            j += size + 12
-        size = sum(len(r) for r in ret[1:])
-        ret[0] = pack("<H", size | 0x1000)
-        self.data = bytearray(b"".join(ret))
-
-    def roundtrip(self, sock, addr):
-        sock.sendto(self.data, addr)
-        ret = sock.recv_into(self.data)
-        if ret < len(self.data):
-            raise RuntimeError("not enough data")
-
-    def __getitem__(self, no):
-        pos = self.blocks[no]
-        d = self.data[pos : pos + calcsize(self.formats[no])]
-        return unpack(self.formats[no], d)
-
-    def __setitem__(self, no, data):
-        if not isinstance(data, tuple):
-            data = data,
-        pos = self.blocks[no]
-        self.data[pos : pos + calcsize(self.formats[no])
-                  ] = pack(self.formats[no], *data)
-
-    def __str__(self):
-        return "".join(self._str())
-
-    def _str(self):
-        i = 2
-        while True:
-            cmd, idx, pos, offset, size, irq = unpack("<BBhHHH",
-                                                      self.data[i : i+10])
-            i += 10
-            yield f"[{cmd} {idx} {pos:04x}:{offset:04x} {irq} ("
-            nxt = size & 0x8000 != 0
-            size &= 0x7ff
-            yield " ".join(f"{f:02x}" for f in self.data[i : i+size])
-            yield "   "
-            yield " ".join(f"{f:08b}" for f in self.data[i : i+size])
-            i += size
-            wkc, = unpack("<H", self.data[i : i+2])
-            i += 2
-            yield f") {wkc}]"
-            if nxt:
-                yield "\n"
-            else:
-                return
 
 class AsyncBase:
     async def __new__(cls, *args, **kwargs):
         ret = super().__new__(cls)
         await ret.__init__(*args, **kwargs)
         return ret
+
 
 class EtherCat(Protocol, AsyncBase):
     async def __init__(self, network):
@@ -139,6 +46,8 @@ class EtherCat(Protocol, AsyncBase):
             data = pack("<" + fmt, *args)
         elif isinstance(fmt, str):
             data = b"\0" * calcsize(fmt)
+        elif isinstance(fmt, int):
+            data = b"\0" * fmt
         else:
             data = fmt
         self.send_queue.put_nowait((cmd, index, pos, offset, data, future))
@@ -190,15 +99,52 @@ class EtherCat(Protocol, AsyncBase):
                 return eeprom
             eeprom[hd] = await get_data(ws * 2)
 
+
+class Terminal:
+    def __init__(self, ethercat):
+        self.ec = ethercat
+
+    async def initialize(self, relative, absolute):
+        await self.ec.roundtrip(2, relative, 0x10, "H", absolute)
+        self.position = absolute
+        self.eeprom = await self.ec.read_eeprom(absolute)
+        await self.ec.roundtrip(5, absolute, 0x800, 0x80)
+        await self.ec.roundtrip(5, absolute, 0x800, self.eeprom[41])
+
+    async def set_state(self, state):
+        await self.ec.roundtrip(5, self.position, 0x0120, "H", state)
+        ret, = await self.ec.roundtrip(4, self.position, 0x0130, "H")
+        return ret
+
+    async def to_operational(self):
+        """try to bring the terminal to operational state"""
+        order = [0x11, 1, 2, 4, 8]
+        ret, = await self.ec.roundtrip(4, self.position, 0x0130, "H")
+        pos = order.index(ret)
+        s = 0x11 
+        for state in order[pos:]:
+            await self.ec.roundtrip(5, self.position, 0x0120, "H", state)
+            while s != state:
+                s, error = await self.ec.roundtrip(4, self.position,
+                                                   0x0130, "H2xH")
+                if error != 0:
+                    raise RuntimeError(f"AL register {error}")
+    
+    async def get_error(self):
+        return (await self.ec.roundtrip(4, self.position, 0x0134, "H"))[0]
+
+
 async def main():
     ec = await EtherCat("eth0")
-    await gather(
-        ec.roundtrip(2, 0, 0x10, "H", 8),
-        ec.roundtrip(2, -1, 0x10, "H", 3),
-        ec.roundtrip(2, -2, 0x10, "H", 21),
-        )
-
-    print(await gather(ec.read_eeprom(21), ec.read_eeprom(3), ec.read_eeprom(8)))
+    tin = Terminal(ec)
+    tout = Terminal(ec)
+    tdigi = Terminal(ec)
+    await tin.initialize(-1, 5)
+    await tout.initialize(-2, 6)
+    await tdigi.initialize(0, 22)
+    await tin.to_operational()
+    await tout.to_operational()
+    await tdigi.to_operational()
 
 if __name__ == "__main__":
     loop = get_event_loop()
