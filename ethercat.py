@@ -118,8 +118,15 @@ class Terminal:
 
     async def to_operational(self):
         """try to bring the terminal to operational state"""
-        order = [0x11, 1, 2, 4, 8]
-        ret, = await self.ec.roundtrip(4, self.position, 0x0130, "H")
+        order = [1, 2, 4, 8]
+        ret, error = await self.ec.roundtrip(4, self.position,
+                                                   0x0130, "H2xH")
+        print(ret, error)
+        if ret & 0x10:
+            await self.ec.roundtrip(5, self.position, 0x0120, "H", 0x11)
+            ret, error = await self.ec.roundtrip(4, self.position,
+                                                   0x0130, "H2xH")
+            print("B", ret, error)
         pos = order.index(ret)
         s = 0x11 
         for state in order[pos:]:
@@ -133,18 +140,33 @@ class Terminal:
     async def get_error(self):
         return (await self.ec.roundtrip(4, self.position, 0x0134, "H"))[0]
 
+    async def read(self, start, fmt):
+        return (await self.ec.roundtrip(4, self.position, start, fmt))
+
+    async def write(self, start, fmt, *args):
+        return (await self.ec.roundtrip(5, self.position, start, fmt, *args))
+
 
 async def main():
     ec = await EtherCat("eth0")
     tin = Terminal(ec)
     tout = Terminal(ec)
     tdigi = Terminal(ec)
-    await tin.initialize(-1, 5)
-    await tout.initialize(-2, 6)
-    await tdigi.initialize(0, 22)
-    await tin.to_operational()
-    await tout.to_operational()
-    await tdigi.to_operational()
+    await gather(
+        tin.initialize(-1, 5),
+        tout.initialize(-2, 6),
+        tdigi.initialize(0, 22),
+        )
+    print("tin")
+    await tin.to_operational(),
+    print("tout")
+    await tout.to_operational(),
+    print("tdigi")
+    await tdigi.to_operational(),
+
+    print(tout.eeprom[10])
+    print(await tout.write(0x1100, "HHHH", 10000, 20000, 30000, 40000))
+    print(await tin.read(0x1180, "HHHHHHHH"))
 
 if __name__ == "__main__":
     loop = get_event_loop()
