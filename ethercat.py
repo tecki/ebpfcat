@@ -94,6 +94,10 @@ class ObjectDescription:
     pass
 
 
+class ObjectEntry:
+    pass
+
+
 class AsyncBase:
     async def __new__(cls, *args, **kwargs):
         ret = super().__new__(cls)
@@ -324,6 +328,27 @@ class Terminal:
             od.name = data[12:].decode("utf8")
             ret.append(od)
 
+        for od in ret:
+            od.entries = []
+            for i in range(od.maxSub):
+                cmd = pack("<HBxHHBB", CoECmd.SDOINFO.value << 12,
+                           ODCmd.OE_REQ.value, 0, od.index, i, 7)
+                await self.mbx_send(MBXType.COE, cmd)
+
+                type, data = await self.mbx_recv()
+                if type is not MBXType.COE:
+                    raise RuntimeError(f"expected CoE package, got {type}")
+                coecmd, odcmd, fragments, vi, dtype, bl, oa = unpack("<HBxHIHHH", (data + b"\0" * 16)[:16])
+                coecmd = CoECmd(coecmd >> 12)
+                odcmd = ODCmd(odcmd & 0x7f)
+                if odcmd is ODCmd.OE_RES:
+                    oe = ObjectEntry()
+                    oe.valueInfo = vi
+                    oe.dataType = dtype
+                    oe.bitLength = bl
+                    oe.objectAccess = oa
+                    oe.name = data[16:].decode("utf8")
+                    od.entries.append(oe)
         return ret
 
 
@@ -344,6 +369,8 @@ async def main():
     odlist = await tout.read_ODlist()
     for o in odlist:
         print(o.name)
+        for p in o.entries:
+            print("   ", p.name)
     print("tdigi")
     await tdigi.to_operational(),
 
