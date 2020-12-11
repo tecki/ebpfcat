@@ -72,35 +72,6 @@ class EtherCat(Protocol, AsyncBase):
         self.dgrams = []
         self.idle.set()
 
-    async def eeprom_read_one(self, position, start):
-        while (await self.roundtrip(4, position, 0x502, "H"))[0] & 0x8000:
-            pass
-        await self.roundtrip(5, position, 0x502, "HI", 0x100, start)
-        busy = 0x8000
-        while busy & 0x8000:
-            busy, data = await self.roundtrip(4, position, 0x502, "H4x8s")
-        return data
-
-    async def read_eeprom(self, position):
-        async def get_data(size):
-            nonlocal data, pos
-
-            while len(data) < size:
-                data += await self.eeprom_read_one(position, pos)
-                pos += 4
-            ret, data = data[:size], data[size:]
-            return ret
-
-        pos = 0x40
-        data = b""
-        eeprom = {}
-
-        while True:
-            hd, ws = unpack("<HH", await get_data(4))
-            if hd == 0xffff:
-                return eeprom
-            eeprom[hd] = await get_data(ws * 2)
-
 
 class Terminal:
     def __init__(self, ethercat):
@@ -109,7 +80,7 @@ class Terminal:
     async def initialize(self, relative, absolute):
         await self.ec.roundtrip(2, relative, 0x10, "H", absolute)
         self.position = absolute
-        self.eeprom = await self.ec.read_eeprom(absolute)
+        self.eeprom = await self.read_eeprom()
         await self.ec.roundtrip(5, absolute, 0x800, 0x80)
         await self.ec.roundtrip(5, absolute, 0x800, self.eeprom[41])
 
@@ -147,6 +118,37 @@ class Terminal:
 
     async def write(self, start, fmt, *args):
         return (await self.ec.roundtrip(5, self.position, start, fmt, *args))
+
+    async def eeprom_read_one(self, start):
+        """read 8 bytes from the eeprom at start"""
+        while (await self.read(0x502, "H"))[0] & 0x8000:
+            pass
+        await self.write(0x502, "HI", 0x100, start)
+        busy = 0x8000
+        while busy & 0x8000:
+            busy, data = await self.read(0x502, "H4x8s")
+        return data
+
+    async def read_eeprom(self):
+        """read the entire eeprom"""
+        async def get_data(size):
+            nonlocal data, pos
+
+            while len(data) < size:
+                data += await self.eeprom_read_one(pos)
+                pos += 4
+            ret, data = data[:size], data[size:]
+            return ret
+
+        pos = 0x40
+        data = b""
+        eeprom = {}
+
+        while True:
+            hd, ws = unpack("<HH", await get_data(4))
+            if hd == 0xffff:
+                return eeprom
+            eeprom[hd] = await get_data(ws * 2)
 
 
 async def main():
