@@ -2,6 +2,8 @@ from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protoc
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, calcsize
 
+MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
+
 
 class AsyncBase:
     async def __new__(cls, *args, **kwargs):
@@ -23,7 +25,7 @@ class EtherCat(Protocol, AsyncBase):
         size = 2
         while True:
             *dgram, data, future = await self.send_queue.get()
-            done = size > 1000 or self.send_queue.empty()
+            done = size > MAXSIZE or self.send_queue.empty()
             ret.append(pack("<BBhHHH", *dgram,
                             len(data) | ((not done) << 15), 0))
             ret.append(data)
