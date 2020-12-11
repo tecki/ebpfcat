@@ -1,8 +1,35 @@
 from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue
+from enum import Enum
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, calcsize
 
 MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
+
+class ECCmd(Enum):
+   NOP = 0  # No Operation
+   APRD = 1  # Auto Increment Read
+   APWR = 2  # Auto Increment Write
+   APRW = 3  # Auto Increment Read Write
+   FPRD = 4  # Configured Address Read
+   FPWR = 5  # Configured Address Write
+   FPRW = 6  # Configured Address Read Write
+   BRD = 7  # Broadcast Read
+   BWR = 8  # Broadcast Write
+   BRW = 9 # Broadcast Read Write
+   LRD = 10  # Logical Memory Read
+   LWR = 11  # Logical Memory Write
+   LRW = 12  # Logical Memory Read Write
+   ARMW = 13  # Auto Increment Read Multiple Write
+   FRMW = 14  # Configured Read Multiple Write
+
+class ODCmd(Enum):
+   ODLIST_REQ = 1
+   ODLIST_RES = 2
+   OD_REQ = 3
+   OD_RES = 4
+   OE_REQ = 5
+   OE_RES = 6
+   SDOINFO_ERROR = 7
 
 
 class AsyncBase:
@@ -52,7 +79,8 @@ class EtherCat(Protocol, AsyncBase):
             data = b"\0" * fmt
         else:
             data = fmt
-        self.send_queue.put_nowait((cmd, index, pos, offset, data, future))
+        self.send_queue.put_nowait(
+            (cmd.value, index, pos, offset, data, future))
         ret = await future
         if args or isinstance(fmt, str):
             return unpack("<" + fmt, ret)
@@ -78,46 +106,50 @@ class Terminal:
         self.ec = ethercat
 
     async def initialize(self, relative, absolute):
-        await self.ec.roundtrip(2, relative, 0x10, "H", absolute)
+        await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
         self.eeprom = await self.read_eeprom()
-        await self.ec.roundtrip(5, absolute, 0x800, 0x80)
-        await self.ec.roundtrip(5, absolute, 0x800, self.eeprom[41])
+        await self.write(0x800, 0x80)  # empty out sync manager
+        await self.write(0x800, self.eeprom[41])
 
     async def set_state(self, state):
-        await self.ec.roundtrip(5, self.position, 0x0120, "H", state)
-        ret, = await self.ec.roundtrip(4, self.position, 0x0130, "H")
+        await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H", state)
+        ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
         return ret
 
     async def to_operational(self):
         """try to bring the terminal to operational state"""
         order = [1, 2, 4, 8]
-        ret, error = await self.ec.roundtrip(4, self.position,
-                                                   0x0130, "H2xH")
+        ret, error = await self.ec.roundtrip(
+                ECCmd.FPRD, self.position, 0x0130, "H2xH")
         print(ret, error)
         if ret & 0x10:
-            await self.ec.roundtrip(5, self.position, 0x0120, "H", 0x11)
-            ret, error = await self.ec.roundtrip(4, self.position,
-                                                   0x0130, "H2xH")
+            await self.ec.roundtrip(ECCmd.FPWR, self.position,
+                                    0x0120, "H", 0x11)
+            ret, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
+                                                 0x0130, "H2xH")
             print("B", ret, error)
         pos = order.index(ret)
         s = 0x11 
         for state in order[pos:]:
-            await self.ec.roundtrip(5, self.position, 0x0120, "H", state)
+            await self.ec.roundtrip(ECCmd.FPWR, self.position,
+                                    0x0120, "H", state)
             while s != state:
-                s, error = await self.ec.roundtrip(4, self.position,
+                s, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                                    0x0130, "H2xH")
                 if error != 0:
                     raise RuntimeError(f"AL register {error}")
     
     async def get_error(self):
-        return (await self.ec.roundtrip(4, self.position, 0x0134, "H"))[0]
+        return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
+                                        0x0134, "H"))[0]
 
     async def read(self, start, fmt):
-        return (await self.ec.roundtrip(4, self.position, start, fmt))
+        return (await self.ec.roundtrip(ECCmd.FPRD, self.position, start, fmt))
 
     async def write(self, start, fmt, *args):
-        return (await self.ec.roundtrip(5, self.position, start, fmt, *args))
+        return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
+                                        start, fmt, *args))
 
     async def eeprom_read_one(self, start):
         """read 8 bytes from the eeprom at start"""
