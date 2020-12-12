@@ -99,11 +99,7 @@ class ObjectEntry:
 
 
 def datasize(args, data):
-    out = 0
-    for arg in args:
-        if not isinstance(arg, str):
-            break
-        out += calcsize(arg)
+    out = sum(calcsize(arg) for arg in args if isinstance(arg, str))
     if isinstance(data, int):
         out += data
     elif data is not None:
@@ -149,16 +145,11 @@ class EtherCat(Protocol, AsyncBase):
 
     async def roundtrip(self, cmd, pos, offset, *args, data=None, idx=0):
         future = Future()
-        fmt = "<"
-        out = None
-        for i, arg in enumerate(args):
-            if not isinstance(arg, str):
-                break
-            fmt += arg
-        else:
-            out = b"\0" * calcsize(fmt)
-        if out is None:
-            out = pack(fmt, *args[i:])
+        fmt = "<" + "".join(arg for arg in args[:-1] if isinstance(arg, str))
+        out = pack(fmt, *[arg for arg in args if not isinstance(arg, str)])
+        if args and isinstance(args[-1], str):
+            out += b"\0" * calcsize(args[-1])
+            fmt += args[-1]
         if isinstance(data, int):
             out += b"\0" * data
         elif data is not None:
@@ -306,9 +297,8 @@ class Terminal:
         return MBXType(type & 0xf), data[:dlen]
 
     async def read_ODlist(self):
-        cmd = pack("<HBxHH", CoECmd.SDOINFO.value << 12,
-                   ODCmd.LIST_REQ.value, 0, 1)
-        await self.mbx_send(MBXType.COE, data=cmd)
+        await self.mbx_send(MBXType.COE, "HBxHH", CoECmd.SDOINFO.value << 12,
+                            ODCmd.LIST_REQ.value, 0, 1)
 
         fragments = True
         offset = 8  # skip header in first packet
@@ -331,9 +321,9 @@ class Terminal:
         ret = []
 
         for index in indexes:
-            cmd = pack("<HBxHH", CoECmd.SDOINFO.value << 12,
-                       ODCmd.OD_REQ.value, 0, index)
-            await self.mbx_send(MBXType.COE, data=cmd)
+            await self.mbx_send(
+                    MBXType.COE, "HBxHH", CoECmd.SDOINFO.value << 12,
+                    ODCmd.OD_REQ.value, 0, index)
 
             type, data = await self.mbx_recv()
             if type is not MBXType.COE:
@@ -354,9 +344,9 @@ class Terminal:
         for od in ret:
             od.entries = []
             for i in range(od.maxSub):
-                cmd = pack("<HBxHHBB", CoECmd.SDOINFO.value << 12,
-                           ODCmd.OE_REQ.value, 0, od.index, i, 7)
-                await self.mbx_send(MBXType.COE, data=cmd)
+                await self.mbx_send(
+                    MBXType.COE, "HBxHHBB", CoECmd.SDOINFO.value << 12,
+                    ODCmd.OE_REQ.value, 0, od.index, i, 7)
 
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
