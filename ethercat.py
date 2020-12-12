@@ -135,21 +135,29 @@ class EtherCat(Protocol, AsyncBase):
                 ret = [None]
                 size = 2
 
-    async def roundtrip(self, cmd, pos, offset, fmt, *args, index=0):
+    async def roundtrip(self, cmd, pos, offset, *args, data=None, idx=0):
         future = Future()
-        if args:
-            data = pack("<" + fmt, *args)
-        elif isinstance(fmt, str):
-            data = b"\0" * calcsize(fmt)
-        elif isinstance(fmt, int):
-            data = b"\0" * fmt
+        fmt = "<"
+        out = None
+        for i, arg in enumerate(args):
+            if not isinstance(arg, str):
+                break
+            fmt += arg
         else:
-            data = fmt
+            out = b"\0" * calcsize(fmt)
+        if out is None:
+            out = pack(fmt, *args[i:])
+        if isinstance(data, int):
+            out += b"\0" * data
+        elif data is not None:
+            out += data
         self.send_queue.put_nowait(
-            (cmd.value, index, pos, offset, data, future))
+            (cmd.value, idx, pos, offset, data, future))
         ret = await future
-        if args or isinstance(fmt, str):
+        if data is None:
             return unpack("<" + fmt, ret)
+        elif args:
+            return unpack("<" + fmt, ret[:-len(data)]) + (ret[-len(data):],)
         else:
             return ret
 
@@ -201,7 +209,7 @@ class Terminal:
 
     async def to_operational(self):
         """try to bring the terminal to operational state"""
-        order = [1, 2, 4, 8]
+        order = [1, 2, 4]  #, 8]
         ret, error = await self.ec.roundtrip(
                 ECCmd.FPRD, self.position, 0x0130, "H2xH")
         print(ret, error)
@@ -226,12 +234,13 @@ class Terminal:
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                         0x0134, "H"))[0]
 
-    async def read(self, start, fmt):
-        return (await self.ec.roundtrip(ECCmd.FPRD, self.position, start, fmt))
+    async def read(self, start, fmt, *args, **kwargs):
+        return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
+                                        start, fmt, *args, **kwargs))
 
-    async def write(self, start, fmt, *args):
+    async def write(self, start, fmt, *args, **kwargs):
         return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
-                                        start, fmt, *args))
+                                        start, fmt, *args, **kwargs))
 
     async def eeprom_read_one(self, start):
         """read 8 bytes from the eeprom at start"""
@@ -268,19 +277,20 @@ class Terminal:
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
             raise RuntimeError("mailbox full, read first")
-        head = pack("<HHBB", len(data), address, channel | priority << 6,
-                    type.value | self.mbx_cnt << 4)
-        await gather(self.write(self.mbx_out_off, head + data),
-                     self.write(self.mbx_out_off + self.mbx_out_sz - 1, 1))
+        await gather(self.write(self.mbx_out_off, "HHBB", len(data), address,
+                                channel | priority << 6,
+                                type.value | self.mbx_cnt << 4, data=data)
+                     self.write(self.mbx_out_off + self.mbx_out_sz - 1, data=1)
+                    )
         self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
 
     async def mbx_recv(self):
         status = 0
         while status & 8 == 0:
             status, = await self.read(0x80D, "B")  # always using mailbox 1, OK?
-        data = await self.read(self.mbx_in_off, self.mbx_in_sz)
-        dlen, address, prio, type = unpack("<HHBB", data[:6])
-        return MBXType(type & 0xf), data[6 : dlen+6]
+        dlen, address, prio, type, data = await self.read(
+                self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
+        return MBXType(type & 0xf), data[:dlen]
 
     async def read_ODlist(self):
         cmd = pack("<HBxHH", CoECmd.SDOINFO.value << 12,
