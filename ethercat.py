@@ -296,72 +296,56 @@ class Terminal:
                 self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
         return MBXType(type & 0xf), data[:dlen]
 
-    async def read_ODlist(self):
-        await self.mbx_send(MBXType.COE, "HBxHH", CoECmd.SDOINFO.value << 12,
-                            ODCmd.LIST_REQ.value, 0, 1)
-
+    async def coe_request(self, coecmd, odcmd, *args, **kwargs):
+        await self.mbx_send(MBXType.COE, "HBxH", coecmd.value << 12,
+                            odcmd.value, 0, *args, **kwargs)
         fragments = True
+        ret = []
         offset = 8  # skip header in first packet
-        indexes = []
 
         while fragments:
             type, data = await self.mbx_recv()
             if type is not MBXType.COE:
                 raise RuntimeError(f"expected CoE package, got {type}")
-            coecmd, odcmd, fragments = unpack("<HBxH", data[:6])
-            coecmd = CoECmd(coecmd >> 12)
-            odcmd = ODCmd(odcmd & 0x7f)
-            if odcmd is not ODCmd.LIST_RES:
-                raise RuntimeError(f"expected LIST_RES, got {odcmd}")
-
-            indexes.extend(unpack("<" + "H" * int((len(data) - offset) // 2),
-                                  data[offset:]))
+            coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
+            if rodcmd & 0x7f != odcmd.value + 1:
+                raise RuntimeError(f"expected {odcmd.value}, got {odcmd}")
+            ret.append(data[offset:])
             offset = 6
+        return b"".join(ret)
+
+    async def read_ODlist(self):
+        idxes = await self.coe_request(CoECmd.SDOINFO, ODCmd.LIST_REQ, "H", 1)
+        idxes = unpack("<" + "H" * int(len(idxes) // 2), idxes)
 
         ret = []
 
-        for index in indexes:
-            await self.mbx_send(
-                    MBXType.COE, "HBxHH", CoECmd.SDOINFO.value << 12,
-                    ODCmd.OD_REQ.value, 0, index)
-
-            type, data = await self.mbx_recv()
-            if type is not MBXType.COE:
-                raise RuntimeError(f"expected CoE package, got {type}")
-            coecmd, odcmd, fragments, dtype, oc, ms = unpack("<HBxH2xHBB", data[:12])
-            coecmd = CoECmd(coecmd >> 12)
-            odcmd = ODCmd(odcmd & 0x7f)
-            if odcmd is not ODCmd.OD_RES:
-                raise RuntimeError(f"expected OD_RES, got {odcmd}")
+        for index in idxes:
+            data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OD_REQ,
+                                          "H", index)
+            dtype, oc, ms = unpack("<HBB", data[:4])
 
             od = ObjectDescription()
             od.index = index
             od.dataType = dtype  # ECDataType(dtype)
             od.maxSub = ms
-            od.name = data[12:].decode("utf8")
+            od.name = data[4:].decode("utf8")
             ret.append(od)
 
         for od in ret:
-            od.entries = []
+            od.entries = {}
             for i in range(od.maxSub):
-                await self.mbx_send(
-                    MBXType.COE, "HBxHHBB", CoECmd.SDOINFO.value << 12,
-                    ODCmd.OE_REQ.value, 0, od.index, i, 7)
-
-                type, data = await self.mbx_recv()
-                if type is not MBXType.COE:
-                    raise RuntimeError(f"expected CoE package, got {type}")
-                coecmd, odcmd, fragments, vi, dtype, bl, oa = unpack("<HBxHIHHH", (data + b"\0" * 16)[:16])
-                coecmd = CoECmd(coecmd >> 12)
-                odcmd = ODCmd(odcmd & 0x7f)
-                if odcmd is ODCmd.OE_RES:
-                    oe = ObjectEntry()
-                    oe.valueInfo = vi
-                    oe.dataType = dtype
-                    oe.bitLength = bl
-                    oe.objectAccess = oa
-                    oe.name = data[16:].decode("utf8")
-                    od.entries.append(oe)
+                try:
+                    data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
+                                                  "HBB", od.index, i, 7)
+                except RuntimeError:
+                    # many OEs just do not have more description
+                    continue
+                oe = ObjectEntry()
+                oe.valueInfo, oe.dataType, oe.bitLength, oe.objectAccess = \
+                        unpack("<HHHH", data[:8])
+                oe.name = data[8:].decode("utf8")
+                od.entries[i] = oe
         return ret
 
 
@@ -382,8 +366,8 @@ async def main():
     odlist = await tout.read_ODlist()
     for o in odlist:
         print(o.name)
-        for p in o.entries:
-            print("   ", p.name)
+        for i, p in o.entries.items():
+            print("   ", i, p.name)
     print("tdigi")
     await tdigi.to_operational(),
 
