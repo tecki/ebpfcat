@@ -98,6 +98,18 @@ class ObjectEntry:
     pass
 
 
+def datasize(args, data):
+    out = 0
+    for arg in args:
+        if not isinstance(arg, str):
+            break
+        out += calcsize(arg)
+    if isinstance(data, int):
+        out += data
+    elif data is not None:
+        out += len(data)
+    return out
+
 class AsyncBase:
     async def __new__(cls, *args, **kwargs):
         ret = super().__new__(cls)
@@ -152,12 +164,14 @@ class EtherCat(Protocol, AsyncBase):
         elif data is not None:
             out += data
         self.send_queue.put_nowait(
-            (cmd.value, idx, pos, offset, data, future))
+            (cmd.value, idx, pos, offset, out, future))
         ret = await future
         if data is None:
-            return unpack("<" + fmt, ret)
+            return unpack(fmt, ret)
         elif args:
-            return unpack("<" + fmt, ret[:-len(data)]) + (ret[-len(data):],)
+            if not isinstance(data, int):
+                data = len(data)
+            return unpack(fmt, ret[:-data]) + (ret[-data:],)
         else:
             return ret
 
@@ -197,8 +211,8 @@ class Terminal:
         self.mbx_cnt = 1
 
         self.eeprom = await self.read_eeprom()
-        await self.write(0x800, 0x80)  # empty out sync manager
-        await self.write(0x800, self.eeprom[41])
+        await self.write(0x800, data=0x80)  # empty out sync manager
+        await self.write(0x800, data=self.eeprom[41])
         self.mbx_out_off, self.mbx_out_sz, self.mbx_in_off, self.mbx_in_sz = \
             unpack("<HH4xHH", self.eeprom[41][:12])
 
@@ -212,13 +226,11 @@ class Terminal:
         order = [1, 2, 4]  #, 8]
         ret, error = await self.ec.roundtrip(
                 ECCmd.FPRD, self.position, 0x0130, "H2xH")
-        print(ret, error)
         if ret & 0x10:
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                     0x0120, "H", 0x11)
             ret, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                                  0x0130, "H2xH")
-            print("B", ret, error)
         pos = order.index(ret)
         s = 0x11 
         for state in order[pos:]:
@@ -234,13 +246,13 @@ class Terminal:
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                         0x0134, "H"))[0]
 
-    async def read(self, start, fmt, *args, **kwargs):
+    async def read(self, start, *args, **kwargs):
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                        start, fmt, *args, **kwargs))
+                                        start, *args, **kwargs))
 
-    async def write(self, start, fmt, *args, **kwargs):
+    async def write(self, start, *args, **kwargs):
         return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
-                                        start, fmt, *args, **kwargs))
+                                        start, *args, **kwargs))
 
     async def eeprom_read_one(self, start):
         """read 8 bytes from the eeprom at start"""
@@ -273,13 +285,14 @@ class Terminal:
                 return eeprom
             eeprom[hd] = await get_data(ws * 2)
 
-    async def mbx_send(self, type, data, address=0, priority=0, channel=0):
+    async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
             raise RuntimeError("mailbox full, read first")
-        await gather(self.write(self.mbx_out_off, "HHBB", len(data), address,
-                                channel | priority << 6,
-                                type.value | self.mbx_cnt << 4, data=data)
+        await gather(self.write(self.mbx_out_off, "HHBB", datasize(args, data),
+                                address, channel | priority << 6,
+                                type.value | self.mbx_cnt << 4,
+                                *args, data=data),
                      self.write(self.mbx_out_off + self.mbx_out_sz - 1, data=1)
                     )
         self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
@@ -295,7 +308,7 @@ class Terminal:
     async def read_ODlist(self):
         cmd = pack("<HBxHH", CoECmd.SDOINFO.value << 12,
                    ODCmd.LIST_REQ.value, 0, 1)
-        await self.mbx_send(MBXType.COE, cmd)
+        await self.mbx_send(MBXType.COE, data=cmd)
 
         fragments = True
         offset = 8  # skip header in first packet
@@ -320,7 +333,7 @@ class Terminal:
         for index in indexes:
             cmd = pack("<HBxHH", CoECmd.SDOINFO.value << 12,
                        ODCmd.OD_REQ.value, 0, index)
-            await self.mbx_send(MBXType.COE, cmd)
+            await self.mbx_send(MBXType.COE, data=cmd)
 
             type, data = await self.mbx_recv()
             if type is not MBXType.COE:
@@ -343,7 +356,7 @@ class Terminal:
             for i in range(od.maxSub):
                 cmd = pack("<HBxHHBB", CoECmd.SDOINFO.value << 12,
                            ODCmd.OE_REQ.value, 0, od.index, i, 7)
-                await self.mbx_send(MBXType.COE, cmd)
+                await self.mbx_send(MBXType.COE, data=cmd)
 
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
