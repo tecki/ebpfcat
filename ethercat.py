@@ -89,6 +89,14 @@ class ODCmd(Enum):
    OE_RES = 6
    SDOINFO_ERROR = 7
 
+   DOWN_INIT = 0x21
+   DOWN_EXP = 0x23
+   DOWN_INIT_CA = 0x31
+   UP_REQ = 0x40
+   UP_REQ_CA = 0x50
+   SEG_UP_REQ = 0x60
+   ABORT = 0x80
+
 
 class ObjectDescription:
     pass
@@ -99,7 +107,7 @@ class ObjectEntry:
 
 
 def datasize(args, data):
-    out = sum(calcsize(arg) for arg in args if isinstance(arg, str))
+    out = calcsize("<" + "".join(arg for arg in args if isinstance(arg, str)))
     if isinstance(data, int):
         out += data
     elif data is not None:
@@ -314,6 +322,50 @@ class Terminal:
             offset = 6
         return b"".join(ret)
 
+    async def sdo_read(self, index, subindex=None):
+        await self.mbx_send(
+                MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                ODCmd.UP_REQ_CA.value if subindex is None
+                else ODCmd.UP_REQ.value,
+                index, 1 if subindex is None else subindex)
+        type, data = await self.mbx_recv()
+        if type is not MBXType.COE:
+            raise RuntimeError(f"expected CoE, got {type}")
+        coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
+        if coecmd >> 12 != CoECmd.SDORES.value:
+            raise RuntimeError(f"expected CoE SDORES (3), got {coecmd>>12:x}")
+        if idx != index:
+            raise RuntimeError(f"requested index {index}, got {idx}")
+        if sdocmd & 2:
+            return data[6 : 10 - ((sdocmd>>2) & 3)]
+        ret = [data[10:]]
+        retsize = len(ret[0])
+
+        toggle = 0
+        while retsize < size:
+            await self.mbx_send(
+                    MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                    ODCmd.SEG_UP_REQ.value + toggle, index,
+                    1 if subindex is None else subindex)
+            type, data = await self.mbx_recv()
+            if type is not MBXType.COE:
+                raise RuntimeError(f"expected CoE, got {type}")
+            coecmd, sdocmd = unpack("<HB", data[:3])
+            if coecmd >> 12 != CoECmd.SDORES.value:
+                raise RuntimeError(f"expected CoE cmd SDORES, got {coecmd}")
+            if sdocmd & 0xe0 != 0:
+                raise RuntimeError(f"requested index {index}, got {idx}")
+            if sdocmd & 1 and len(data) == 7:
+                data = data[:3 + (sdocmd >> 1) & 7]
+            ret += data[3:]
+            retsize += len(data) - 3
+            if sdocmd & 1:
+                break
+            toggle ^= 0x10
+        if retsize != size:
+            raise RuntimeError(f"expected {size} bytes, got {retsize}")
+        return b"".join(ret)
+
     async def read_ODlist(self):
         idxes = await self.coe_request(CoECmd.SDOINFO, ODCmd.LIST_REQ, "H", 1)
         idxes = unpack("<" + "H" * int(len(idxes) // 2), idxes)
@@ -363,11 +415,16 @@ async def main():
     await tin.to_operational(),
     print("tout")
     await tout.to_operational(),
-    odlist = await tout.read_ODlist()
+    odlist = await tin.read_ODlist()
     for o in odlist:
-        print(o.name)
+        print(o.index, o.name)
         for i, p in o.entries.items():
-            print("   ", i, p.name)
+            print("   ", i, p.name, p.valueInfo, p.dataType, p.bitLength, p.objectAccess)
+            try:
+                sdo = await tin.sdo_read(o.index, i)
+                print("   ", sdo)
+            except RuntimeError as e:
+                print("   ", e)
     print("tdigi")
     await tdigi.to_operational(),
 
