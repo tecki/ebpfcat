@@ -124,12 +124,15 @@ class EBPF:
 
     def assemble(self):
         return b"".join(
-            pack("<BBHI", i.opcode, i.dst << 4 | i.src, i.off, i.imm)
+            pack("<BBHI", i.opcode, i.dst | i.src << 4, i.off, i.imm)
             for i in self.opcodes)
 
     def load(self, log_level=0, log_size=4096):
         return prog_load(self.prog_type, self.assemble(), self.license,
                          log_level, log_size, self.kern_version)
+
+    def exit(self):
+        self.append(0x95,0, 0, 0, 0)
 
 
 for i in range(10):

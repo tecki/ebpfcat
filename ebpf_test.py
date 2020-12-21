@@ -1,13 +1,14 @@
 from unittest import TestCase, main
 
 from .ebpf import EBPF, Instruction
+from .bpf import ProgType
 
 
 class Tests(TestCase):
     def test_assemble(self):
         e = EBPF()
         e.append(0x24, 3, 4, 0x2c3d, 0x2d3e4f5e)
-        self.assertEqual(e.assemble(), b"$4=,^O>-")
+        self.assertEqual(e.assemble(), b"$C=,^O>-")
 
     def test_assign(self):
         e = EBPF()
@@ -73,6 +74,16 @@ class Tests(TestCase):
              Instruction(opcode=0x9f, dst=4, src=7, off=0, imm=0),
              Instruction(opcode=0xa7, dst=4, src=0, off=0, imm=3),
              Instruction(opcode=0xaf, dst=4, src=7, off=0, imm=0)])
+
+
+class KernelTests(TestCase):
+    def test_minimal(self):
+        e = EBPF(ProgType.XDP, "GPL")
+        e.r0 = 0
+        e.r1 = 5
+        e.r0 += e.r1
+        e.exit()
+        self.assertEqual(e.load(log_level=1), "")
 
 
 if __name__ == "__main__":
