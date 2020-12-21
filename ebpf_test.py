@@ -75,6 +75,33 @@ class Tests(TestCase):
              Instruction(opcode=0xa7, dst=4, src=0, off=0, imm=3),
              Instruction(opcode=0xaf, dst=4, src=7, off=0, imm=0)])
 
+    def test_memory(self):
+        e = EBPF()
+        e.m8[e.r5] = 7
+        e.m16[e.r3 + 2] = 3
+        e.m32[7 + e.r8] = 5
+        e.m64[e.r3 - 7] = 2
+        e.m8[e.r5] = e.r1
+        e.m16[e.r3 + 2] = e.r2
+        e.m32[7 + e.r8] = e.r3
+        e.m64[e.r3 - 7] = e.r4
+        e.r2 = e.m8[e.r5]
+        e.r3 = e.m16[e.r3 + 2]
+        e.r4 = e.m32[7 + e.r8]
+        e.r5 = e.m64[e.r3 - 7]
+        self.assertEqual(e.opcodes,
+            [Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
+             Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
+             Instruction(opcode=98, dst=8, src=0, off=7, imm=5),
+             Instruction(opcode=122, dst=3, src=0, off=-7, imm=2),
+             Instruction(opcode=115, dst=5, src=1, off=0, imm=0),
+             Instruction(opcode=107, dst=3, src=2, off=2, imm=0),
+             Instruction(opcode=99, dst=8, src=3, off=7, imm=0),
+             Instruction(opcode=123, dst=3, src=4, off=-7, imm=0),
+             Instruction(opcode=113, dst=2, src=5, off=0, imm=0),
+             Instruction(opcode=105, dst=3, src=3, off=2, imm=0),
+             Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
+             Instruction(opcode=121, dst=5, src=3, off=-7, imm=0)])
 
 class KernelTests(TestCase):
     def test_minimal(self):

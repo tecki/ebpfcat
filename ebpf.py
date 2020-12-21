@@ -87,7 +87,9 @@ class Memory:
             raise RuntimeError("cannot compile")
 
     def __getitem__(self, addr):
-        pass
+        ret = addr + 0
+        ret.bits = self.bits
+        return ret
 
 
 class RegisterDesc:
@@ -106,6 +108,9 @@ class RegisterDesc:
             instance.append(0xb4 + 3 * self.long, self.no, 0, 0, value)
         elif isinstance(value, Register) and self.long == value.long:
             instance.append(0xbc + 3 * self.long, self.no, value.no, 0, 0)
+        elif isinstance(value, Sum) and self.long:
+            instance.append(0x61 + value.bits, self.no, value.no,
+                            value.offset, 0)
         elif isinstance(value, Instruction):
             instance.opcodes.append(value)
         else:
@@ -119,12 +124,17 @@ class EBPF:
         self.license = license
         self.kern_version = kern_version
 
+        self.m8 = Memory(self, 0x10)
+        self.m16 = Memory(self, 0x8)
+        self.m32 = Memory(self, 0)
+        self.m64 = Memory(self, 0x18)
+
     def append(self, opcode, dst, src, off, imm):
         self.opcodes.append(Instruction(opcode, dst, src, off, imm))
 
     def assemble(self):
         return b"".join(
-            pack("<BBHI", i.opcode, i.dst | i.src << 4, i.off, i.imm)
+            pack("<BBhi", i.opcode, i.dst | i.src << 4, i.off, i.imm)
             for i in self.opcodes)
 
     def load(self, log_level=0, log_size=4096):
