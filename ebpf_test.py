@@ -52,6 +52,8 @@ class Tests(TestCase):
         e.r4 %= e.r7
         e.r4 ^= 3
         e.r4 ^= e.r7
+        e.sr4 >>= 3
+        e.sr4 >>= e.r7
 
         self.assertEqual(e.opcodes, 
             [Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
@@ -73,7 +75,9 @@ class Tests(TestCase):
              Instruction(opcode=0x97, dst=4, src=0, off=0, imm=3),
              Instruction(opcode=0x9f, dst=4, src=7, off=0, imm=0),
              Instruction(opcode=0xa7, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0xaf, dst=4, src=7, off=0, imm=0)])
+             Instruction(opcode=0xaf, dst=4, src=7, off=0, imm=0),
+             Instruction(opcode=0xc7, dst=4, src=0, off=0, imm=3),
+             Instruction(opcode=0xcf, dst=4, src=7, off=0, imm=0)])
 
     def test_memory(self):
         e = EBPF()
@@ -106,9 +110,7 @@ class Tests(TestCase):
 class KernelTests(TestCase):
     def test_minimal(self):
         e = EBPF(ProgType.XDP, "GPL")
-        e.r0 = 0
-        e.r1 = 5
-        e.r0 += e.r1
+        e.r3 = e.m16[e.r5 - 7]
         e.exit()
         self.assertEqual(e.load(log_level=1), "")
 
