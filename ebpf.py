@@ -156,6 +156,11 @@ class Memory:
         return ret
 
 
+class PseudoFd:
+    def __init__(self, fd):
+        self.fd = fd
+
+
 class RegisterDesc:
     def __init__(self, no, long, signed=False):
         self.no = no
@@ -170,7 +175,11 @@ class RegisterDesc:
 
     def __set__(self, instance, value):
         if isinstance(value, int):
-            instance.append(0xb4 + 3 * self.long, self.no, 0, 0, value)
+            if -0x80000000 <= value < 0x80000000:
+                instance.append(0xb4 + 3 * self.long, self.no, 0, 0, value)
+            else:
+                instance.append(0x18, self.no, 0, 0, value & 0xffffffff)
+                instance.append(0, 0, 0, 0, value >> 32)
         elif isinstance(value, Register) and self.long == value.long:
             instance.append(0xbc + 3 * self.long, self.no, value.no, 0, 0)
         elif isinstance(value, Sum) and self.long:
@@ -178,6 +187,9 @@ class RegisterDesc:
                             value.offset, 0)
         elif isinstance(value, Instruction):
             instance.opcodes.append(value)
+        elif isinstance(value, PseudoFd):
+                instance.append(0x18, self.no, 1, 0, value.fd)
+                instance.append(0, 0, 0, 0, 0)
         else:
             raise RuntimeError("cannot compile")
         
@@ -199,7 +211,8 @@ class EBPF:
 
     def assemble(self):
         return b"".join(
-            pack("<BBhi", i.opcode, i.dst | i.src << 4, i.off, i.imm)
+            pack("<BBHI", i.opcode, i.dst | i.src << 4,
+                 i.off % 0x10000, i.imm % 0x100000000)
             for i in self.opcodes)
 
     def load(self, log_level=0, log_size=4096):
@@ -230,6 +243,9 @@ class EBPF:
         comp.opcode = comp.negop
         comp.ebpf = self
         return comp
+
+    def get_fd(self, fd):
+        return PseudoFd(fd)
 
     def call(self, no):
         self.append(0x85, 0, 0, 0, no)
