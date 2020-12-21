@@ -231,8 +231,11 @@ class EBPF:
         comp.ebpf = self
         return comp
 
+    def call(self, no):
+        self.append(0x85, 0, 0, 0, no)
+
     def exit(self):
-        self.append(0x95,0, 0, 0, 0)
+        self.append(0x95, 0, 0, 0, 0)
 
 
 for i in range(10):
