@@ -254,7 +254,7 @@ class EBPF:
         self.append(0x95, 0, 0, 0, 0)
 
 
-for i in range(10):
+for i in range(11):
     setattr(EBPF, f"r{i}", RegisterDesc(i, True))
 
 for i in range(10):
