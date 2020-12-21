@@ -107,10 +107,115 @@ class Tests(TestCase):
              Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
              Instruction(opcode=121, dst=5, src=3, off=-7, imm=0)])
 
+
+    def test_jump(self):
+        e = EBPF()
+        target = e.jump()
+        e.r0 = 1
+        target.target()
+        t1 = e.jumpIf(e.r5 > 3)
+        t2 = e.jumpIf(e.r1 > e.r2)
+        t3 = e.jumpIf(e.r7 >= 2)
+        t4 = e.jumpIf(e.r4 >= e.r3)
+        e.r0 = 1
+        t1.target()
+        t2.target()
+        t3.target()
+        t4.target()
+        t1 = e.jumpIf(e.r5 < 3)
+        t2 = e.jumpIf(e.r1 < e.r2)
+        t3 = e.jumpIf(e.r7 <= 2)
+        t4 = e.jumpIf(e.r4 <= e.r3)
+        e.r0 = 1
+        t1.target()
+        t2.target()
+        t3.target()
+        t4.target()
+        t1 = e.jumpIf(e.sr5 > 3)
+        t2 = e.jumpIf(e.sr1 > e.sr2)
+        t3 = e.jumpIf(e.sr7 >= 2)
+        t4 = e.jumpIf(e.sr4 >= e.sr3)
+        e.r0 = 1
+        t1.target()
+        t2.target()
+        t3.target()
+        t4.target()
+        t1 = e.jumpIf(e.sr5 < 3)
+        t2 = e.jumpIf(e.sr1 < e.sr2)
+        t3 = e.jumpIf(e.sr7 <= 2)
+        t4 = e.jumpIf(e.sr4 <= e.sr3)
+        e.r0 = 1
+        t1.target()
+        t2.target()
+        t3.target()
+        t4.target()
+        t1 = e.jumpIf(e.sr5 == 3)
+        t2 = e.jumpIf(e.sr1 == e.sr2)
+        t3 = e.jumpIf(e.sr7 != 2)
+        t4 = e.jumpIf(e.sr4 != e.sr3)
+        e.r0 = 1
+        t1.target()
+        t2.target()
+        t3.target()
+        t4.target()
+        t1 = e.jumpIf(e.sr5 & 3)
+        t2 = e.jumpIf(e.sr1 & e.sr2)
+        e.r0 = 1
+        t1.target()
+        t2.target()
+        self.assertEqual(e.opcodes,
+            [Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+             Instruction(opcode=0x25, dst=5, src=0, off=4, imm=3),
+             Instruction(opcode=0x2d, dst=1, src=2, off=3, imm=0),
+             Instruction(opcode=0x35, dst=7, src=0, off=2, imm=2),
+             Instruction(opcode=0x3d, dst=4, src=3, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+             Instruction(opcode=0xa5, dst=5, src=0, off=4, imm=3),
+             Instruction(opcode=0xad, dst=1, src=2, off=3, imm=0),
+             Instruction(opcode=0xb5, dst=7, src=0, off=2, imm=2),
+             Instruction(opcode=0xbd, dst=4, src=3, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+             Instruction(opcode=0x65, dst=5, src=0, off=4, imm=3),
+             Instruction(opcode=0x6d, dst=1, src=2, off=3, imm=0),
+             Instruction(opcode=0x75, dst=7, src=0, off=2, imm=2),
+             Instruction(opcode=0x7d, dst=4, src=3, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+             Instruction(opcode=0xc5, dst=5, src=0, off=4, imm=3),
+             Instruction(opcode=0xcd, dst=1, src=2, off=3, imm=0),
+             Instruction(opcode=0xd5, dst=7, src=0, off=2, imm=2),
+             Instruction(opcode=0xdd, dst=4, src=3, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+             Instruction(opcode=0x15, dst=5, src=0, off=4, imm=3),
+             Instruction(opcode=0x1d, dst=1, src=2, off=3, imm=0),
+             Instruction(opcode=0x55, dst=7, src=0, off=2, imm=2),
+             Instruction(opcode=0x5d, dst=4, src=3, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+             Instruction(opcode=0x45, dst=5, src=0, off=2, imm=3),
+             Instruction(opcode=0x4d, dst=1, src=2, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1)])
+
+    def test_with(self):
+        e = EBPF()
+        with e.If(e.r2 > 3) as cond:
+            e.r2 = 5
+        with cond.Else():
+            e.r6 = 7
+        self.assertEqual(e.opcodes,
+            [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
+             Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
+             Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
+             Instruction(opcode=0xb7, dst=6, src=0, off=0, imm=7)])
+
+
 class KernelTests(TestCase):
     def test_minimal(self):
         e = EBPF(ProgType.XDP, "GPL")
-        e.r3 = e.m16[e.r5 - 7]
+        e.r6 = 7
+        target = e.jumpIf(e.r1 > 3)
+        e.r1 = 3
+        target.target()
+        e.r0 = 0
         e.exit()
         self.assertEqual(e.load(log_level=1), "")
 
