@@ -402,7 +402,11 @@ class Terminal:
 
 
 async def main():
+    from .ebpfcat import install_ebpf
+    from .bpf import lookup_elem
+
     ec = await EtherCat("eth0")
+    map_fd = await install_ebpf("eth0")
     tin = Terminal(ec)
     tout = Terminal(ec)
     tdigi = Terminal(ec)
@@ -426,6 +430,7 @@ async def main():
             except RuntimeError as e:
                 print("   ", e)
     print("tdigi")
+    print("bla", lookup_elem(map_fd, b"AAAA", 4))
     await tdigi.to_operational(),
 
     print(tout.eeprom[10])

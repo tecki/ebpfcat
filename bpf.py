@@ -38,9 +38,7 @@ def addrof(ptr):
 def bpf(cmd, fmt, *args):
     attr = pack(fmt, *args)
     attr = create_string_buffer(attr, len(attr))
-    print(unpack(fmt, attr.raw))
     ret = libc.syscall(386, c_int(cmd), attr, len(attr))
-    print(unpack(fmt, attr.raw))
     if ret == -1:
         raise OSError(get_errno(), strerror(get_errno()))
     return ret, unpack(fmt, attr.raw)
