@@ -207,6 +207,16 @@ class Tests(TestCase):
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=0xb7, dst=6, src=0, off=0, imm=7)])
 
+    def test_huge(self):
+        e = EBPF()
+        e.r3 = 0x1234567890
+        e.r4 = e.get_fd(7)
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=24, dst=3, src=0, off=0, imm=878082192),
+            Instruction(opcode=0, dst=0, src=0, off=0, imm=18),
+            Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
+            Instruction(opcode=0, dst=0, src=0, off=0, imm=0)])
+
 
 class KernelTests(TestCase):
     def test_minimal(self):
