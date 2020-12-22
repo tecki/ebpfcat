@@ -64,8 +64,24 @@ class Comparison:
         return self
 
 
+def binary(opcode, symetric=False):
+    def ret(self, value):
+        if symetric and isinstance(value, (int, Register)):
+            return Binary(self.ebpf, value, self, opcode)
+        return Binary(self.ebpf, self, value, opcode)
+    return ret
+
+
 class Expression:
-    pass
+    __radd__ = __add__ = binary(4, True)
+    __sub__ = binary(0x14)
+    __rmul__ = __mul__ = binary(0x24, True)
+    __truediv__ = binary(0x34)
+    __ror__ = __or__ = binary(0x44, True)
+    __rand__ = __and__ = binary(0x54, True)
+    __lshift__ = binary(0x64)
+    __mod__ = binary(0x94)
+    __rxor__ = __xor__ = binary(0xa4, True)
 
 
 class Binary(Expression):
@@ -75,7 +91,7 @@ class Binary(Expression):
         self.right = right
         self.operator = operator
 
-        self.short = left.short
+        self.long = left.long
         self.signed = left.signed
 
     def calculate(self, dst, force=False):
@@ -83,20 +99,21 @@ class Binary(Expression):
             raise RuntimeError("cannot compile")
         self.left.calculate(dst, True)
         if isinstance(self.right, int):
-            self.ebpf.append(self.operator + 1, dst, 0, 0, self.right)
+            self.ebpf.append(self.operator + 3 * self.long,
+                             dst, 0, 0, self.right)
         else:
             src = self.right.calculate(None)
-            self.ebpf.append(self.operator, dst, src, 0, 0, 0)
+            self.ebpf.append(self.operator + 3 * self.long + 8,
+                             dst, src, 0, 0)
 
 
 class Sum(Binary):
-    def __init__(self, left, right):
-        self.left = left
-        self.right = right
+    def __init__(self, ebpf, left, right):
+        super().__init__(ebpf, left, right, 4)
 
     def __add__(self, value):
         if isinstance(value, int):
-            return Sum(self.left, self.right + value)
+            return Sum(self.ebpf, self.left, self.right + value)
         else:
             return super().__add__(value)
 
@@ -104,7 +121,7 @@ class Sum(Binary):
 
     def __sub__(self, value):
         if isinstance(value, int):
-            return Sum(self.left, self.right - value)
+            return Sum(self.ebpf, self.left, self.right - value)
         else:
             return super().__sub__(value)
 
@@ -140,17 +157,17 @@ class Register(Expression):
 
     def __add__(self, value):
         if isinstance(value, int) and self.long:
-            return Sum(self.no, value)
+            return Sum(self.ebpf, self, value)
         else:
-            return Binary(self.ebpf, self, value, 4)
+            return super().__add__(value)
 
     __radd__ = __add__
 
     def __sub__(self, value):
         if isinstance(value, int) and self.long:
-            return Sum(self.no, -value)
+            return Sum(self.ebpf, self, -value)
         else:
-            return NotImplemented
+            return super().__sub__(value)
 
     __eq__ = comparison(0x15, 0x55)
     __gt__ = comparison(0x25, 0xb5, 0x65, 0xd5)
@@ -161,8 +178,12 @@ class Register(Expression):
     __and__ = __rand__ = comparison(0x45, None)
 
 
-    def calculate(self, into, force):
-        pass  # nothing to do here
+    def calculate(self, dst, force=False):
+        if dst != self.no and force:
+            self.ebpf.append(0xbc + 3 * self.long, dst, self.no, 0, 0)
+            return dst
+        else:
+            return self.no
 
 
 class Memory(Expression):
@@ -183,13 +204,17 @@ class MemoryDesc:
         self.bits = bits
 
     def __setitem__(self, addr, value):
-        if isinstance(value, int):
-            self.ebpf.append(0x62 + self.bits, addr.no, 0, addr.offset, value)
-        elif isinstance(value, Register):
-            self.ebpf.append(0x63 + self.bits, addr.no, value.no,
-                             addr.offset, 0)
+        if isinstance(addr, Sum):
+            dst = addr.left.no
+            offset = addr.right
         else:
-            raise RuntimeError("cannot compile")
+            dst = addr.calculate(None)
+            offset = 0
+        if isinstance(value, int):
+            self.ebpf.append(0x62 + self.bits, dst, 0, offset, value)
+        else:
+            src = value.calculate(None)
+            self.ebpf.append(0x63 + self.bits, dst, src, offset, 0)
 
     def __getitem__(self, addr):
         ret = addr + 0
@@ -204,8 +229,9 @@ class PseudoFd(Expression):
         self.fd = fd
 
     def calculate(self, dst, force):
-        self.ebpf.append(0x18, self.no, 1, 0, self.fd)
+        self.ebpf.append(0x18, dst, 1, 0, self.fd)
         self.ebpf.append(0, 0, 0, 0, 0)
+        return dst
 
 
 class RegisterDesc:
@@ -227,8 +253,6 @@ class RegisterDesc:
             else:
                 instance.append(0x18, self.no, 0, 0, value & 0xffffffff)
                 instance.append(0, 0, 0, 0, value >> 32)
-        elif isinstance(value, Register) and self.long == value.long:
-            instance.append(0xbc + 3 * self.long, self.no, value.no, 0, 0)
         elif isinstance(value, Expression):
             value.calculate(self.no, True)
         elif isinstance(value, Instruction):
