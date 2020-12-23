@@ -50,10 +50,14 @@ class Comparison:
         else:
             return NotImplemented
         self.ebpf.opcodes[self.origin] = inst
+        self.ebpf.owners, self.owners = \
+                self.ebpf.owners & self.owners, self.ebpf.owners
 
     def __enter__(self):
         self.origin = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(None)
+        if self.opcode != 5:  # Else branch
+            self.owners = self.ebpf.owners.copy()
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -270,6 +274,7 @@ class RegisterDesc:
             instance.opcodes.append(value)
         else:
             raise AssembleError("cannot compile")
+        instance.owners.add(self.no)
         
 
 class EBPF:
@@ -283,6 +288,8 @@ class EBPF:
         self.m16 = MemoryDesc(self, 0x8)
         self.m32 = MemoryDesc(self, 0)
         self.m64 = MemoryDesc(self, 0x18)
+
+        self.owners = {1, 10}
 
     def append(self, opcode, dst, src, off, imm):
         self.opcodes.append(Instruction(opcode, dst, src, off, imm))
@@ -300,6 +307,7 @@ class EBPF:
     def jumpIf(self, comp):
         comp.origin = len(self.opcodes)
         comp.ebpf = self
+        comp.owners = self.owners.copy()
         comp.opcode = comp.posop
         self.opcodes.append(None)
         return comp
@@ -308,6 +316,8 @@ class EBPF:
         comp = Comparison(0, 0, None, None)
         comp.origin = len(self.opcodes)
         comp.ebpf = self
+        comp.owners = self.owners.copy()
+        self.owners = set(range(11))
         comp.opcode = 5
         self.opcodes.append(None)
         return comp
@@ -327,6 +337,8 @@ class EBPF:
 
     def call(self, no):
         self.append(0x85, 0, 0, 0, no)
+        self.owners.add(0)
+        self.owners -= set(range(1, 6))
 
     def exit(self):
         self.append(0x95, 0, 0, 0, 0)

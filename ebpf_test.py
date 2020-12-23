@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 
-from .ebpf import EBPF, Instruction
+from .ebpf import AssembleError, EBPF, Instruction
 from .bpf import ProgType
 
 
@@ -12,6 +12,7 @@ class Tests(TestCase):
 
     def test_assign(self):
         e = EBPF()
+        e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         e.r5 = 7
         e.r6 = e.r3
         self.assertEqual(e.opcodes, 
@@ -81,6 +82,7 @@ class Tests(TestCase):
 
     def test_memory(self):
         e = EBPF()
+        e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         e.m8[e.r5] = 7
         e.m16[e.r3 + 2] = 3
         e.m32[7 + e.r8] = 5
@@ -220,6 +222,7 @@ class Tests(TestCase):
     def test_simple_binary(self):
         self.maxDiff = None
         e = EBPF()
+        e.owners = {0, 1, 2, 3}
         e.r0 = e.r1 * e.r2 + e.r3
         e.r0 = e.r1 * e.r2 + 3
         e.r0 = e.r1 * 2 + 3
@@ -251,6 +254,55 @@ class Tests(TestCase):
             Instruction(opcode=188, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=12, dst=0, src=2, off=0, imm=0)])
 
+
+    def test_jump_data(self):
+        e = EBPF()
+        t1 = e.jumpIf(e.r1 > 0)
+        e.r2 = 3
+        e.r3 = 5
+        t2 = e.jump()
+
+        t1.target()
+        with self.assertRaises(AssembleError):
+            e.r0 = e.r2
+        e.r3 = 5
+        e.r4 = 7
+        t2.target()
+        e.r0 = e.r3
+        with self.assertRaises(AssembleError):
+            e.r0 = e.r2
+        with self.assertRaises(AssembleError):
+            e.r0 = e.r4
+
+    def test_with_data(self):
+        e = EBPF()
+        with e.If(e.r1 > 0) as cond:
+            e.r2 = 3
+            e.r3 = 5
+        with cond.Else():
+            with self.assertRaises(AssembleError):
+                e.r0 = e.r2
+            e.r3 = 5
+            e.r4 = 7
+        e.r0 = e.r3
+        with self.assertRaises(AssembleError):
+            e.r0 = e.r2
+        with self.assertRaises(AssembleError):
+            e.r0 = e.r4
+
+    def test_call(self):
+        e = EBPF()
+        e.r8 = 23
+        e.call(5)
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=183, dst=8, src=0, off=0, imm=23),
+            Instruction(opcode=133, dst=0, src=0, off=0, imm=5)])
+        e.r7 = e.r0
+        e.r5 = e.r8
+        with self.assertRaises(AssembleError):
+            e.r8 = e.r3
+        with self.assertRaises(AssembleError):
+            e.r8 = e.r1
 
 
 class KernelTests(TestCase):
