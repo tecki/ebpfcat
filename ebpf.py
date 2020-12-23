@@ -66,8 +66,8 @@ class Comparison:
 
 def binary(opcode, symetric=False):
     def ret(self, value):
-        if symetric and isinstance(value, (int, Register)):
-            return Binary(self.ebpf, value, self, opcode)
+        #if symetric and isinstance(value, Register):
+        #    return Binary(self.ebpf, value, self, opcode)
         return Binary(self.ebpf, self, value, opcode)
     return ret
 
@@ -80,6 +80,7 @@ class Expression:
     __ror__ = __or__ = binary(0x44, True)
     __rand__ = __and__ = binary(0x54, True)
     __lshift__ = binary(0x64)
+    __rshift__ = binary(0x74)
     __mod__ = binary(0x94)
     __rxor__ = __xor__ = binary(0xa4, True)
 
@@ -91,20 +92,21 @@ class Binary(Expression):
         self.right = right
         self.operator = operator
 
-        self.long = left.long
-        self.signed = left.signed
-
-    def calculate(self, dst, force=False):
+    def calculate(self, dst, long, signed, force=False):
         if dst is None:
             raise RuntimeError("cannot compile")
-        self.left.calculate(dst, True)
+        dst, long, signed = self.left.calculate(dst, long, signed, True)
+        if self.operator == 0x74 and signed:  # >>=
+            operator = 0xc4
+        else:
+            operator = self.operator
         if isinstance(self.right, int):
-            self.ebpf.append(self.operator + 3 * self.long,
+            self.ebpf.append(operator + (3 if long is None else 3 * long),
                              dst, 0, 0, self.right)
         else:
-            src = self.right.calculate(None)
-            self.ebpf.append(self.operator + 3 * self.long + 8,
-                             dst, src, 0, 0)
+            src, long, signed = self.right.calculate(None, long, signed)
+            self.ebpf.append(operator + 3 * long + 8, dst, src, 0, 0)
+        return dst, long, signed
 
 
 class Sum(Binary):
@@ -178,12 +180,14 @@ class Register(Expression):
     __and__ = __rand__ = comparison(0x45, None)
 
 
-    def calculate(self, dst, force=False):
+    def calculate(self, dst, long, signed, force=False):
+        if long is not None and long != self.long:
+            raise RuntimeError("cannot compile")
         if dst != self.no and force:
             self.ebpf.append(0xbc + 3 * self.long, dst, self.no, 0, 0)
-            return dst
+            return dst, self.long, signed
         else:
-            return self.no
+            return self.no, self.long, signed
 
 
 class Memory(Expression):
@@ -192,10 +196,12 @@ class Memory(Expression):
         self.bits = bits
         self.address = address
 
-    def calculate(self, dst, force):
+    def calculate(self, dst, long, signed, force):
+        if not long and self.bits == 0x18:
+            raise RuntimeError("cannot compile")
         self.ebpf.append(0x61 + self.bits, dst, self.address.left.no,
                          self.address.right, 0)
-        return dst
+        return dst, long, signed
 
 
 class MemoryDesc:
@@ -208,12 +214,12 @@ class MemoryDesc:
             dst = addr.left.no
             offset = addr.right
         else:
-            dst = addr.calculate(None)
+            dst, _, _ = addr.calculate(None, None, None)
             offset = 0
         if isinstance(value, int):
             self.ebpf.append(0x62 + self.bits, dst, 0, offset, value)
         else:
-            src = value.calculate(None)
+            src, _, _ = value.calculate(None, None, None)
             self.ebpf.append(0x63 + self.bits, dst, src, offset, 0)
 
     def __getitem__(self, addr):
@@ -228,10 +234,10 @@ class PseudoFd(Expression):
         self.ebpf = ebpf
         self.fd = fd
 
-    def calculate(self, dst, force):
+    def calculate(self, dst, long, signed, force):
         self.ebpf.append(0x18, dst, 1, 0, self.fd)
         self.ebpf.append(0, 0, 0, 0, 0)
-        return dst
+        return dst, long, signed
 
 
 class RegisterDesc:
@@ -254,7 +260,7 @@ class RegisterDesc:
                 instance.append(0x18, self.no, 0, 0, value & 0xffffffff)
                 instance.append(0, 0, 0, 0, value >> 32)
         elif isinstance(value, Expression):
-            value.calculate(self.no, True)
+            value.calculate(self.no, self.long, self.signed, True)
         elif isinstance(value, Instruction):
             instance.opcodes.append(value)
         else:

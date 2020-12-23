@@ -217,6 +217,41 @@ class Tests(TestCase):
             Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
             Instruction(opcode=0, dst=0, src=0, off=0, imm=0)])
 
+    def test_simple_binary(self):
+        self.maxDiff = None
+        e = EBPF()
+        e.r0 = e.r1 * e.r2 + e.r3
+        e.r0 = e.r1 * e.r2 + 3
+        e.r0 = e.r1 * 2 + 3
+        e.r0 = 2 * e.r1 + 3
+        e.r0 = 3 + 2 * e.r1
+        e.sr0 = e.sr1 >> 2
+        e.sr0 = e.sr1 >> e.r2
+        e.s0 = e.s1 + e.s2
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=199, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=207, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=188, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=12, dst=0, src=2, off=0, imm=0)])
+
+
 
 class KernelTests(TestCase):
     def test_minimal(self):
