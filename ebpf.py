@@ -334,4 +334,4 @@ for i in range(10):
     setattr(EBPF, f"sr{i}", RegisterDesc(i, True, True))
 
 for i in range(10):
-    setattr(EBPF, f"s{i}", RegisterDesc(i, False))
+    setattr(EBPF, f"w{i}", RegisterDesc(i, False))

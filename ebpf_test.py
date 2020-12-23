@@ -18,12 +18,12 @@ class Tests(TestCase):
             [Instruction(0xb7, 5, 0, 0, 7),
              Instruction(0xbf, 6, 3, 0, 0)])
 
-    def test_short(self):
+    def test_word(self):
         e = EBPF()
-        e.s3 = 7
-        e.s4 = e.s1
-        e.s2 += 3
-        e.s5 += e.s6
+        e.w3 = 7
+        e.w4 = e.w1
+        e.w2 += 3
+        e.w5 += e.w6
         self.assertEqual(e.opcodes, 
             [Instruction(0xb4, 3, 0, 0, 7),
              Instruction(0xbc, 4, 1, 0, 0),
@@ -227,7 +227,7 @@ class Tests(TestCase):
         e.r0 = 3 + 2 * e.r1
         e.sr0 = e.sr1 >> 2
         e.sr0 = e.sr1 >> e.r2
-        e.s0 = e.s1 + e.s2
+        e.w0 = e.w1 + e.w2
         self.assertEqual(e.opcodes, [
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
