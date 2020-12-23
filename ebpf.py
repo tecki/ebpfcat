@@ -6,6 +6,9 @@ from .bpf import prog_load
 Instruction = namedtuple("Instruction",
                          ["opcode", "dst", "src", "off", "imm"])
 
+class AssembleError(Exception):
+    pass
+
 def augassign(opcode):
     def ret(self, value):
         if isinstance(value, int):
@@ -94,7 +97,7 @@ class Binary(Expression):
 
     def calculate(self, dst, long, signed, force=False):
         if dst is None:
-            raise RuntimeError("cannot compile")
+            raise AssembleError("cannot compile")
         dst, long, signed = self.left.calculate(dst, long, signed, True)
         if self.operator == 0x74 and signed:  # >>=
             operator = 0xc4
@@ -182,7 +185,9 @@ class Register(Expression):
 
     def calculate(self, dst, long, signed, force=False):
         if long is not None and long != self.long:
-            raise RuntimeError("cannot compile")
+            raise AssembleError("cannot compile")
+        if self.no not in self.ebpf.owners:
+            raise AssembleError("register has no value")
         if dst != self.no and force:
             self.ebpf.append(0xbc + 3 * self.long, dst, self.no, 0, 0)
             return dst, self.long, signed
@@ -198,7 +203,7 @@ class Memory(Expression):
 
     def calculate(self, dst, long, signed, force):
         if not long and self.bits == 0x18:
-            raise RuntimeError("cannot compile")
+            raise AssembleError("cannot compile")
         self.ebpf.append(0x61 + self.bits, dst, self.address.left.no,
                          self.address.right, 0)
         return dst, long, signed
@@ -225,7 +230,7 @@ class MemoryDesc:
     def __getitem__(self, addr):
         ret = addr + 0
         if not isinstance(ret, Sum):
-            raise RuntimeError("cannot compile")
+            raise AssembleError("cannot compile")
         return Memory(self.ebpf, self.bits, ret)
 
 
@@ -264,7 +269,7 @@ class RegisterDesc:
         elif isinstance(value, Instruction):
             instance.opcodes.append(value)
         else:
-            raise RuntimeError("cannot compile")
+            raise AssembleError("cannot compile")
         
 
 class EBPF:
