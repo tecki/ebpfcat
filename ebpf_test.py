@@ -112,6 +112,7 @@ class Tests(TestCase):
 
     def test_jump(self):
         e = EBPF()
+        e.owners = set(range(11))
         target = e.jump()
         e.r0 = 1
         target.target()
@@ -199,6 +200,7 @@ class Tests(TestCase):
 
     def test_with(self):
         e = EBPF()
+        e.owners = set(range(11))
         with e.If(e.r2 > 3) as cond:
             e.r2 = 5
         with cond.Else():
@@ -208,6 +210,30 @@ class Tests(TestCase):
              Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=0xb7, dst=6, src=0, off=0, imm=7)])
+
+    def test_comp_binary(self):
+        e = EBPF()
+        e.owners = {1, 2, 3, 5}
+        with e.If(e.r1 + e.r3 > 3) as cond:
+            e.r0 = 5
+        with cond.Else():
+            e.r0 = 7
+
+        tgt = e.jumpIf(e.r0 < e.r2 + e.r5)
+        e.r0 = 8
+        tgt.target()
+
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=181, dst=0, src=0, off=2, imm=3),
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=5),
+            Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=7),
+            Instruction(opcode=191, dst=4, src=2, off=0, imm=0),
+            Instruction(opcode=15, dst=4, src=5, off=0, imm=0),
+            Instruction(opcode=173, dst=0, src=4, off=1, imm=0),
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=8)])
 
     def test_huge(self):
         e = EBPF()
@@ -346,12 +372,12 @@ class Tests(TestCase):
 class KernelTests(TestCase):
     def test_minimal(self):
         e = EBPF(ProgType.XDP, "GPL")
-        e.r2 = 2
-        e.r3 = -16
-        e.r4 = 4
-        e.r5 = 5
-        e.m32[e.r10 - 16] = 0
-        e.r5 = (e.r2 * e.r3) + e.m32[e.r10 + e.r3]
+        e.r3 = 3
+        e.r4 = 5
+        e.r5 = 7
+        tgt = e.jumpIf(e.r3 < e.r4 + e.r5)
+        e.r0 = 8
+        tgt.target()
         e.exit()
         print(e.load(log_level=1)[1])
         self.fail()

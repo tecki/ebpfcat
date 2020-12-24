@@ -22,42 +22,55 @@ def augassign(opcode):
 
 
 def comparison(uposop, unegop, sposop=None, snegop=None):
+    if sposop is None:
+        sposop = uposop
+        snegop = unegop
     def ret(self, value):
-        if self.signed and sposop is not None:
-            return Comparison(self.no, value, sposop, snegop)
-        else:
-            return Comparison(self.no, value, uposop, unegop)
+        return Comparison(self.ebpf, self, value,
+                          (uposop, unegop, sposop, snegop))
     return ret
 
 
 class Comparison:
-    def __init__(self, dst, src, posop, negop):
-        self.dst = dst
-        self.src = src
-        self.posop = posop
-        self.negop = negop
+    def __init__(self, ebpf, left, right, opcode):
+        self.ebpf = ebpf
+        self.left = left
+        self.right = right
+        self.opcode = opcode
+
+    def calculate(self, negative):
+        self.dst, _, lsigned, lfree = self.left.calculate(None, None, None)
+        if not isinstance(self.right, int):
+            self.src, _, rsigned, rfree = \
+                    self.right.calculate(None, None, None)
+            if rsigned != rsigned:
+                raise AssembleError("need same signedness for comparison")
+        else:
+            rfree = False
+        self.origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(None)
+        self.opcode = self.opcode[negative + 2 * lsigned]
+        if lfree:
+            self.ebpf.owners.discard(self.dst)
+        if rfree:
+            self.ebpf.owners.discard(self.src)
+        self.owners = self.ebpf.owners.copy()
 
     def target(self):
         assert self.ebpf.opcodes[self.origin] is None
-        if isinstance(self.src, int):
+        if isinstance(self.right, int):
             inst = Instruction(
                 self.opcode, self.dst, 0,
-                len(self.ebpf.opcodes) - self.origin - 1, self.src)
-        elif isinstance(self.src, Register):
-            inst = Instruction(
-                self.opcode + 8, self.dst, self.src.no,
-                len(self.ebpf.opcodes) - self.origin - 1, 0)
+                len(self.ebpf.opcodes) - self.origin - 1, self.right)
         else:
-            return NotImplemented
+            inst = Instruction(
+                self.opcode + 8, self.dst, self.src,
+                len(self.ebpf.opcodes) - self.origin - 1, 0)
         self.ebpf.opcodes[self.origin] = inst
         self.ebpf.owners, self.owners = \
                 self.ebpf.owners & self.owners, self.ebpf.owners
 
     def __enter__(self):
-        self.origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        if self.opcode != 5:  # Else branch
-            self.owners = self.ebpf.owners.copy()
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -66,7 +79,9 @@ class Comparison:
     def Else(self):
         op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
         self.ebpf.opcodes[self.origin] = Instruction(op, dst, src, off+1, imm)
-        self.src = self.dst = 0
+        self.origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(None)
+        self.right = self.dst = 0
         self.opcode = 5
         return self
 
@@ -90,6 +105,14 @@ class Expression:
     __rshift__ = binary(0x74)
     __mod__ = binary(0x94)
     __rxor__ = __xor__ = binary(0xa4, True)
+
+    __eq__ = comparison(0x15, 0x55)
+    __gt__ = comparison(0x25, 0xb5, 0x65, 0xd5)
+    __ge__ = comparison(0x35, 0xa5, 0x75, 0xc5)
+    __lt__ = comparison(0xa5, 0x35, 0xc5, 0x75)
+    __le__ = comparison(0xb5, 0x25, 0xd5, 0x65)
+    __ne__ = comparison(0x55, 0x15)
+    __and__ = __rand__ = comparison(0x45, None)
 
 
 class Binary(Expression):
@@ -115,7 +138,7 @@ class Binary(Expression):
             self.ebpf.append(operator + (3 if long is None else 3 * long),
                              dst, 0, 0, self.right)
         else:
-            src, long, signed, rfree = self.right.calculate(None, long, signed)
+            src, long, _, rfree = self.right.calculate(None, long, None)
             self.ebpf.append(operator + 3 * long + 8, dst, src, 0, 0)
             if rfree:
                 self.ebpf.owners.discard(src)
@@ -184,25 +207,18 @@ class Register(Expression):
         else:
             return super().__sub__(value)
 
-    __eq__ = comparison(0x15, 0x55)
-    __gt__ = comparison(0x25, 0xb5, 0x65, 0xd5)
-    __ge__ = comparison(0x35, 0xa5, 0x75, 0xc5)
-    __lt__ = comparison(0xa5, 0x35, 0xc5, 0x75)
-    __le__ = comparison(0xb5, 0x25, 0xd5, 0x65)
-    __ne__ = comparison(0x55, 0x15)
-    __and__ = __rand__ = comparison(0x45, None)
-
-
     def calculate(self, dst, long, signed, force=False):
         if long is not None and long != self.long:
+            raise AssembleError("cannot compile")
+        if signed is not None and signed != self.signed:
             raise AssembleError("cannot compile")
         if self.no not in self.ebpf.owners:
             raise AssembleError("register has no value")
         if dst != self.no and force:
             self.ebpf.append(0xbc + 3 * self.long, dst, self.no, 0, 0)
-            return dst, self.long, signed, False
+            return dst, self.long, self.signed, False
         else:
-            return self.no, self.long, signed, False
+            return self.no, self.long, self.signed, False
 
 
 class Memory(Expression):
@@ -331,31 +347,24 @@ class EBPF:
                          log_level, log_size, self.kern_version)
 
     def jumpIf(self, comp):
-        comp.origin = len(self.opcodes)
-        comp.ebpf = self
-        comp.owners = self.owners.copy()
-        comp.opcode = comp.posop
-        self.opcodes.append(None)
+        comp.calculate(False)
         return comp
 
     def jump(self):
-        comp = Comparison(0, 0, None, None)
+        comp = Comparison(self, None, 0, 5)
         comp.origin = len(self.opcodes)
-        comp.ebpf = self
+        comp.dst = 0
         comp.owners = self.owners.copy()
         self.owners = set(range(11))
-        comp.opcode = 5
         self.opcodes.append(None)
         return comp
 
     def If(self, comp):
-        comp.opcode = comp.negop
-        comp.ebpf = self
+        comp.calculate(True)
         return comp
 
     def isZero(self, comp):
-        comp.opcode = comp.negop
-        comp.ebpf = self
+        comp.calculate(False)
         return comp
 
     def get_fd(self, fd):
