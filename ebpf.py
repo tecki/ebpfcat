@@ -101,8 +101,12 @@ class Binary(Expression):
 
     def calculate(self, dst, long, signed, force=False):
         if dst is None:
-            raise AssembleError("cannot compile")
-        dst, long, signed = self.left.calculate(dst, long, signed, True)
+            dst = self.ebpf.get_free_register()
+            self.ebpf.owners.add(dst)
+            free = True
+        else:
+            free = False
+        dst, long, signed, _ = self.left.calculate(dst, long, signed, True)
         if self.operator == 0x74 and signed:  # >>=
             operator = 0xc4
         else:
@@ -111,9 +115,11 @@ class Binary(Expression):
             self.ebpf.append(operator + (3 if long is None else 3 * long),
                              dst, 0, 0, self.right)
         else:
-            src, long, signed = self.right.calculate(None, long, signed)
+            src, long, signed, rfree = self.right.calculate(None, long, signed)
             self.ebpf.append(operator + 3 * long + 8, dst, src, 0, 0)
-        return dst, long, signed
+            if rfree:
+                self.ebpf.owners.discard(src)
+        return dst, long, signed, free
 
 
 class Sum(Binary):
@@ -194,9 +200,9 @@ class Register(Expression):
             raise AssembleError("register has no value")
         if dst != self.no and force:
             self.ebpf.append(0xbc + 3 * self.long, dst, self.no, 0, 0)
-            return dst, self.long, signed
+            return dst, self.long, signed, False
         else:
-            return self.no, self.long, signed
+            return self.no, self.long, signed, False
 
 
 class Memory(Expression):
@@ -205,12 +211,23 @@ class Memory(Expression):
         self.bits = bits
         self.address = address
 
-    def calculate(self, dst, long, signed, force):
+    def calculate(self, dst, long, signed, force=False):
         if not long and self.bits == 0x18:
             raise AssembleError("cannot compile")
-        self.ebpf.append(0x61 + self.bits, dst, self.address.left.no,
-                         self.address.right, 0)
-        return dst, long, signed
+        if dst is None:
+            dst = self.ebpf.get_free_register()
+            free = True
+        else:
+            free = False
+        if isinstance(self.address, Sum):
+            self.ebpf.append(0x61 + self.bits, dst, self.address.left.no,
+                             self.address.right, 0)
+        else:
+            src, _, _, rfree = self.address.calculate(None, None, None)
+            self.ebpf.append(0x61 + self.bits, dst, src, 0, 0)
+            if rfree:
+                self.ebpf.owners.discard(src)
+        return dst, long, signed, free
 
 
 class MemoryDesc:
@@ -222,20 +239,24 @@ class MemoryDesc:
         if isinstance(addr, Sum):
             dst = addr.left.no
             offset = addr.right
+            afree = False
         else:
-            dst, _, _ = addr.calculate(None, None, None)
+            dst, _, _, afree = addr.calculate(None, None, None)
             offset = 0
         if isinstance(value, int):
             self.ebpf.append(0x62 + self.bits, dst, 0, offset, value)
         else:
-            src, _, _ = value.calculate(None, None, None)
+            src, _, _, free = value.calculate(None, None, None)
             self.ebpf.append(0x63 + self.bits, dst, src, offset, 0)
+            if free:
+                self.ebpf.owners.discard(src)
+        if afree:
+            self.ebpf.owners.discard(dst)
 
     def __getitem__(self, addr):
-        ret = addr + 0
-        if not isinstance(ret, Sum):
-            raise AssembleError("cannot compile")
-        return Memory(self.ebpf, self.bits, ret)
+        if isinstance(addr, Register):
+            addr = addr + 0
+        return Memory(self.ebpf, self.bits, addr)
 
 
 class PseudoFd(Expression):
@@ -244,9 +265,14 @@ class PseudoFd(Expression):
         self.fd = fd
 
     def calculate(self, dst, long, signed, force):
+        if dst is None:
+            dst = self.ebpf.get_free_register()
+            free = True
+        else:
+            free = False
         self.ebpf.append(0x18, dst, 1, 0, self.fd)
         self.ebpf.append(0, 0, 0, 0, 0)
-        return dst, long, signed
+        return dst, long, signed, free
 
 
 class RegisterDesc:
@@ -262,6 +288,7 @@ class RegisterDesc:
             return Register(self.no, instance, self.long, self.signed)
 
     def __set__(self, instance, value):
+        instance.owners.add(self.no)
         if isinstance(value, int):
             if -0x80000000 <= value < 0x80000000:
                 instance.append(0xb4 + 3 * self.long, self.no, 0, 0, value)
@@ -274,7 +301,6 @@ class RegisterDesc:
             instance.opcodes.append(value)
         else:
             raise AssembleError("cannot compile")
-        instance.owners.add(self.no)
         
 
 class EBPF:
@@ -342,6 +368,12 @@ class EBPF:
 
     def exit(self):
         self.append(0x95, 0, 0, 0, 0)
+
+    def get_free_register(self):
+        for i in range(10):
+            if i not in self.owners:
+                return i
+        raise AssembleError("not enough registers")
 
 
 for i in range(11):

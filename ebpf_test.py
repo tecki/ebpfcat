@@ -220,7 +220,6 @@ class Tests(TestCase):
             Instruction(opcode=0, dst=0, src=0, off=0, imm=0)])
 
     def test_simple_binary(self):
-        self.maxDiff = None
         e = EBPF()
         e.owners = {0, 1, 2, 3}
         e.r0 = e.r1 * e.r2 + e.r3
@@ -304,17 +303,58 @@ class Tests(TestCase):
         with self.assertRaises(AssembleError):
             e.r8 = e.r1
 
+    def test_binary_alloc(self):
+        self.maxDiff = None
+        e = EBPF()
+        e.r3 = e.r1 - (2 * e.r10)
+        e.m16[e.r10 - 10] = 2 * e.r3
+        e.m16[e.r10 + e.r3] = 2 * e.r3
+        e.r5 = e.m16[e.r10 + e.r3]
+        e.r0 = (e.r1 * e.r3) - (e.r10 * e.r5)
+        e.r5 = (e.r1 * e.r3) + e.m32[e.r10 + e.r0]
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=191, dst=3, src=1, off=0, imm=0),
+            Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
+            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=31, dst=3, src=0, off=0, imm=0),
+            Instruction(opcode=191, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=107, dst=10, src=0, off=-10, imm=0),
+            Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
+            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=191, dst=2, src=3, off=0, imm=0),
+            Instruction(opcode=39, dst=2, src=0, off=0, imm=2),
+            Instruction(opcode=107, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
+            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=105, dst=5, src=0, off=0, imm=0),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=47, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=191, dst=2, src=10, off=0, imm=0),
+            Instruction(opcode=47, dst=2, src=5, off=0, imm=0),
+            Instruction(opcode=31, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=191, dst=5, src=1, off=0, imm=0),
+            Instruction(opcode=47, dst=5, src=3, off=0, imm=0),
+            Instruction(opcode=191, dst=2, src=10, off=0, imm=0),
+            Instruction(opcode=15, dst=2, src=0, off=0, imm=0),
+            Instruction(opcode=97, dst=2, src=2, off=0, imm=0),
+            Instruction(opcode=15, dst=5, src=2, off=0, imm=0)])
+        with self.assertRaises(AssembleError):
+            e.r8 = e.r2
+
 
 class KernelTests(TestCase):
     def test_minimal(self):
         e = EBPF(ProgType.XDP, "GPL")
-        e.r6 = 7
-        target = e.jumpIf(e.r1 > 3)
-        e.r1 = 3
-        target.target()
-        e.r0 = 0
+        e.r2 = 2
+        e.r3 = -16
+        e.r4 = 4
+        e.r5 = 5
+        e.m32[e.r10 - 16] = 0
+        e.r5 = (e.r2 * e.r3) + e.m32[e.r10 + e.r3]
         e.exit()
-        self.assertEqual(e.load(log_level=1), "")
+        print(e.load(log_level=1)[1])
+        self.fail()
 
 
 if __name__ == "__main__":
