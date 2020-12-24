@@ -211,6 +211,25 @@ class Tests(TestCase):
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=0xb7, dst=6, src=0, off=0, imm=7)])
 
+    def test_with_inversion(self):
+        e = EBPF()
+        with e.If(e.r1 & 1) as cond:
+            e.r0 = 2
+        with e.If(e.r1 & 7) as cond:
+            e.r0 = 2
+            e.r1 = 4
+        with cond.Else():
+            e.r0 = 3
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=69, dst=1, src=0, off=1, imm=1),
+            Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=69, dst=1, src=0, off=2, imm=7),
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=5, dst=0, src=0, off=2, imm=0),
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=183, dst=1, src=0, off=0, imm=4)])
+
     def test_comp_binary(self):
         e = EBPF()
         e.owners = {1, 2, 3, 5}
@@ -256,6 +275,7 @@ class Tests(TestCase):
         e.sr0 = e.sr1 >> 2
         e.sr0 = e.sr1 >> e.r2
         e.w0 = e.w1 + e.w2
+        e.r0 = e.r1 & e.r2  # attention, special case
         self.assertEqual(e.opcodes, [
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
@@ -277,7 +297,9 @@ class Tests(TestCase):
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=207, dst=0, src=2, off=0, imm=0),
             Instruction(opcode=188, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=12, dst=0, src=2, off=0, imm=0)])
+            Instruction(opcode=12, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=95, dst=0, src=2, off=0, imm=0)])
 
 
     def test_jump_data(self):
@@ -372,12 +394,11 @@ class Tests(TestCase):
 class KernelTests(TestCase):
     def test_minimal(self):
         e = EBPF(ProgType.XDP, "GPL")
-        e.r3 = 3
-        e.r4 = 5
-        e.r5 = 7
-        tgt = e.jumpIf(e.r3 < e.r4 + e.r5)
-        e.r0 = 8
-        tgt.target()
+        with e.If(e.r1 & 1111111) as cond:
+            e.r0 = 2
+            e.r1 = 4
+        with cond.Else():
+            e.r0 = 3
         e.exit()
         print(e.load(log_level=1)[1])
         self.fail()
