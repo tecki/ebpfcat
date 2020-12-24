@@ -26,37 +26,12 @@ def comparison(uposop, unegop, sposop=None, snegop=None):
         sposop = uposop
         snegop = unegop
     def ret(self, value):
-        return Comparison(self.ebpf, self, value,
-                          (uposop, unegop, sposop, snegop))
+        return SimpleComparison(self.ebpf, self, value,
+                                (uposop, unegop, sposop, snegop))
     return ret
 
 
 class Comparison:
-    def __init__(self, ebpf, left, right, opcode):
-        self.ebpf = ebpf
-        self.left = left
-        self.right = right
-        self.opcode = opcode
-        self.invert = None
-
-    def compare(self, negative):
-        self.dst, _, lsigned, lfree = self.left.calculate(None, None, None)
-        if not isinstance(self.right, int):
-            self.src, _, rsigned, rfree = \
-                    self.right.calculate(None, None, None)
-            if rsigned != rsigned:
-                raise AssembleError("need same signedness for comparison")
-        else:
-            rfree = False
-        self.origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        self.opcode = self.opcode[negative + 2 * lsigned]
-        if lfree:
-            self.ebpf.owners.discard(self.dst)
-        if rfree:
-            self.ebpf.owners.discard(self.src)
-        self.owners = self.ebpf.owners.copy()
-
     def target(self):
         assert self.ebpf.opcodes[self.origin] is None
         if isinstance(self.right, int):
@@ -101,10 +76,40 @@ class Comparison:
         return self
 
 
-class OrComparison(Comparison):
+class SimpleComparison(Comparison):
+    def __init__(self, ebpf, left, right, opcode):
+        self.ebpf = ebpf
+        self.left = left
+        self.right = right
+        self.opcode = opcode
+        self.invert = None
+
+    def compare(self, negative):
+        self.dst, _, lsigned, lfree = self.left.calculate(None, None, None)
+        if not isinstance(self.right, int):
+            self.src, _, rsigned, rfree = \
+                    self.right.calculate(None, None, None)
+            if rsigned != rsigned:
+                raise AssembleError("need same signedness for comparison")
+        else:
+            rfree = False
+        self.origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(None)
+        self.opcode = self.opcode[negative + 2 * lsigned]
+        if lfree:
+            self.ebpf.owners.discard(self.dst)
+        if rfree:
+            self.ebpf.owners.discard(self.src)
+        self.owners = self.ebpf.owners.copy()
+
+class AndOrComparison(Comparison):
     def compare(self, negative):
         self.left.compare(negative)
         self.right.compare(negative)
+
+    def target(self):
+        self.left.target()
+        self.right.target()
 
 
 def binary(opcode, symetric=False):
@@ -186,13 +191,13 @@ class Sum(Binary):
             return super().__sub__(value)
 
 
-class AndExpression(Binary, Comparison):
+class AndExpression(Binary, SimpleComparison):
     __and__ = __rand__ = comparison(0x45, None)
     __rand__ = __and__ = binary(0x54, True)
 
     def __init__(self, ebpf, left, right):
         Binary.__init__(self, ebpf, left, right, 0x54)
-        Comparison.__init__(self, ebpf, left, right, 0x45)
+        SimpleComparison.__init__(self, ebpf, left, right, 0x45)
         self.opcode = (0x45, None, 0x45, None)
 
     def compare(self, negative):
@@ -392,7 +397,7 @@ class EBPF:
         return comp
 
     def jump(self):
-        comp = Comparison(self, None, 0, 5)
+        comp = SimpleComparison(self, None, 0, 5)
         comp.origin = len(self.opcodes)
         comp.dst = 0
         comp.owners = self.owners.copy()
