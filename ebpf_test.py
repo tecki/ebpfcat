@@ -2,7 +2,7 @@ from unittest import TestCase, main
 
 from . import ebpf
 from .ebpf import (
-    AssembleError, EBPF, Opcode, OpcodeFlags, Opcode as O, LocalVar)
+    AssembleError, EBPF, HashMap, Opcode, OpcodeFlags, Opcode as O, LocalVar)
 from .bpf import ProgType
 
 
@@ -469,12 +469,14 @@ class Tests(TestCase):
 
 class KernelTests(TestCase):
     def test_minimal(self):
-        e = EBPF(ProgType.XDP, "GPL")
-        with e.If((e.r1 == 0x111111) & (e.r10 == 0x22222)) as cond:
-            e.r0 = 333333
-        with cond.Else():
-            e.r0 = 444444
+        class Global(EBPF):
+            map = HashMap()
+            a = map.globalVar()
+
+        e = Global(ProgType.XDP, "GPL")
+        e.a += 1
         e.exit()
+        print(e.opcodes)
         print(e.load(log_level=1)[1])
         self.fail()
 
