@@ -465,10 +465,11 @@ class Register(Expression):
 
 
 class Memory(Expression):
-    def __init__(self, ebpf, bits, address):
+    def __init__(self, ebpf, bits, address, signed=False):
         self.ebpf = ebpf
         self.bits = bits
         self.address = address
+        self.signed = signed
 
     def calculate(self, dst, long, signed, force=False):
         if not long and self.bits == Opcode.DW:
@@ -486,11 +487,43 @@ class Memory(Expression):
             self.ebpf.append(Opcode.LD + self.bits, dst, src, 0, 0)
             if rfree:
                 self.ebpf.owners.discard(src)
-        return dst, long, signed, free
+        return dst, long, self.signed, free
 
     def contains(self, no):
         return self.address.contains(no)
 
+
+class LocalVar:
+    bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
+
+    def __init__(self, bits=32, signed=False):
+        self.bits = bits
+        self.signed = signed
+
+    def __set_name__(self, owner, name):
+        size = int(self.bits // 8)
+        owner.stack -= size
+        owner.stack &= -size
+        self.addr = owner.stack
+        self.name = name
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        else:
+            return Memory(instance, self.bits_to_opcode[self.bits],
+                          instance.r10 + self.addr, self.signed)
+
+    def __set__(self, instance, value):
+        bits = self.bits_to_opcode[self.bits]
+        if isinstance(value, int):
+            instance.append(Opcode.ST + bits, 10, 0, self.addr, value)
+        else:
+            src, _, _, free = value.calculate(None, self.bits == 64,
+                                              self.signed)
+            instance.append(Opcode.STX + bits, 10, src, self.addr, 0)
+            if free:
+                instance.owners.discard(src)
 
 class MemoryDesc:
     def __init__(self, ebpf, bits):
@@ -562,6 +595,8 @@ class RegisterDesc:
         
 
 class EBPF:
+    stack = 0
+
     def __init__(self, prog_type=0, license="", kern_version=0):
         self.opcodes = []
         self.prog_type = prog_type

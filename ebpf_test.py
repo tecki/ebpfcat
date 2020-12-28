@@ -1,7 +1,8 @@
 from unittest import TestCase, main
 
 from . import ebpf
-from .ebpf import AssembleError, EBPF, Opcode, OpcodeFlags, Opcode as O
+from .ebpf import (
+    AssembleError, EBPF, Opcode, OpcodeFlags, Opcode as O, LocalVar)
 from .bpf import ProgType
 
 
@@ -131,6 +132,24 @@ class Tests(TestCase):
              Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
              Instruction(opcode=121, dst=5, src=3, off=-7, imm=0)])
 
+    def test_local(self):
+        class Local(EBPF):
+            a = LocalVar(8, True)
+            b = LocalVar(16, False)
+            c = LocalVar(32, True)
+            d = LocalVar(64, False)
+
+        e = Local(ProgType.XDP, "GPL")
+        e.a = 5
+        e.b = e.c >> 3
+        e.d = e.r1
+
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.B+O.ST, dst=10, src=0, off=-1, imm=5),
+            Instruction(opcode=O.W+O.LD, dst=0, src=10, off=-8, imm=0),
+            Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
+            Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0)])
 
     def test_jump(self):
         e = EBPF()
