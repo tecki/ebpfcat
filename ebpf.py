@@ -280,7 +280,9 @@ class Binary(Expression):
         self.operator = operator
 
     def calculate(self, dst, long, signed, force=False):
-        if dst is None:
+        orig_dst = dst
+        if dst is None or (not isinstance(self.right, int)
+                           and self.right.contains(dst)):
             dst = self.ebpf.get_free_register()
             self.ebpf.owners.add(dst)
             free = True
@@ -301,7 +303,17 @@ class Binary(Expression):
                              dst, src, 0, 0)
             if rfree:
                 self.ebpf.owners.discard(src)
-        return dst, long, signed, free
+        if orig_dst is None or orig_dst == dst:
+            return dst, long, signed, free
+        else:
+            self.ebpf.append(Opcode.MOV + Opcode.LONG * long, orig_dst, dst,
+                             0, 0)
+            self.ebpf.owners.discard(dst)
+            return orig_dst, long, signed, False
+
+    def contains(self, no):
+        return self.left.contains(no) or (not isinstance(self.right, int)
+                                          and self.right.contains(no))
 
 
 class Sum(Binary):
@@ -392,6 +404,9 @@ class Register(Expression):
         else:
             return self.no, self.long, self.signed, False
 
+    def contains(self, no):
+        return self.no == no
+
 
 class Memory(Expression):
     def __init__(self, ebpf, bits, address):
@@ -416,6 +431,9 @@ class Memory(Expression):
             if rfree:
                 self.ebpf.owners.discard(src)
         return dst, long, signed, free
+
+    def contains(self, no):
+        return self.address.contains(no)
 
 
 class MemoryDesc:

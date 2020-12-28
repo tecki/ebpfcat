@@ -382,6 +382,7 @@ class Tests(TestCase):
         e.r5 = e.m16[e.r10 + e.r3]
         e.r0 = (e.r1 * e.r3) - (e.r10 * e.r5)
         e.r5 = (e.r1 * e.r3) + e.m32[e.r10 + e.r0]
+        e.r5 = e.r3 + e.r5
         self.assertEqual(e.opcodes, [
             Instruction(opcode=191, dst=3, src=1, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
@@ -408,7 +409,10 @@ class Tests(TestCase):
             Instruction(opcode=191, dst=2, src=10, off=0, imm=0),
             Instruction(opcode=15, dst=2, src=0, off=0, imm=0),
             Instruction(opcode=97, dst=2, src=2, off=0, imm=0),
-            Instruction(opcode=15, dst=5, src=2, off=0, imm=0)])
+            Instruction(opcode=15, dst=5, src=2, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.MOV+O.REG, dst=2, src=3, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD+O.REG, dst=2, src=5, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=5, src=2, off=0, imm=0)])
         with self.assertRaises(AssembleError):
             e.r8 = e.r2
 
