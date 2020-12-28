@@ -345,25 +345,29 @@ class Tests(TestCase):
     def test_reverse_binary(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3}
-        e.r3 = 7 / e.r2
+        e.r3 = 7 / (e.r2 + 2)
         e.r3 = 7 << e.r2
-        e.r3 = 7 % e.r2
+        e.r3 = 7 % (e.r2 + 3)
         e.r3 = 7 >> e.r2
         e.r3 = -7 >> e.r2
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.REG+O.LONG+O.DIV, dst=3, src=2, off=0, imm=0),
+            Instruction(opcode=O.REG+O.LONG+O.MOV, dst=4, src=2, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG, dst=4, src=0, off=0, imm=2),
+            Instruction(opcode=O.REG+O.LONG+O.DIV, dst=3, src=4, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
             Instruction(opcode=O.LSH+O.REG+O.LONG, dst=3, src=2, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.REG+O.MOD+O.LONG, dst=3, src=2, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG, dst=4, src=0, off=0, imm=3),
+            Instruction(opcode=O.REG+O.MOD+O.LONG, dst=3, src=4, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
             Instruction(opcode=O.REG+O.RSH+O.LONG, dst=3, src=2, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=-7),
             Instruction(opcode=O.REG+O.LONG+O.ARSH, dst=3, src=2, off=0, imm=0)
             ])
 
-    def test_reverse_binary(self):
+    def test_negation(self):
         e = EBPF()
         e.r7 = -e.r1
         self.assertEqual(e.opcodes, [

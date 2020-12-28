@@ -352,6 +352,8 @@ class ReverseBinary(Expression):
         src, long, _, rfree = self.right.calculate(None, long, None)
         self.ebpf.append(operator + Opcode.LONG * long + Opcode.REG,
                          dst, src, 0, 0)
+        if rfree:
+            self.ebpf.owners.discard(src)
         return dst, long, signed, free
 
     def contains(self, no):
