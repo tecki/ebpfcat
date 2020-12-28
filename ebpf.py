@@ -41,8 +41,8 @@ class Opcode(Enum):
     REG = 8
     LONG = 3
 
-    H = 8
     W = 0
+    H = 8
     B = 0x10
     DW = 0x18
 
@@ -60,13 +60,7 @@ class Opcode(Enum):
         return OpcodeFlags({self}) + value
 
     def __repr__(self):
-        return self.name
-
-    def __eq__(self, value):
-        return self is value or self.value == value
-
-    def __hash__(self):
-        return super().__hash__()
+        return 'O.' + self.name
 
 class OpcodeFlags:
     def __init__(self, opcodes):
@@ -83,13 +77,10 @@ class OpcodeFlags:
             return OpcodeFlags(self.opcodes | value.opcodes)
 
     def __repr__(self):
-        return "|".join(op.name for op in self.opcodes)
+        return "+".join(repr(op) for op in self.opcodes)
 
     def __eq__(self, value):
-        if isinstance(value, int):
-            return self.value == value
-        else:
-            self.opcodes == value.opcodes
+        return self.value == value.value
 
 
 class AssembleError(Exception):
@@ -468,7 +459,7 @@ class PseudoFd(Expression):
         else:
             free = False
         self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
-        self.ebpf.append(0, 0, 0, 0, 0)
+        self.ebpf.append(Opcode.W, 0, 0, 0, 0)
         return dst, long, signed, free
 
 
@@ -492,7 +483,7 @@ class RegisterDesc:
                                 self.no, 0, 0, value)
             else:
                 instance.append(Opcode.DW, self.no, 0, 0, value & 0xffffffff)
-                instance.append(0, 0, 0, 0, value >> 32)
+                instance.append(Opcode.W, 0, 0, 0, value >> 32)
         elif isinstance(value, Expression):
             value.calculate(self.no, self.long, self.signed, True)
         elif isinstance(value, Instruction):

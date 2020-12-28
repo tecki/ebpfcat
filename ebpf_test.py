@@ -1,8 +1,30 @@
 from unittest import TestCase, main
 
-from .ebpf import AssembleError, EBPF, Instruction
+from . import ebpf
+from .ebpf import AssembleError, EBPF, Opcode, OpcodeFlags, Opcode as O
 from .bpf import ProgType
 
+
+opcodes = list((v.value, v) for v in Opcode)
+opcodes.sort(reverse=True)
+
+
+def Instruction(opcode, dst, src, off, imm):
+    if isinstance(opcode, OpcodeFlags):
+        return ebpf.Instruction(opcode, dst, src, off, imm)
+    bigger = [(k, v) for k, v in opcodes if opcode >= k]
+    for bk, bv in bigger:
+        parts = {bv}
+        lo = opcode - bk
+        for k, v in opcodes[:-1]:
+            if lo >= k:
+                lo -= k
+                parts.add(v)
+        if lo == 0:
+            break
+    else:
+        raise RuntimeError
+    return ebpf.Instruction(OpcodeFlags(parts), dst, src, off, imm)
 
 class Tests(TestCase):
     def test_assemble(self):
