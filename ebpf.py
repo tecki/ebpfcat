@@ -242,22 +242,32 @@ class InvertComparison(Comparison):
         self.value.compare(not negative)
 
 
-def binary(opcode, symetric=False):
+def binary(opcode):
     def ret(self, value):
         return Binary(self.ebpf, self, value, opcode)
     return ret
 
+def rbinary(opcode):
+    def ret(self, value):
+        return ReverseBinary(self.ebpf, value, self, opcode)
+    return ret
+
 
 class Expression:
-    __radd__ = __add__ = binary(Opcode.ADD, True)
+    __radd__ = __add__ = binary(Opcode.ADD)
     __sub__ = binary(Opcode.SUB)
-    __rmul__ = __mul__ = binary(Opcode.MUL, True)
+    __rsub__ = rbinary(Opcode.SUB)
+    __rmul__ = __mul__ = binary(Opcode.MUL)
     __truediv__ = binary(Opcode.DIV)
-    __ror__ = __or__ = binary(Opcode.OR, True)
+    __rtruediv__ = rbinary(Opcode.DIV)
+    __ror__ = __or__ = binary(Opcode.OR)
     __lshift__ = binary(Opcode.LSH)
+    __rlshift__ = rbinary(Opcode.LSH)
     __rshift__ = binary(Opcode.RSH)
+    __rrshift__ = rbinary(Opcode.RSH)
     __mod__ = binary(Opcode.MOD)
-    __rxor__ = __xor__ = binary(Opcode.XOR, True)
+    __rmod__ = rbinary(Opcode.MOD)
+    __rxor__ = __xor__ = binary(Opcode.XOR)
 
     __eq__ = comparison(Opcode.JEQ, Opcode.JNE)
     __gt__ = comparison(Opcode.JGT, Opcode.JLE, Opcode.JSGT, Opcode.JSLE)
@@ -270,6 +280,9 @@ class Expression:
         return AndExpression(self.ebpf, self, value)
 
     __rand__ = __and__
+
+    def __neg__(self):
+        return Negate(self.ebpf, self)
 
 
 class Binary(Expression):
@@ -314,6 +327,49 @@ class Binary(Expression):
     def contains(self, no):
         return self.left.contains(no) or (not isinstance(self.right, int)
                                           and self.right.contains(no))
+
+
+class ReverseBinary(Expression):
+    def __init__(self, ebpf, left, right, operator):
+        self.ebpf = ebpf
+        self.left = left
+        self.right = right
+        self.operator = operator
+
+    def calculate(self, dst, long, signed, force=False):
+        if dst is None:
+            dst = self.ebpf.get_free_register()
+            self.ebpf.owners.add(dst)
+            free = True
+        else:
+            free = False
+        self.ebpf._load_value(dst, self.left)
+        if self.operator is Opcode.RSH and self.left < 0:  # >>=
+            operator = Opcode.ARSH
+        else:
+            operator = self.operator
+
+        src, long, _, rfree = self.right.calculate(None, long, None)
+        self.ebpf.append(operator + Opcode.LONG * long + Opcode.REG,
+                         dst, src, 0, 0)
+        return dst, long, signed, free
+
+    def contains(self, no):
+        return self.right.contains(no)
+
+
+class Negate(Expression):
+    def __init__(self, ebpf, arg):
+        self.ebpf = ebpf
+        self.arg = arg
+
+    def calculate(self, dst, long, signed, force=False):
+        dst, long, signed, free = self.arg.calculate(dst, long, signed, force)
+        self.ebpf.append(Opcode.NEG + Opcode.LONG * long, dst, 0, 0, 0)
+        return dst, long, signed, free
+
+    def contains(self, no):
+        return self.arg.contains(no)
 
 
 class Sum(Binary):
@@ -496,12 +552,7 @@ class RegisterDesc:
     def __set__(self, instance, value):
         instance.owners.add(self.no)
         if isinstance(value, int):
-            if -0x80000000 <= value < 0x80000000:
-                instance.append(Opcode.MOV + Opcode.LONG * self.long,
-                                self.no, 0, 0, value)
-            else:
-                instance.append(Opcode.DW, self.no, 0, 0, value & 0xffffffff)
-                instance.append(Opcode.W, 0, 0, 0, value >> 32)
+            instance._load_value(self.no, value)
         elif isinstance(value, Expression):
             value.calculate(self.no, self.long, self.signed, True)
         elif isinstance(value, Instruction):
@@ -571,6 +622,12 @@ class EBPF:
                 return i
         raise AssembleError("not enough registers")
 
+    def _load_value(self, no, value):
+        if -0x80000000 <= value < 0x80000000:
+            self.append(Opcode.MOV + Opcode.LONG, no, 0, 0, value)
+        else:
+            self.append(Opcode.DW, no, 0, 0, value & 0xffffffff)
+            self.append(Opcode.W, 0, 0, 0, value >> 32)
 
 for i in range(11):
     setattr(EBPF, f"r{i}", RegisterDesc(i, True))
