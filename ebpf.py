@@ -580,7 +580,7 @@ class EBPF:
 
     def assemble(self):
         return b"".join(
-            pack("<BBHI", i.opcode, i.dst | i.src << 4,
+            pack("<BBHI", i.opcode.value, i.dst | i.src << 4,
                  i.off % 0x10000, i.imm % 0x100000000)
             for i in self.opcodes)
 

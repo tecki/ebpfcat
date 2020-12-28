@@ -10,7 +10,7 @@ opcodes.sort(reverse=True)
 
 
 def Instruction(opcode, dst, src, off, imm):
-    if isinstance(opcode, OpcodeFlags):
+    if isinstance(opcode, (Opcode, OpcodeFlags)):
         return ebpf.Instruction(opcode, dst, src, off, imm)
     bigger = [(k, v) for k, v in opcodes if opcode >= k]
     for bk, bv in bigger:
@@ -29,7 +29,7 @@ def Instruction(opcode, dst, src, off, imm):
 class Tests(TestCase):
     def test_assemble(self):
         e = EBPF()
-        e.append(0x24, 3, 4, 0x2c3d, 0x2d3e4f5e)
+        e.append(Opcode.MUL, 3, 4, 0x2c3d, 0x2d3e4f5e)
         self.assertEqual(e.assemble(), b"$C=,^O>-")
 
     def test_assign(self):
