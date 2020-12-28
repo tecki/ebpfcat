@@ -394,11 +394,10 @@ class Tests(TestCase):
 class KernelTests(TestCase):
     def test_minimal(self):
         e = EBPF(ProgType.XDP, "GPL")
-        with e.If(e.r1 & 1111111) as cond:
-            e.r0 = 2
-            e.r1 = 4
+        with e.If((e.r1 == 0x111111) & (e.r10 == 0x22222)) as cond:
+            e.r0 = 333333
         with cond.Else():
-            e.r0 = 3
+            e.r0 = 444444
         e.exit()
         print(e.load(log_level=1)[1])
         self.fail()
