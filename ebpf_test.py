@@ -446,9 +446,11 @@ class Tests(TestCase):
             Instruction(opcode=191, dst=2, src=3, off=0, imm=0),
             Instruction(opcode=39, dst=2, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
-            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=105, dst=5, src=0, off=0, imm=0),
+
+            Instruction(opcode=191, dst=5, src=10, off=0, imm=0),
+            Instruction(opcode=15, dst=5, src=3, off=0, imm=0),
+            Instruction(opcode=105, dst=5, src=5, off=0, imm=0),
+
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=47, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=191, dst=2, src=10, off=0, imm=0),

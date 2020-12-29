@@ -1,5 +1,5 @@
 from collections import namedtuple
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from struct import pack
 from enum import Enum
 
@@ -178,21 +178,16 @@ class SimpleComparison(Comparison):
         self.opcode = opcode
 
     def compare(self, negative):
-        self.dst, _, lsigned, lfree = self.left.calculate(None, None, None)
-        if not isinstance(self.right, int):
-            self.src, _, rsigned, rfree = \
-                    self.right.calculate(None, None, None)
-            if rsigned != rsigned:
-                raise AssembleError("need same signedness for comparison")
-        else:
-            rfree = False
-        self.origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        self.opcode = self.opcode[negative + 2 * lsigned]
-        if lfree:
-            self.ebpf.owners.discard(self.dst)
-        if rfree:
-            self.ebpf.owners.discard(self.src)
+        with self.left.calculate(None, None, None) as (self.dst, _, lsigned):
+            with ExitStack() as exitStack:
+                if not isinstance(self.right, int):
+                    self.src, _, rsigned = exitStack.enter_context(
+                            self.right.calculate(None, None, None))
+                    if rsigned != rsigned:
+                        raise AssembleError("need same signedness for comparison")
+                self.origin = len(self.ebpf.opcodes)
+                self.ebpf.opcodes.append(None)
+                self.opcode = self.opcode[negative + 2 * lsigned]
         self.owners = self.ebpf.owners.copy()
 
     def target(self):
@@ -293,37 +288,32 @@ class Binary(Expression):
         self.right = right
         self.operator = operator
 
+    @contextmanager
     def calculate(self, dst, long, signed, force=False):
         orig_dst = dst
-        if dst is None or (not isinstance(self.right, int)
-                           and self.right.contains(dst)):
-            dst = self.ebpf.get_free_register()
-            self.ebpf.owners.add(dst)
-            free = True
-        else:
-            free = False
-        dst, long, signed, _ = self.left.calculate(dst, long, signed, True)
-        if self.operator is Opcode.RSH and signed:  # >>=
-            operator = Opcode.ARSH
-        else:
-            operator = self.operator
-        if isinstance(self.right, int):
-            self.ebpf.append(operator + (Opcode.LONG if long is None
-                                         else Opcode.LONG * long),
-                             dst, 0, 0, self.right)
-        else:
-            src, long, _, rfree = self.right.calculate(None, long, None)
-            self.ebpf.append(operator + Opcode.LONG * long + Opcode.REG,
-                             dst, src, 0, 0)
-            if rfree:
-                self.ebpf.owners.discard(src)
-        if orig_dst is None or orig_dst == dst:
-            return dst, long, signed, free
-        else:
-            self.ebpf.append(Opcode.MOV + Opcode.LONG * long, orig_dst, dst,
-                             0, 0)
-            self.ebpf.owners.discard(dst)
-            return orig_dst, long, signed, False
+        if not isinstance(self.right, int) and self.right.contains(dst):
+            dst = None
+        with self.ebpf.get_free_register(dst) as dst:
+            with self.left.calculate(dst, long, signed, True) \
+                    as (dst, long, signed):
+                pass
+            if self.operator is Opcode.RSH and signed:  # >>=
+                operator = Opcode.ARSH
+            else:
+                operator = self.operator
+            if isinstance(self.right, int):
+                self.ebpf.append(operator + (Opcode.LONG if long is None
+                                             else Opcode.LONG * long),
+                                 dst, 0, 0, self.right)
+            else:
+                with self.right.calculate(None, long, None) as (src, long, _):
+                    self.ebpf.append(operator + Opcode.LONG*long + Opcode.REG,
+                                     dst, src, 0, 0)
+            if orig_dst is None or orig_dst == dst:
+                yield dst, long, signed
+                return
+        self.ebpf.append(Opcode.MOV + Opcode.LONG * long, orig_dst, dst, 0, 0)
+        yield orig_dst, long, signed
 
     def contains(self, no):
         return self.left.contains(no) or (not isinstance(self.right, int)
@@ -337,25 +327,19 @@ class ReverseBinary(Expression):
         self.right = right
         self.operator = operator
 
+    @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if dst is None:
-            dst = self.ebpf.get_free_register()
-            self.ebpf.owners.add(dst)
-            free = True
-        else:
-            free = False
-        self.ebpf._load_value(dst, self.left)
-        if self.operator is Opcode.RSH and self.left < 0:  # >>=
-            operator = Opcode.ARSH
-        else:
-            operator = self.operator
+        with self.ebpf.get_free_register(dst) as dst:
+            self.ebpf._load_value(dst, self.left)
+            if self.operator is Opcode.RSH and self.left < 0:  # >>=
+                operator = Opcode.ARSH
+            else:
+                operator = self.operator
 
-        src, long, _, rfree = self.right.calculate(None, long, None)
-        self.ebpf.append(operator + Opcode.LONG * long + Opcode.REG,
-                         dst, src, 0, 0)
-        if rfree:
-            self.ebpf.owners.discard(src)
-        return dst, long, signed, free
+            with self.right.calculate(None, long, None) as (src, long, _):
+                self.ebpf.append(operator + Opcode.LONG * long + Opcode.REG,
+                                 dst, src, 0, 0)
+            yield dst, long, signed
 
     def contains(self, no):
         return self.right.contains(no)
@@ -366,10 +350,12 @@ class Negate(Expression):
         self.ebpf = ebpf
         self.arg = arg
 
+    @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        dst, long, signed, free = self.arg.calculate(dst, long, signed, force)
-        self.ebpf.append(Opcode.NEG + Opcode.LONG * long, dst, 0, 0, 0)
-        return dst, long, signed, free
+        with self.arg.calculate(dst, long, signed, force) as \
+                (dst, long, signed):
+            self.ebpf.append(Opcode.NEG + Opcode.LONG * long, dst, 0, 0, 0)
+            yield dst, long, signed
 
     def contains(self, no):
         return self.arg.contains(no)
@@ -449,6 +435,7 @@ class Register(Expression):
         else:
             return super().__sub__(value)
 
+    @contextmanager
     def calculate(self, dst, long, signed, force=False):
         if long is not None and long != self.long:
             raise AssembleError("cannot compile")
@@ -459,9 +446,9 @@ class Register(Expression):
         if dst != self.no and force:
             self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * self.long,
                              dst, self.no, 0, 0)
-            return dst, self.long, self.signed, False
+            yield dst, self.long, self.signed
         else:
-            return self.no, self.long, self.signed, False
+            yield self.no, self.long, self.signed
 
     def contains(self, no):
         return self.no == no
@@ -474,23 +461,18 @@ class Memory(Expression):
         self.address = address
         self.signed = signed
 
+    @contextmanager
     def calculate(self, dst, long, signed, force=False):
         if not long and self.bits == Opcode.DW:
             raise AssembleError("cannot compile")
-        if dst is None:
-            dst = self.ebpf.get_free_register()
-            free = True
-        else:
-            free = False
-        if isinstance(self.address, Sum):
-            self.ebpf.append(Opcode.LD + self.bits, dst, self.address.left.no,
-                             self.address.right, 0)
-        else:
-            src, _, _, rfree = self.address.calculate(None, None, None)
-            self.ebpf.append(Opcode.LD + self.bits, dst, src, 0, 0)
-            if rfree:
-                self.ebpf.owners.discard(src)
-        return dst, long, self.signed, free
+        with self.ebpf.get_free_register(dst) as dst:
+            if isinstance(self.address, Sum):
+                self.ebpf.append(Opcode.LD + self.bits, dst,
+                                 self.address.left.no, self.address.right, 0)
+            else:
+                with self.address.calculate(dst, None, None) as (src, _, _):
+                    self.ebpf.append(Opcode.LD + self.bits, dst, src, 0, 0)
+            yield dst, long, self.signed
 
     def contains(self, no):
         return self.address.contains(no)
@@ -522,11 +504,9 @@ class LocalVar:
         if isinstance(value, int):
             instance.append(Opcode.ST + bits, 10, 0, self.addr, value)
         else:
-            src, _, _, free = value.calculate(None, self.bits == 64,
-                                              self.signed)
-            instance.append(Opcode.STX + bits, 10, src, self.addr, 0)
-            if free:
-                instance.owners.discard(src)
+            with value.calculate(None, self.bits == 64, self.signed) \
+                    as (src, _, _):
+                instance.append(Opcode.STX + bits, 10, src, self.addr, 0)
 
 class MemoryDesc:
     def __init__(self, ebpf, bits):
@@ -534,22 +514,20 @@ class MemoryDesc:
         self.bits = bits
 
     def __setitem__(self, addr, value):
-        if isinstance(addr, Sum):
-            dst = addr.left.no
-            offset = addr.right
-            afree = False
-        else:
-            dst, _, _, afree = addr.calculate(None, None, None)
-            offset = 0
-        if isinstance(value, int):
-            self.ebpf.append(Opcode.ST + self.bits, dst, 0, offset, value)
-        else:
-            src, _, _, free = value.calculate(None, None, None)
-            self.ebpf.append(Opcode.STX + self.bits, dst, src, offset, 0)
-            if free:
-                self.ebpf.owners.discard(src)
-        if afree:
-            self.ebpf.owners.discard(dst)
+        with ExitStack() as exitStack:
+            if isinstance(addr, Sum):
+                dst = addr.left.no
+                offset = addr.right
+                afree = False
+            else:
+                dst, _, _ = exitStack.enter_context(
+                        addr.calculate(None, None, None))
+                offset = 0
+            if isinstance(value, int):
+                self.ebpf.append(Opcode.ST + self.bits, dst, 0, offset, value)
+            else:
+                with value.calculate(None, None, None) as (src, _, _):
+                    self.ebpf.append(Opcode.STX+self.bits, dst, src, offset, 0)
 
     def __getitem__(self, addr):
         if isinstance(addr, Register):
@@ -569,6 +547,7 @@ class GlobalVar(Expression):
     def __set_name__(self, owner, name):
         self.name = name
 
+    @contextmanager
     def calculate(self, dst, long, signed, force):
         with self.ebpf.save_registers(dst), self.ebpf.get_stack(4) as stack:
             self.ebpf.append(Opcode.ST, 10, 0, stack, self.count)
@@ -577,20 +556,14 @@ class GlobalVar(Expression):
             self.ebpf.call(1)
             with self.ebpf.If(self.ebpf.r0 == 0):
                 self.ebpf.exit()
-        if dst is None:
-            dst = self.ebpf.get_free_register()
-            free = True
-        else:
-            free = False
-        self.ebpf.append(Opcode.LD, dst, 0, 0, 0)
-        return dst, False, self.signed, free
+        with self.ebpf.get_free_register(dst) as dst:
+            self.ebpf.append(Opcode.LD, dst, 0, 0, 0)
+            yield dst, False, self.signed
 
     def __set__(self, ebpf, value):
         with ebpf.get_stack(8) as stack:
-            src, _, _, free = value.calculate(None, False, self.signed)
-            ebpf.append(Opcode.STX, 10, src, stack + 4, 0)
-            if free:
-                ebpf.owners.discard(src)
+            with value.calculate(None, False, self.signed) as (src, _, _):
+                ebpf.append(Opcode.STX, 10, src, stack + 4, 0)
             ebpf.append(Opcode.ST, 10, 0, stack, self.count)
             with ebpf.save_registers(None):
                 ebpf.r1 = self.ebpf.get_fd(self.fd)
@@ -627,15 +600,12 @@ class PseudoFd(Expression):
         self.ebpf = ebpf
         self.fd = fd
 
+    @contextmanager
     def calculate(self, dst, long, signed, force):
-        if dst is None:
-            dst = self.ebpf.get_free_register()
-            free = True
-        else:
-            free = False
-        self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
-        self.ebpf.append(Opcode.W, 0, 0, 0, 0)
-        return dst, long, signed, free
+        with self.ebpf.get_free_register(dst) as dst:
+            self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
+            self.ebpf.append(Opcode.W, 0, 0, 0, 0)
+            yield dst, long, signed
 
 
 class RegisterDesc:
@@ -655,7 +625,8 @@ class RegisterDesc:
         if isinstance(value, int):
             instance._load_value(self.no, value)
         elif isinstance(value, Expression):
-            value.calculate(self.no, self.long, self.signed, True)
+            with value.calculate(self.no, self.long, self.signed, True):
+                pass
         elif isinstance(value, Instruction):
             instance.opcodes.append(value)
         else:
@@ -723,10 +694,17 @@ class EBPF:
     def exit(self):
         self.append(Opcode.EXIT, 0, 0, 0, 0)
 
-    def get_free_register(self):
+    @contextmanager
+    def get_free_register(self, dst):
+        if dst is not None:
+            yield dst
+            return
         for i in range(10):
             if i not in self.owners:
-                return i
+                self.owners.add(i)
+                yield i
+                self.owners.discard(i)
+                return
         raise AssembleError("not enough registers")
 
     def _load_value(self, no, value):
@@ -741,15 +719,16 @@ class EBPF:
         oldowners = self.owners.copy()
         self.owners |= set(range(6))
         save = []
-        for i in range(5):
-            if i in oldowners and i != dst:
-                tmp = self.get_free_register()
-                self.owners.add(tmp)
-                self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, tmp, i, 0, 0)
-                save.append((tmp, i))
-        yield
-        for tmp, i in save:
-            self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, i, tmp, 0, 0)
+        with ExitStack() as exitStack:
+            for i in range(5):
+                if i in oldowners and i != dst:
+                    tmp = self.exitStack.enter_context(
+                            self.get_free_register(None))
+                    self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, tmp, i, 0, 0)
+                    save.append((tmp, i))
+            yield
+            for tmp, i in save:
+                self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, i, tmp, 0, 0)
             self.owners = oldowners
 
     @contextmanager
