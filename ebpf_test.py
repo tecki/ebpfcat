@@ -44,6 +44,7 @@ class Tests(TestCase):
 
     def test_word(self):
         e = EBPF()
+        e.owners |= {6}
         e.w3 = 7
         e.w4 = e.w1
         e.w2 += 3
@@ -56,6 +57,7 @@ class Tests(TestCase):
 
     def test_augassign(self):
         e = EBPF()
+        e.owners |= {4, 6, 7}
         e.r5 += 7
         e.r3 += e.r6
         e.r4 -= 3
@@ -82,7 +84,7 @@ class Tests(TestCase):
         self.assertEqual(e.opcodes, 
             [Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=15, dst=3, src=6, off=0, imm=0),
-             Instruction(opcode=0x17, dst=4, src=0, off=0, imm=3),
+             Instruction(opcode=7, dst=4, src=0, off=0, imm=-3),
              Instruction(opcode=0x1f, dst=4, src=7, off=0, imm=0),
              Instruction(opcode=0x27, dst=4, src=0, off=0, imm=3),
              Instruction(opcode=0x2f, dst=4, src=7, off=0, imm=0),

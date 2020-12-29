@@ -87,18 +87,6 @@ class OpcodeFlags:
 class AssembleError(Exception):
     pass
 
-def augassign(opcode):
-    def ret(self, value):
-        if isinstance(value, int):
-            return Instruction(opcode + Opcode.LONG * self.long, self.no,
-                               0, 0, value)
-        elif isinstance(value, Register) and self.long == value.long:
-            return Instruction(opcode + Opcode.REG + Opcode.LONG * self.long,
-                               self.no, value.no, 0, 0)
-        else:
-            return NotImplemented
-    return ret
-
 
 def comparison(uposop, unegop, sposop=None, snegop=None):
     if sposop is None:
@@ -399,27 +387,6 @@ class Register(Expression):
         self.ebpf = ebpf
         self.long = long
         self.signed = signed
-
-    __iadd__ = augassign(Opcode.ADD)
-    __isub__ = augassign(Opcode.SUB)
-    __imul__ = augassign(Opcode.MUL)
-    __itruediv__ = augassign(Opcode.DIV)
-    __ior__ = augassign(Opcode.OR)
-    __iand__ = augassign(Opcode.AND)
-    __ilshift__ = augassign(Opcode.LSH)
-    __imod__ = augassign(Opcode.MOD)
-    __ixor__ = augassign(Opcode.XOR)
-
-    def __irshift__(self, value):
-        opcode = Opcode.ARSH if self.signed else Opcode.RSH
-        if isinstance(value, int):
-            return Instruction(opcode + Opcode.LONG * self.long, self.no,
-                               0, 0, value)
-        elif isinstance(value, Register) and self.long == value.long:
-            return Instruction(opcode + Opcode.REG + Opcode.LONG * self.long,
-                               self.no, value.no, 0, 0)
-        else:
-            return NotImplemented
 
     def __add__(self, value):
         if isinstance(value, int) and self.long:
