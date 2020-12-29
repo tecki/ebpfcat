@@ -58,7 +58,8 @@ def update_elem(fd, key, value, flags):
     return bpf(2, "IQQQ", fd, addrof(key), addrof(value), flags)[0]
 
 def prog_load(prog_type, insns, license,
-              log_level=0, log_size=4096, kern_version=0):
+              log_level=0, log_size=4096, kern_version=0, flags=0,
+              name="", ifindex=0, attach_type=0):
     if log_level == 0:
         log_buf = 0
         log_size = 0
@@ -67,9 +68,10 @@ def prog_load(prog_type, insns, license,
         log_buf = addrof(the_logbuf)
     license = license.encode("utf8")
     try:
-        fd, _ = bpf(5, "IIQQIIQI", prog_type.value, int(len(insns) // 8),
+        fd, _ = bpf(5, "IIQQIIQII16sII", prog_type.value, int(len(insns) // 8),
                     addrof(insns), addrof(license), log_level, log_size,
-                    log_buf, kern_version)
+                    log_buf, kern_version, flags, name.encode("utf8"), ifindex,
+                    attach_type)
     except OSError as e:
         if log_level != 0:
             raise BPFError(e.errno, the_logbuf.value.decode("utf8"))

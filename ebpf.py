@@ -732,12 +732,19 @@ class RegisterDesc:
 
 class EBPF:
     stack = 0
+    name = None
 
-    def __init__(self, prog_type=0, license="", kern_version=0):
+    def __init__(self, prog_type=0, license="", kern_version=0,
+                 name=None):
         self.opcodes = []
         self.prog_type = prog_type
         self.license = license
         self.kern_version = kern_version
+        if name is None:
+            if self.name is None:
+                self.name = self.__class__.__name__[:16]
+        else:
+            self.name = name
         self.loaded = False
 
         self.m8 = MemoryDesc(self, Opcode.B)
@@ -767,7 +774,8 @@ class EBPF:
 
     def load(self, log_level=0, log_size=4096):
         ret = bpf.prog_load(self.prog_type, self.assemble(), self.license,
-                            log_level, log_size, self.kern_version)
+                            log_level, log_size, self.kern_version,
+                            name=self.name)
         self.loaded = True
 
         for v in self.__class__.__dict__.values():
