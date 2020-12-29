@@ -3,7 +3,7 @@ from unittest import TestCase, main
 from . import ebpf
 from .ebpf import (
     AssembleError, EBPF, HashMap, Opcode, OpcodeFlags, Opcode as O, LocalVar)
-from .bpf import ProgType
+from .bpf import ProgType, prog_test_run
 
 
 opcodes = list((v.value, v) for v in Opcode)
@@ -472,6 +472,21 @@ class Tests(TestCase):
 
 
 class KernelTests(TestCase):
+    def test_hashmap(self):
+        class Global(EBPF):
+            map = HashMap()
+            a = map.globalVar(default=5)
+
+        e = Global(ProgType.XDP, "GPL")
+        e.a += 7
+        e.exit()
+
+        fd = e.load()
+        prog_test_run(fd, 1000, 1000, 0, 0, 1)
+        e.a *= 2
+        prog_test_run(fd, 1000, 1000, 0, 0, 1)
+        self.assertEqual(e.a, 31)
+
     def test_minimal(self):
         class Global(EBPF):
             map = HashMap()
