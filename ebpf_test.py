@@ -3,7 +3,7 @@ from unittest import TestCase, main
 from . import ebpf
 from .ebpf import (
     ArrayMap, AssembleError, EBPF, HashMap, Opcode, OpcodeFlags,
-    Opcode as O, LocalVar)
+    Opcode as O, LocalVar, XDP)
 from .bpf import ProgType, prog_test_run
 
 
@@ -477,8 +477,10 @@ class KernelTests(TestCase):
         class Global(EBPF):
             map = HashMap()
             a = map.globalVar(default=5)
+            b = map.globalVar()
 
         e = Global(ProgType.XDP, "GPL")
+        e.b = e.a
         e.a += 7
         e.exit()
 
@@ -487,6 +489,7 @@ class KernelTests(TestCase):
         e.a *= 2
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
         self.assertEqual(e.a, 31)
+        self.assertEqual(e.b, 24)
 
     def test_arraymap(self):
         class Global(EBPF):
