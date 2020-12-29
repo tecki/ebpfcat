@@ -50,7 +50,7 @@ def lookup_elem(fd, key, size):
     value = create_string_buffer(size)
     ret, _ = bpf(1, "IQQQ", fd, addrof(key), addrof(value), 0)
     if ret == 0:
-        return value.raw
+        return value
     else:
         return None
 
@@ -100,4 +100,7 @@ def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
 if __name__ == "__main__":
     fd = create_map(1, 4, 4, 10)
     update_elem(fd, b"asdf", b"ckde", 0)
-    print(lookup_elem(fd, b"asdf", 4))
+    ret = lookup_elem(fd, b"asdf", 4)
+    ret[2:4] = b"kk"
+    update_elem(fd, b"asdf", ret, 0)
+    print(lookup_elem(fd, b"asdf", 4).raw)
