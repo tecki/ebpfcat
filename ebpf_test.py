@@ -3,7 +3,8 @@ from unittest import TestCase, main
 from . import ebpf
 from .ebpf import (
     ArrayMap, AssembleError, EBPF, HashMap, Opcode, OpcodeFlags,
-    Opcode as O, LocalVar, XDP)
+    Opcode as O, LocalVar)
+from .xdp import XDP
 from .bpf import ProgType, prog_test_run
 
 
@@ -510,11 +511,11 @@ class KernelTests(TestCase):
         self.assertEqual(e.a, 21)
 
     def test_minimal(self):
-        class Global(EBPF):
+        class Global(XDP):
             map = HashMap()
             a = map.globalVar()
 
-        e = Global(ProgType.XDP, "GPL")
+        e = Global(license="GPL")
         e.a += 1
         e.exit()
         print(e.opcodes)

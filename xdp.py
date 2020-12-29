@@ -3,14 +3,9 @@ from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
 
-async def set_link_xdp_fd(network, fd):
-    ifindex = if_nametoindex(network)
-    future = Future()
-    transport, proto = await get_event_loop().create_datagram_endpoint(
-            lambda: XDRFD(ifindex, fd, future),
-            family=AF_NETLINK, proto=NETLINK_ROUTE)
-    await future
-    transport.get_extra_info("socket").close()
+from .ebpf import EBPF, Memory, MemoryDesc, Opcode
+from .bpf import ProgType
+
 
 class XDRFD(DatagramProtocol):
     def __init__(self, ifindex, fd, future):
@@ -47,25 +42,47 @@ class XDRFD(DatagramProtocol):
                 8,
                 3,  # IFLA_XDP_FLAGS,
                 2)
-        print("send", len(p), p)
         transport.sendto(p, (0, 0))
 
     def datagram_received(self, data, addr):
         pos = 0
-        print("received", data)
         while (pos < len(data)):
             ln, type, flags, seq, pid = unpack("IHHII", data[pos : pos+16])
-            print(f"  {ln} {type} {flags:x} {seq} {pid}")
             if type == 3:  # DONE
                 self.future.set_result(0)
             elif type == 2:  # ERROR
                 errno, *args = unpack("iIHHII", data[pos+16 : pos+36])
-                print("ERROR", errno, args)
                 if errno != 0:
                     self.future.set_result(errno)
             if flags & 2 == 0:  # not a multipart message
-                print("not multipart")
                 self.future.set_result(0)
             pos += ln
                 
-        
+
+class PacketDesc(MemoryDesc):
+    def __setitem__(self, addr, value):
+        super().__setitem__(self.ebpf.r9 + addr, value)
+
+    def __getitem__(self, addr):
+        return Memory(self.ebpf, self.bits, self.ebpf.r9 + addr)
+
+
+class XDP(EBPF):
+    def __init__(self, **kwargs):
+        super().__init__(prog_type=ProgType.XDP, **kwargs)
+        self.r9 = self.m32[self.r1]
+
+        self.packet8 = MemoryDesc(self, Opcode.B)
+        self.packet16 = MemoryDesc(self, Opcode.H)
+        self.packet32 = MemoryDesc(self, Opcode.W)
+        self.packet64 = MemoryDesc(self, Opcode.DW)
+
+    async def attach(self, network):
+        ifindex = if_nametoindex(network)
+        fd = self.load()
+        future = Future()
+        transport, proto = await get_event_loop().create_datagram_endpoint(
+                lambda: XDRFD(ifindex, fd, future),
+                family=AF_NETLINK, proto=NETLINK_ROUTE)
+        await future
+        transport.get_extra_info("socket").close()

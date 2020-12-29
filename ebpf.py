@@ -751,6 +751,11 @@ class EBPF:
             if isinstance(v, Map):
                 v.init(self)
 
+        self.program()
+
+    def program(self):
+        pass
+
     def append(self, opcode, dst, src, off, imm):
         self.opcodes.append(Instruction(opcode, dst, src, off, imm))
 
