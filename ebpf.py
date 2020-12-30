@@ -706,29 +706,77 @@ class PseudoFd(Expression):
 
 
 class RegisterDesc:
-    def __init__(self, no, long, signed=False):
+    def __init__(self, no, array):
         self.no = no
-        self.long = long
-        self.signed = signed
+        self.array = array
 
     def __get__(self, instance, owner=None):
         if instance is None:
             return self
         else:
-            return Register(self.no, instance, self.long, self.signed)
+            return getattr(instance, self.array)[self.no]
 
     def __set__(self, instance, value):
-        instance.owners.add(self.no)
+        getattr(instance, self.array)[self.no] = value
+
+
+class RegisterArray:
+    def __init__(self, ebpf, long, signed):
+        self.ebpf = ebpf
+        self.long = long
+        self.signed = signed
+
+    def __setitem__(self, no, value):
+        self.ebpf.owners.add(no)
         if isinstance(value, int):
-            instance._load_value(self.no, value)
+            self.ebpf._load_value(no, value)
         elif isinstance(value, Expression):
-            with value.calculate(self.no, self.long, self.signed, True):
+            with value.calculate(no, self.long, self.signed, True):
                 pass
-        elif isinstance(value, Instruction):
-            instance.opcodes.append(value)
         else:
             raise AssembleError("cannot compile")
-        
+
+    def __getitem__(self, no):
+        return Register(no, self.ebpf, self.long, self.signed)
+
+
+
+class Temporary(Register):
+    def __init__(self, ebpf, long, signed):
+        super().__init__(None, ebpf, long, signed)
+        self.nos = []
+        self.gfrs = []
+
+    def __enter__(self):
+        gfr = self.ebpf.get_free_register(None)
+        self.nos.append(self.no)
+        self.no = gfr.__enter__()
+        self.gfrs.append(gfr)
+
+    def __exit__(self, a, b, c):
+        gfr = self.gfrs.pop()
+        gfr.__exit__(a, b, c)
+        self.no = self.nos.pop()
+
+
+class TemporaryDesc(RegisterDesc):
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        arr = getattr(instance, self.array)
+        ret = instance.__dict__.get(self.name, None)
+        if ret is None:
+            ret = instance.__dict__[self.name] = \
+                    Temporary(instance, arr.long, arr.signed)
+        return ret
+
+    def __set__(self, instance, value):
+        no = getattr(instance, self.name).no
+        getattr(instance, self.array)[no] = value
+
 
 class EBPF:
     stack = 0
@@ -752,13 +800,16 @@ class EBPF:
         self.m32 = MemoryDesc(self, Opcode.W)
         self.m64 = MemoryDesc(self, Opcode.DW)
 
+        self.r = RegisterArray(self, True, False)
+        self.sr = RegisterArray(self, True, True)
+        self.w = RegisterArray(self, False, False)
+        self.sw = RegisterArray(self, False, True)
+
         self.owners = {1, 10}
 
         for v in self.__class__.__dict__.values():
             if isinstance(v, Map):
                 v.init(self)
-
-        self.program()
 
     def program(self):
         pass
@@ -767,6 +818,7 @@ class EBPF:
         self.opcodes.append(Instruction(opcode, dst, src, off, imm))
 
     def assemble(self):
+        self.program()
         return b"".join(
             pack("<BBHI", i.opcode.value, i.dst | i.src << 4,
                  i.off % 0x10000, i.imm % 0x100000000)
@@ -809,7 +861,9 @@ class EBPF:
         self.owners.add(0)
         self.owners -= set(range(1, 6))
 
-    def exit(self):
+    def exit(self, no=None):
+        if no is not None:
+            self.r0 = no
         self.append(Opcode.EXIT, 0, 0, 0, 0)
 
     @contextmanager
@@ -856,12 +910,20 @@ class EBPF:
         yield self.stack
         self.stack = oldstack
 
+    tmp = TemporaryDesc(None, "r")
+    stmp = TemporaryDesc(None, "sr")
+    wtmp = TemporaryDesc(None, "w")
+    swtmp = TemporaryDesc(None, "sw")
+
 
 for i in range(11):
-    setattr(EBPF, f"r{i}", RegisterDesc(i, True))
+    setattr(EBPF, f"r{i}", RegisterDesc(i, "r"))
 
 for i in range(10):
-    setattr(EBPF, f"sr{i}", RegisterDesc(i, True, True))
+    setattr(EBPF, f"sr{i}", RegisterDesc(i, "sr"))
 
 for i in range(10):
-    setattr(EBPF, f"w{i}", RegisterDesc(i, False))
+    setattr(EBPF, f"w{i}", RegisterDesc(i, "w"))
+
+for i in range(10):
+    setattr(EBPF, f"sw{i}", RegisterDesc(i, "sw"))

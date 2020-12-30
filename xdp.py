@@ -1,9 +1,10 @@
 from asyncio import DatagramProtocol, Future, get_event_loop
+from contextlib import contextmanager
 from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
 
-from .ebpf import EBPF, Memory, MemoryDesc, Opcode
+from .ebpf import EBPF, Expression, Memory, MemoryDesc, Opcode, Comparison
 from .bpf import ProgType
 
 
@@ -58,49 +59,67 @@ class XDRFD(DatagramProtocol):
                 self.future.set_result(0)
             pos += ln
 
-class Packet(Expression):
-    def __init__(self, ebpf, bits, addr):
+
+class PacketArray:
+    def __init__(self, ebpf, no, memory):
         self.ebpf = ebpf
-        self.bits = bits
-        self.address = addr
-        self.signed = False
+        self.no = no
+        self.memory = memory
+
+    def __getitem__(self, value):
+        return self.memory[self.ebpf.r[self.no] + value]
+
+    def __setitem__(self, value):
+        self.memory[self.ebpf.r[self.no]] = value
+
+
+class Packet:
+    def __init__(self, ebpf, comp, no):
+        self.ebpf = ebpf
+        self.comp = comp
+        self.no = no
+
+        self.B = PacketArray(self.ebpf, self.no, self.ebpf.m8)
+        self.H = PacketArray(self.ebpf, self.no, self.ebpf.m16)
+        self.W = PacketArray(self.ebpf, self.no, self.ebpf.m32)
+        self.DW = PacketArray(self.ebpf, self.no, self.ebpf.m64)
+
+    def Else(self):
+        return self.comp.Else()
+
+
+class PacketSize:
+    def __init__(self, ebpf):
+        self.ebpf = ebpf
 
     @contextmanager
-    def get_address(self, dst, long, signed, force=False):
+    def __lt__(self, value):
         e = self.ebpf
-        bits = Memory.bits_to_opcode[self.bits]
-        with e.get_free_register(dst) as reg:
-            e.r[reg] = e.m32[e.r1] + self.address
-            with e.If(e.r[reg] + int(self.bits // 8) <= e.m32[e.r1 + 4]) as c:
-                if force and dst != reg:
-                    e.r[dst] = e.r[reg]
-                    reg = dst
-            with c.Else():
-                e.exit(2)
-        yield reg, bits
+        with e.tmp:
+            e.tmp = e.m32[e.r1]
+            with e.If(e.m32[e.r1 + 4] < e.m32[e.r1] + value) as comp:
+                yield Packet(e, comp, e.tmp.no)
 
-    def contains(self, no):
-        return no == 1 or (not isinstance(self.address, int)
-                           and self.address.contains(no))
-                
+    @contextmanager
+    def __gt__(self, value):
+        e = self.ebpf
+        with e.tmp:
+            e.tmp = e.m32[e.r1]
+            with e.If(e.m32[e.r1 + 4] > e.m32[e.r1] + value) as comp:
+                yield Packet(e, comp, e.tmp.no)
 
-class PacketDesc(MemoryDesc):
-    def __setitem__(self, addr, value):
-        super().__setitem__(self.ebpf.r9 + addr, value)
+    def __le__(self, value):
+        return self < value + 1
 
-    def __getitem__(self, addr):
-        return Memory(self.ebpf, self.bits, self.ebpf.r9 + addr)
+    def __ge__(self, value):
+        return self > value - 1
 
 
 class XDP(EBPF):
     def __init__(self, **kwargs):
         super().__init__(prog_type=ProgType.XDP, **kwargs)
-        self.r9 = self.m32[self.r1]
 
-        self.packet8 = MemoryDesc(self, Opcode.B)
-        self.packet16 = MemoryDesc(self, Opcode.H)
-        self.packet32 = MemoryDesc(self, Opcode.W)
-        self.packet64 = MemoryDesc(self, Opcode.DW)
+        self.packetSize = PacketSize(self)
 
     async def attach(self, network):
         ifindex = if_nametoindex(network)
