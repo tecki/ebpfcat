@@ -57,6 +57,31 @@ class XDRFD(DatagramProtocol):
             if flags & 2 == 0:  # not a multipart message
                 self.future.set_result(0)
             pos += ln
+
+class Packet(Expression):
+    def __init__(self, ebpf, bits, addr):
+        self.ebpf = ebpf
+        self.bits = bits
+        self.address = addr
+        self.signed = False
+
+    @contextmanager
+    def get_address(self, dst, long, signed, force=False):
+        e = self.ebpf
+        bits = Memory.bits_to_opcode[self.bits]
+        with e.get_free_register(dst) as reg:
+            e.r[reg] = e.m32[e.r1] + self.address
+            with e.If(e.r[reg] + int(self.bits // 8) <= e.m32[e.r1 + 4]) as c:
+                if force and dst != reg:
+                    e.r[dst] = e.r[reg]
+                    reg = dst
+            with c.Else():
+                e.exit(2)
+        yield reg, bits
+
+    def contains(self, no):
+        return no == 1 or (not isinstance(self.address, int)
+                           and self.address.contains(no))
                 
 
 class PacketDesc(MemoryDesc):
