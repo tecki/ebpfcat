@@ -1,9 +1,10 @@
 from unittest import TestCase, main
 
 from . import ebpf
+from .arraymap import ArrayMap
 from .ebpf import (
-    ArrayMap, AssembleError, EBPF, HashMap, Opcode, OpcodeFlags,
-    Opcode as O, LocalVar)
+    AssembleError, EBPF, Opcode, OpcodeFlags, Opcode as O, LocalVar)
+from .hashmap import HashMap
 from .xdp import XDP
 from .bpf import ProgType, prog_test_run
 
