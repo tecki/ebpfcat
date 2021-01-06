@@ -1,6 +1,6 @@
 from struct import pack, unpack
 
-from .ebpf import Map, Memory, Opcode
+from .ebpf import FuncId, Map, Memory, Opcode
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
@@ -70,7 +70,7 @@ class ArrayMap(Map):
             ebpf.append(Opcode.ST, 10, 0, stack, 0)
             ebpf.r1 = ebpf.get_fd(fd)
             ebpf.r2 = ebpf.r10 + stack
-            ebpf.call(1)
+            ebpf.call(FuncId.map_lookup_elem)
             with ebpf.If(ebpf.r0 == 0):
                 ebpf.exit()
         ebpf.owners.add(0)

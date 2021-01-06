@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from struct import pack, unpack, unpack
 
-from .ebpf import AssembleError, Expression, Opcode, Map
+from .ebpf import AssembleError, Expression, Opcode, Map, FuncId
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
@@ -22,7 +22,7 @@ class HashGlobalVar(Expression):
             self.ebpf.append(Opcode.ST, 10, 0, stack, self.count)
             self.ebpf.r1 = self.ebpf.get_fd(self.fd)
             self.ebpf.r2 = self.ebpf.r10 + stack
-            self.ebpf.call(1)
+            self.ebpf.call(FuncId.map_lookup_elem)
             with self.ebpf.If(self.ebpf.r0 == 0):
                 self.ebpf.exit()
             if dst != 0 and force:
@@ -68,7 +68,7 @@ class HashGlobalVarDesc:
                     ebpf.append(Opcode.ST, 10, 0, stack, self.count)
                     ebpf.r2 = ebpf.r10 + stack
                     ebpf.r4 = 0
-                    ebpf.call(2)
+                    ebpf.call(FuncId.map_update_elem)
 
 
 class HashMap(Map):

@@ -3,7 +3,7 @@ from unittest import TestCase, main
 from . import ebpf
 from .arraymap import ArrayMap
 from .ebpf import (
-    AssembleError, EBPF, Opcode, OpcodeFlags, Opcode as O, LocalVar)
+    AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar)
 from .hashmap import HashMap
 from .xdp import XDP
 from .bpf import ProgType, prog_test_run
@@ -417,7 +417,7 @@ class Tests(TestCase):
     def test_call(self):
         e = EBPF()
         e.r8 = 23
-        e.call(5)
+        e.call(FuncId.ktime_get_ns)
         self.assertEqual(e.opcodes, [
             Instruction(opcode=183, dst=8, src=0, off=0, imm=23),
             Instruction(opcode=133, dst=0, src=0, off=0, imm=5)])
