@@ -120,14 +120,15 @@ class Packet:
         self.data = []
         self.size = 2
 
-    def append(self, cmd, idx, pos, offset, data):
-        self.data.append((cmd, idx, pos, offset, data))
+    def append(self, cmd, data, idx, *address):
+        self.data.append((cmd, data, idx) + address)
         self.size += len(data) + 12
 
     def assemble(self):
         ret = [pack("<H", self.size | 0x1000)]
-        for i, (cmd, *dgram, data) in enumerate(self.data, start=1):
-            ret.append(pack("<BBhHHH", cmd.value, *dgram,
+        for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
+            ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBhIH",
+                            cmd.value, *dgram,
                             len(data) | ((i < len(self.data)) << 15), 0))
             ret.append(data)
             ret.append(b"\0\0")
@@ -177,7 +178,7 @@ class EtherCat(Protocol, AsyncBase):
             out += b"\0" * data
         elif data is not None:
             out += data
-        self.send_queue.put_nowait((cmd, idx, pos, offset, out, future))
+        self.send_queue.put_nowait((cmd, out, idx, pos, offset, future))
         ret = await future
         if data is None:
             return unpack(fmt, ret)
