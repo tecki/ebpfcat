@@ -3,8 +3,6 @@ from enum import Enum
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, calcsize
 
-MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
-
 class ECCmd(Enum):
    NOP = 0  # No Operation
    APRD = 1  # Auto Increment Read
@@ -114,6 +112,31 @@ def datasize(args, data):
         out += len(data)
     return out
 
+
+class Packet:
+    MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
+
+    def __init__(self):
+        self.data = []
+        self.size = 2
+
+    def append(self, cmd, idx, pos, offset, data):
+        self.data.append((cmd, idx, pos, offset, data))
+        self.size += len(data) + 12
+
+    def assemble(self):
+        ret = [pack("<H", self.size | 0x1000)]
+        for i, (cmd, *dgram, data) in enumerate(self.data, start=1):
+            ret.append(pack("<BBhHHH", cmd.value, *dgram,
+                            len(data) | ((i < len(self.data)) << 15), 0))
+            ret.append(data)
+            ret.append(b"\0\0")
+        return b"".join(ret)
+
+    def full(self):
+        return self.size > self.MAXSIZE
+
+
 class AsyncBase:
     async def __new__(cls, *args, **kwargs):
         ret = super().__new__(cls)
@@ -130,26 +153,18 @@ class EtherCat(Protocol, AsyncBase):
             lambda: self, family=AF_PACKET, proto=0xA488)
 
     async def sendloop(self):
-        ret = [None]
-        size = 2
+        packet = Packet()
         while True:
-            *dgram, data, future = await self.send_queue.get()
-            done = size > MAXSIZE or self.send_queue.empty()
-            ret.append(pack("<BBhHHH", *dgram,
-                            len(data) | ((not done) << 15), 0))
-            ret.append(data)
-            ret.append(b"\0\0")
-            self.dgrams.append((size + 10, size + len(data) + 10, future))
-            size += len(data) + 12
-            if done:
-                ret[0] = pack("<H", size | 0x1000)
+            *dgram, future = await self.send_queue.get()
+            lastsize = packet.size
+            packet.append(*dgram)
+            self.dgrams.append((lastsize + 10, packet.size - 2, future))
+            if packet.full() or self.send_queue.empty():
                 self.idle.clear()
-                self.transport.sendto(b"".join(ret), self.addr)
+                self.transport.sendto(packet.assemble(), self.addr)
                 await self.idle.wait()
                 assert len(self.dgrams) == 0
-
-                ret = [None]
-                size = 2
+                packet = Packet()
 
     async def roundtrip(self, cmd, pos, offset, *args, data=None, idx=0):
         future = Future()
@@ -162,8 +177,7 @@ class EtherCat(Protocol, AsyncBase):
             out += b"\0" * data
         elif data is not None:
             out += data
-        self.send_queue.put_nowait(
-            (cmd.value, idx, pos, offset, out, future))
+        self.send_queue.put_nowait((cmd, idx, pos, offset, out, future))
         ret = await future
         if data is None:
             return unpack(fmt, ret)
