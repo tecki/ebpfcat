@@ -1,7 +1,7 @@
 from struct import pack, unpack
 
 from .ebpf import Map, Memory, Opcode
-from . import bpf
+from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
 class ArrayGlobalVarDesc:
@@ -42,10 +42,10 @@ class ArrayMapAccess:
         self.size = size
 
     def read(self):
-        self.data = bpf.lookup_elem(self.fd, b"\0\0\0\0", self.size)
+        self.data = lookup_elem(self.fd, b"\0\0\0\0", self.size)
 
     def write(self):
-        bpf.update_elem(self.fd, b"\0\0\0\0", self.data, 0)
+        update_elem(self.fd, b"\0\0\0\0", self.data, 0)
 
 
 class ArrayMap(Map):
@@ -64,7 +64,7 @@ class ArrayMap(Map):
         self.name = name
 
     def init(self, ebpf):
-        fd = bpf.create_map(2, 4, self.position, 1)
+        fd = create_map(MapType.ARRAY, 4, self.position, 1)
         setattr(ebpf, self.name, ArrayMapAccess(fd, self.position))
         with ebpf.save_registers(list(range(6))), ebpf.get_stack(4) as stack:
             ebpf.append(Opcode.ST, 10, 0, stack, 0)

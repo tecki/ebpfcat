@@ -2,7 +2,7 @@ from contextlib import contextmanager
 from struct import pack, unpack, unpack
 
 from .ebpf import AssembleError, Expression, Opcode, Map
-from . import bpf
+from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
 class HashGlobalVar(Expression):
@@ -43,7 +43,7 @@ class HashGlobalVarDesc:
             return self
         if instance.loaded:
             fd = instance.__dict__[self.name].fd
-            ret = bpf.lookup_elem(fd, pack("B", self.count), 4)
+            ret = lookup_elem(fd, pack("B", self.count), 4)
             return unpack("i" if self.signed else "I", ret)[0]
         ret = instance.__dict__.get(self.name, None)
         if ret is None:
@@ -57,8 +57,8 @@ class HashGlobalVarDesc:
     def __set__(self, ebpf, value):
         if ebpf.loaded:
             fd = ebpf.__dict__[self.name].fd
-            bpf.update_elem(fd, pack("B", self.count),
-                            pack("i" if self.signed else "I", value), 0)
+            update_elem(fd, pack("B", self.count),
+                        pack("i" if self.signed else "I", value), 0)
             return
         with ebpf.save_registers([3]):
             with value.get_address(3, False, self.signed, True):
@@ -84,7 +84,7 @@ class HashMap(Map):
         return ret
 
     def init(self, ebpf):
-        fd = bpf.create_map(1, 1, 4, self.count)
+        fd = create_map(MapType.HASH, 1, 4, self.count)
         for v in self.vars:
             getattr(ebpf, v.name).fd = fd
 

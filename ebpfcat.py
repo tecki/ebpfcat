@@ -6,7 +6,7 @@ from .ebpf import EBPF
 from .bpf import ProgType, create_map, update_elem, prog_test_run, lookup_elem
 
 def script():
-    fd = create_map(1, 4, 4, 7)
+    fd = create_map(MapType.HASH, 4, 4, 7)
     update_elem(fd, b"AAAA", b"BBBB", 0)
 
     e = EBPF(ProgType.XDP, "GPL")

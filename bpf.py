@@ -7,6 +7,29 @@ from os import strerror
 class BPFError(OSError):
     pass
 
+
+class MapType(Enum):
+    UNSPEC = 0
+    HASH = 1
+    ARRAY = 2
+    PROG_ARRAY = 3
+    PERF_EVENT_ARRAY = 4
+    PERCPU_HASH = 5
+    PERCPU_ARRAY = 6
+    STACK_TRACE = 7
+    CGROUP_ARRAY = 8
+    LRU_HASH = 9
+    LRU_PERCPU_HASH = 10
+    LPM_TRIE = 11
+    ARRAY_OF_MAPS = 12
+    HASH_OF_MAPS = 13
+    DEVMAP = 14
+    SOCKMAP = 15
+    CPUMAP = 16
+    XSKMAP = 17
+    SOCKHASH = 18
+
+
 class ProgType(Enum):
     UNSPEC = 0
     SOCKET_FILTER = 1
@@ -44,7 +67,8 @@ def bpf(cmd, fmt, *args):
     return ret, unpack(fmt, attr.raw)
 
 def create_map(map_type, key_size, value_size, max_entries):
-    return bpf(0, "IIII", map_type, key_size, value_size, max_entries)[0]
+    assert isinstance(map_type, MapType)
+    return bpf(0, "IIII", map_type.value, key_size, value_size, max_entries)[0]
 
 def lookup_elem(fd, key, size):
     value = create_string_buffer(size)
@@ -100,7 +124,7 @@ def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
     return ret, retval, duration, data_out.value, ctx_out.value
 
 if __name__ == "__main__":
-    fd = create_map(1, 4, 4, 10)
+    fd = create_map(MapType.HASH, 4, 4, 10)
     update_elem(fd, b"asdf", b"ckde", 0)
     ret = lookup_elem(fd, b"asdf", 4)
     ret[2:4] = b"kk"
