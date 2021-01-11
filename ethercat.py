@@ -227,8 +227,42 @@ class Terminal:
         self.eeprom = await self.read_eeprom()
         await self.write(0x800, data=0x80)  # empty out sync manager
         await self.write(0x800, data=self.eeprom[41])
-        self.mbx_out_off, self.mbx_out_sz, self.mbx_in_off, self.mbx_in_sz = \
-            unpack("<HH4xHH", self.eeprom[41][:12])
+        self.mbx_out_off = self.mbx_out_sz = None
+        self.mbx_in_off = self.mbx_in_sz = None
+        self.pdo_out_off = self.pdo_out_sz = None
+        self.pdo_in_off = self.pdo_in_sz = None
+        for i in range(0, len(self.eeprom[41]), 8):
+            offset, size, mode = unpack("<HHB", self.eeprom[41][i:i+5])
+            mode &= 0xf
+            if mode == 0:
+                self.pdo_in_off = offset
+                self.pdo_in_sz = size
+            elif mode == 2:
+                self.mbx_in_off = offset
+                self.mbx_in_sz = size
+            elif mode == 4:
+                self.pdo_out_off = offset
+                self.pdo_out_sz = size
+            elif mode == 6:
+                self.mbx_out_off = offset
+                self.mbx_out_sz = size
+
+    def parse_pdos(self):
+        def parse_pdo(s):
+            i = 0
+            while i < len(s):
+                idx, e, sm, u1, u2, u3 = unpack("<HBBBBH", s[i:i+8])
+                print(f"idx {idx:x} sm {sm} {u1:x} {u2:x} {u3:x}")
+                i += 8
+                for er in range(e):
+                    bitsize, = unpack("<5xB2x", s[i:i+8])
+                    print("  bs", bitsize, s[i:i+8])
+                    i += 8
+
+        if 50 in self.eeprom:
+            parse_pdo(self.eeprom[50])
+        if 51 in self.eeprom:
+            parse_pdo(self.eeprom[51])
 
     async def set_state(self, state):
         await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H", state)
