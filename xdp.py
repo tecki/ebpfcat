@@ -95,18 +95,16 @@ class PacketSize:
     @contextmanager
     def __lt__(self, value):
         e = self.ebpf
-        with e.tmp:
-            e.tmp = e.m32[e.r1]
-            with e.If(e.m32[e.r1 + 4] < e.m32[e.r1] + value) as comp:
-                yield Packet(e, comp, e.tmp.no)
+        e.r9 = e.m32[e.r1]
+        with e.If(e.m32[e.r1 + 4] < e.m32[e.r1] + value) as comp:
+            yield Packet(e, comp, 9)
 
     @contextmanager
     def __gt__(self, value):
         e = self.ebpf
-        with e.tmp:
-            e.tmp = e.m32[e.r1]
-            with e.If(e.m32[e.r1 + 4] > e.m32[e.r1] + value) as comp:
-                yield Packet(e, comp, e.tmp.no)
+        e.r9 = e.m32[e.r1]
+        with e.If(e.m32[e.r1 + 4] > e.m32[e.r1] + value) as comp:
+            yield Packet(e, comp, 9)
 
     def __le__(self, value):
         return self < value + 1

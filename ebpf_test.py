@@ -501,12 +501,12 @@ class Tests(TestCase):
         with p.Else():
             e.r3 = 77
         self.assertEqual(e.opcodes, [
-            Instruction(opcode=O.LD+O.W, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=O.LD+O.W, dst=2, src=1, off=4, imm=0),
-            Instruction(opcode=O.LD+O.W, dst=3, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=3, src=0, off=0, imm=100),
-            Instruction(opcode=O.REG+O.JLE, dst=2, src=3, off=2, imm=0),
-            Instruction(opcode=O.REG+O.LD, dst=3, src=0, off=22, imm=0),
+            Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),
+            Instruction(opcode=O.LD+O.W, dst=0, src=1, off=4, imm=0),
+            Instruction(opcode=O.LD+O.W, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG, dst=2, src=0, off=0, imm=100),
+            Instruction(opcode=O.REG+O.JLE, dst=0, src=2, off=2, imm=0),
+            Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77)])
 
