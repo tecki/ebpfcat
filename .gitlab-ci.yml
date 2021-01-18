@@ -2,5 +2,4 @@ test:
     image: python:3.8-slim
     script:
         - cd ..
-        - python3 -m ebpfcat.ebpf_test -v Tests
-        - sudo python3 -m ebpfcat.ebpf_test -v KernelTests
+        - python3 -m ebpfcat.ebpf_test -v

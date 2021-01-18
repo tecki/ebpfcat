@@ -1,8 +1,18 @@
 from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p
 from enum import Enum
 from struct import pack, unpack
+from platform import machine
 
 from os import strerror
+
+try:
+    SYS_BPF = {
+        "armv7l": 386,
+        "x86_64": 321,
+        }[machine()]
+except KeyError:
+    print("Unknown platform:", machine())
+
 
 class BPFError(OSError):
     pass
@@ -61,7 +71,7 @@ def addrof(ptr):
 def bpf(cmd, fmt, *args):
     attr = pack(fmt, *args)
     attr = create_string_buffer(attr, len(attr))
-    ret = libc.syscall(386, c_int(cmd), attr, len(attr))
+    ret = libc.syscall(SYS_BPF, c_int(cmd), attr, len(attr))
     if ret == -1:
         raise OSError(get_errno(), strerror(get_errno()))
     return ret, unpack(fmt, attr.raw)
