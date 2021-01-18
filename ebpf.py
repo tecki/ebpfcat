@@ -633,27 +633,31 @@ class MemoryDesc:
         self.bits = bits
         self.signed = signed
 
-    def __get__(self, ebpf, owner):
-        if ebpf is None:
+    def __get__(self, instance, owner):
+        if instance is None:
             return self
-        elif isinstance(ebpf, SubProgram):
-            ebpf = ebpf.ebpf
+        elif isinstance(instance, SubProgram):
+            ebpf = instance.ebpf
+        else:
+            ebpf = instance
         return Memory(ebpf, Memory.bits_to_opcode[self.bits],
-                      ebpf.r[self.base_register] + self.addr,
+                      ebpf.r[self.base_register] + self.addr(instance),
                       self.signed)
 
-    def __set__(self, ebpf, value):
-        if isinstance(ebpf, SubProgram):
-            ebpf = ebpf.ebpf
+    def __set__(self, instance, value):
+        if isinstance(instance, SubProgram):
+            ebpf = instance.ebpf
+        else:
+            ebpf = instance
         bits = Memory.bits_to_opcode[self.bits]
         if isinstance(value, int):
             ebpf.append(Opcode.ST + bits, self.base_register, 0,
-                        self.addr, value)
+                        self.addr(instance), value)
         else:
             with value.calculate(None, self.bits == 64, self.signed) \
                     as (src, _, _):
                 ebpf.append(Opcode.STX + bits, self.base_register,
-                            src, self.addr, 0)
+                            src, self.addr(instance), 0)
 
 
 class LocalVar(MemoryDesc):
@@ -663,8 +667,14 @@ class LocalVar(MemoryDesc):
         size = int(self.bits // 8)
         owner.stack -= size
         owner.stack &= -size
-        self.addr = owner.stack
+        self.relative_addr = owner.stack
         self.name = name
+
+    def addr(self, instance):
+        if isinstance(instance, SubProgram):
+            return (instance.ebpf.stack & -8) + self.relative_addr
+        else:
+            return self.relative_addr
 
 
 class MemoryMap:
@@ -945,4 +955,4 @@ for i in range(10):
 
 
 class SubProgram:
-    pass
+    stack = 0

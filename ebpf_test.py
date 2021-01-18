@@ -157,6 +157,30 @@ class Tests(TestCase):
             Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
             Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0)])
 
+    def test_local_subprog(self):
+        class Local(EBPF):
+            a = LocalVar(32, False)
+
+        class Sub(SubProgram):
+            b = LocalVar(32, False)
+
+            def program(self):
+                self.b *= 3
+
+        s1 = Sub()
+        s2 = Sub()
+        e = Local(ProgType.XDP, "GPL", subprograms=[s1, s2])
+        e.a = 5
+        s1.b = 3
+        e.r3 = s1.b
+        s2.b = 7
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-4, imm=5),
+            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=3),
+            Instruction(opcode=O.W+O.LD, dst=3, src=10, off=-12, imm=0),
+            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=7)])
+
+
     def test_jump(self):
         e = EBPF()
         e.owners = set(range(11))
