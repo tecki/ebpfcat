@@ -180,6 +180,22 @@ class Tests(TestCase):
             Instruction(opcode=O.W+O.LD, dst=3, src=10, off=-12, imm=0),
             Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=7)])
 
+    def test_lock_add(self):
+        class Local(EBPF):
+            a = LocalVar(32, False)
+
+        e = Local(ProgType.XDP, "GPL")
+        e.a += 3
+        e.m32[e.r1] += e.r1
+        e.a -= 3
+
+        self.assertEqual(e.opcodes, [
+           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
+           Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0),
+           Instruction(opcode=O.XADD+O.W, dst=1, src=1, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=-3),
+           Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0)])
+
 
     def test_jump(self):
         e = EBPF()
