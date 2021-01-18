@@ -3,7 +3,8 @@ from unittest import TestCase, main
 from . import ebpf
 from .arraymap import ArrayMap
 from .ebpf import (
-    AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar)
+    AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
+    SubProgram)
 from .hashmap import HashMap
 from .xdp import XDP
 from .bpf import ProgType, prog_test_run
@@ -534,18 +535,32 @@ class KernelTests(TestCase):
             map = ArrayMap()
             a = map.globalVar()
 
-        e = Global(ProgType.XDP, "GPL")
+        class Sub(SubProgram):
+            b = Global.map.globalVar()
+
+            def program(self):
+                self.b -= -33
+
+        s1 = Sub()
+        s2 = Sub()
+        e = Global(ProgType.XDP, "GPL", subprograms=[s1, s2])
         e.a += 7
+        s1.program()
+        s2.program()
         e.exit()
 
-        fd = e.load()
+        fd, _ = e.load(log_level=1)
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
         e.map.read()
         e.a *= 2
+        s1.b = 3
+        s2.b *= 5
         e.map.write()
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
         e.map.read()
         self.assertEqual(e.a, 21)
+        self.assertEqual(s1.b, 36)
+        self.assertEqual(s2.b, 5 * 33 + 33)
 
     def test_minimal(self):
         class Global(XDP):

@@ -628,10 +628,36 @@ class Memory(Expression):
         return self.address.contains(no)
 
 
-class LocalVar:
+class MemoryDesc:
     def __init__(self, bits=32, signed=False):
         self.bits = bits
         self.signed = signed
+
+    def __get__(self, ebpf, owner):
+        if ebpf is None:
+            return self
+        elif isinstance(ebpf, SubProgram):
+            ebpf = ebpf.ebpf
+        return Memory(ebpf, Memory.bits_to_opcode[self.bits],
+                      ebpf.r[self.base_register] + self.addr,
+                      self.signed)
+
+    def __set__(self, ebpf, value):
+        if isinstance(ebpf, SubProgram):
+            ebpf = ebpf.ebpf
+        bits = Memory.bits_to_opcode[self.bits]
+        if isinstance(value, int):
+            ebpf.append(Opcode.ST + bits, self.base_register, 0,
+                        self.addr, value)
+        else:
+            with value.calculate(None, self.bits == 64, self.signed) \
+                    as (src, _, _):
+                ebpf.append(Opcode.STX + bits, self.base_register,
+                            src, self.addr, 0)
+
+
+class LocalVar(MemoryDesc):
+    base_register = 10
 
     def __set_name__(self, owner, name):
         size = int(self.bits // 8)
@@ -640,23 +666,8 @@ class LocalVar:
         self.addr = owner.stack
         self.name = name
 
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        else:
-            return Memory(instance, Memory.bits_to_opcode[self.bits],
-                          instance.r10 + self.addr, self.signed)
 
-    def __set__(self, instance, value):
-        bits = Memory.bits_to_opcode[self.bits]
-        if isinstance(value, int):
-            instance.append(Opcode.ST + bits, 10, 0, self.addr, value)
-        else:
-            with value.calculate(None, self.bits == 64, self.signed) \
-                    as (src, _, _):
-                instance.append(Opcode.STX + bits, 10, src, self.addr, 0)
-
-class MemoryDesc:
+class MemoryMap:
     def __init__(self, ebpf, bits):
         self.ebpf = ebpf
         self.bits = bits
@@ -794,10 +805,10 @@ class EBPF:
             self.name = name
         self.loaded = False
 
-        self.m8 = MemoryDesc(self, Opcode.B)
-        self.m16 = MemoryDesc(self, Opcode.H)
-        self.m32 = MemoryDesc(self, Opcode.W)
-        self.m64 = MemoryDesc(self, Opcode.DW)
+        self.m8 = MemoryMap(self, Opcode.B)
+        self.m16 = MemoryMap(self, Opcode.H)
+        self.m32 = MemoryMap(self, Opcode.W)
+        self.m64 = MemoryMap(self, Opcode.DW)
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)
@@ -805,6 +816,10 @@ class EBPF:
         self.sw = RegisterArray(self, False, True)
 
         self.owners = {1, 10}
+
+        self.subprograms = subprograms
+        for p in subprograms:
+            p.ebpf = self
 
         for v in self.__class__.__dict__.values():
             if isinstance(v, Map):
@@ -927,3 +942,7 @@ for i in range(10):
 
 for i in range(10):
     setattr(EBPF, f"sw{i}", RegisterDesc(i, "sw"))
+
+
+class SubProgram:
+    pass
