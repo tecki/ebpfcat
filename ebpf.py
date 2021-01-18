@@ -834,12 +834,14 @@ class TemporaryDesc(RegisterDesc):
 class EBPF:
     stack = 0
     name = None
+    license = None
 
-    def __init__(self, prog_type=0, license="", kern_version=0,
-                 name=None):
+    def __init__(self, prog_type=0, license=None, kern_version=0,
+                 name=None, subprograms=()):
         self.opcodes = []
         self.prog_type = prog_type
-        self.license = license
+        if license is not None:
+            self.license = license
         self.kern_version = kern_version
         if name is None:
             if self.name is None:
