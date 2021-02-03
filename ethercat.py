@@ -1,5 +1,6 @@
 from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue
 from enum import Enum
+from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, calcsize
 
@@ -115,24 +116,42 @@ def datasize(args, data):
 
 class Packet:
     MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
+    ETHERNET_HEADER = 14
+    DATAGRAM_HEADER = 10
+    DATAGRAM_TAIL = 2
 
     def __init__(self):
         self.data = []
-        self.size = 2
+        self.size = 14
 
     def append(self, cmd, data, idx, *address):
         self.data.append((cmd, data, idx) + address)
-        self.size += len(data) + 12
+        self.size += len(data) + self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
 
-    def assemble(self):
-        ret = [pack("<H", self.size | 0x1000)]
+    def assemble(self, index):
+        ret = [pack("<HBBiHHH", self.size | 0x1000, 0, 0, index, 1 << 15, 0, 0)]
         for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
-            ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBhIH",
+            ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
                             cmd.value, *dgram,
                             len(data) | ((i < len(self.data)) << 15), 0))
             ret.append(data)
             ret.append(b"\0\0")
-        return b"".join(ret)
+        return b''.join(ret)
+
+    def __str__(self):
+        ret = "\n".join(f"{cmd} {data} {idx} {addr}"
+                        for cmd, data, idx, *addr in self.data)
+        return "Packet([" + ret + "]"
+
+    def disassemble(self, data):
+        pos = 14 + self.DATAGRAM_HEADER
+        ret = []
+        for cmd, bits, *dgram in self.data:
+            ret.append((data[pos-self.DATAGRAM_HEADER],
+                        data[pos:pos+len(bits)],
+                        unpack("<H", data[pos+len(bits):pos+len(bits)+2])[0]))
+            pos += self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
+        return ''.join(f"{i}: {c} {f} {d}\n" for i, (c, d, f) in enumerate(ret))
 
     def full(self):
         return self.size > self.MAXSIZE
@@ -145,27 +164,48 @@ class AsyncBase:
         return ret
 
 
-class EtherCat(Protocol, AsyncBase):
-    async def __init__(self, network):
+class EtherCat(Protocol):
+    def __init__(self, network):
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
         self.send_queue = Queue()
-        self.idle = Event()
+        self.wait_futures = {}
+
+    async def connect(self):
         await get_event_loop().create_datagram_endpoint(
             lambda: self, family=AF_PACKET, proto=0xA488)
 
     async def sendloop(self):
         packet = Packet()
+        dgrams = []
         while True:
             *dgram, future = await self.send_queue.get()
             lastsize = packet.size
             packet.append(*dgram)
-            self.dgrams.append((lastsize + 10, packet.size - 2, future))
+            dgrams.append((lastsize + 10, packet.size - 2, future))
             if packet.full() or self.send_queue.empty():
-                self.idle.clear()
-                self.transport.sendto(packet.assemble(), self.addr)
-                await self.idle.wait()
-                assert len(self.dgrams) == 0
+                data = await self.roundtrip_packet(packet)
+                for start, stop, future in dgrams:
+                    future.set_result(data[start:stop])
+                dgrams = []
                 packet = Packet()
+
+    async def roundtrip_packet(self, packet):
+        index = randint(2000, 1000000000)
+        while index in self.wait_futures:
+            index = randint(2000, 1000000000)
+        self.send_packet(packet.assemble(index))
+        return await self.receive_index(index)
+
+    async def receive_index(self, index):
+        future = Future()
+        self.wait_futures[index] = future
+        try:
+            return await future
+        finally:
+            del self.wait_futures[index]
+
+    def send_packet(self, packet):
+        self.transport.sendto(packet, self.addr)
 
     async def roundtrip(self, cmd, pos, offset, *args, data=None, idx=0):
         future = Future()
@@ -192,25 +232,20 @@ class EtherCat(Protocol, AsyncBase):
     def connection_made(self, transport):
         transport.get_extra_info("socket").bind(self.addr)
         self.transport = transport
-        self.dgrams = []
-        self.idle.set()
         ensure_future(self.sendloop())
 
     def datagram_received(self, data, addr):
-        for start, stop, future in self.dgrams:
-            future.set_result(data[start:stop])
-        self.dgrams = []
-        self.idle.set()
+        index, = unpack("<I", data[4:8])
+        self.wait_futures[index].set_result(data)
 
 
 class Terminal:
-    def __init__(self, ethercat):
-        self.ec = ethercat
-
     async def initialize(self, relative, absolute):
         await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
 
+        await self.set_state(0x11)
+        await self.set_state(1)
 
         async def read_eeprom(no, fmt):
             return unpack(fmt, await self.eeprom_read_one(no))
@@ -269,9 +304,13 @@ class Terminal:
         ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
         return ret
 
+    async def get_state(self):
+        ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
+        return ret
+
     async def to_operational(self):
         """try to bring the terminal to operational state"""
-        order = [1, 2, 4]  #, 8]
+        order = [1, 2, 4, 8]
         ret, error = await self.ec.roundtrip(
                 ECCmd.FPRD, self.position, 0x0130, "H2xH")
         if ret & 0x10:

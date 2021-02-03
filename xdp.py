@@ -121,7 +121,7 @@ class XDP(EBPF):
 
     async def attach(self, network):
         ifindex = if_nametoindex(network)
-        fd = self.load()
+        fd, _ = self.load(log_level=1)
         future = Future()
         transport, proto = await get_event_loop().create_datagram_endpoint(
                 lambda: XDRFD(ifindex, fd, future),
