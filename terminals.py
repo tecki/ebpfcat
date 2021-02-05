@@ -5,6 +5,13 @@ class Generic(EBPFTerminal):
     pass
 
 
+class EL4104(EBPFTerminal):
+    ch1_value = PacketDesc((1, 0), 'H')
+    ch2_value = PacketDesc((1, 2), 'H')
+    ch3_value = PacketDesc((1, 4), 'H')
+    ch4_value = PacketDesc((1, 6), 'H')
+
+
 class EL3164(EBPFTerminal):
     ch1_attrs = PacketDesc((0, 0), 'H')
     ch2_attrs = PacketDesc((0, 4), 'H')

@@ -1,5 +1,5 @@
 from asyncio import ensure_future, gather, sleep
-from struct import pack, unpack, calcsize
+from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import ECCmd, EtherCat, Packet, Terminal
@@ -38,8 +38,14 @@ class TerminalVar(MemoryDesc):
             self.terminal = value.terminal
             self.position = value.desc.position
             instance.__dict__[self.name] = value
-        else:
+        elif instance.sync_group.current_data is None:
             super().__set__(instance.sync_group, value)
+        else:
+            pv = instance.__dict__.get(self.name)
+            data = instance.sync_group.current_data
+            start = self.terminal.bases[self.position[0]] + self.position[1]
+            fmt = "<" + pv.desc.size
+            pack_into(fmt, data, start, value)
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -53,7 +59,7 @@ class TerminalVar(MemoryDesc):
             data = instance.sync_group.current_data
             start = self.terminal.bases[self.position[0]] + self.position[1]
             fmt = "<" + pv.desc.size
-            return unpack(fmt, data[start:start+calcsize(fmt)])[0]
+            return unpack_from(fmt, data, start)[0]
 
     def __set_name__(self, name, owner):
         self.name = name
@@ -203,9 +209,11 @@ class SyncGroup:
 
     async def run(self):
         await gather(*[t.to_operational() for t in self.terminals])
+        self.current_data = self.asm_packet
         while True:
-            self.ec.send_packet(self.asm_packet)
-            self.current_data = await self.ec.receive_index(self.packet_index)
+            self.ec.send_packet(self.current_data)
+            data = await self.ec.receive_index(self.packet_index)
+            self.current_data = bytearray(data)
             for dev in self.devices:
                 dev.update()
 
