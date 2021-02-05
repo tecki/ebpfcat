@@ -112,18 +112,18 @@ class Tests(TestCase):
     def test_memory(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
-        e.m8[e.r5] = 7
-        e.m16[e.r3 + 2] = 3
-        e.m32[7 + e.r8] = 5
-        e.m64[e.r3 - 7] = 2
-        e.m8[e.r5] = e.r1
-        e.m16[e.r3 + 2] = e.r2
-        e.m32[7 + e.r8] = e.r3
-        e.m64[e.r3 - 7] = e.r4
-        e.r2 = e.m8[e.r5]
-        e.r3 = e.m16[e.r3 + 2]
-        e.r4 = e.m32[7 + e.r8]
-        e.r5 = e.m64[e.r3 - 7]
+        e.mB[e.r5] = 7
+        e.mH[e.r3 + 2] = 3
+        e.mI[7 + e.r8] = 5
+        e.mQ[e.r3 - 7] = 2
+        e.mB[e.r5] = e.r1
+        e.mH[e.r3 + 2] = e.r2
+        e.mI[7 + e.r8] = e.r3
+        e.mQ[e.r3 - 7] = e.r4
+        e.r2 = e.mB[e.r5]
+        e.r3 = e.mH[e.r3 + 2]
+        e.r4 = e.mI[7 + e.r8]
+        e.r5 = e.mQ[e.r3 - 7]
         self.assertEqual(e.opcodes,
             [Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
@@ -140,10 +140,10 @@ class Tests(TestCase):
 
     def test_local(self):
         class Local(EBPF):
-            a = LocalVar(8, True)
-            b = LocalVar(16, False)
-            c = LocalVar(32, True)
-            d = LocalVar(64, False)
+            a = LocalVar('b')
+            b = LocalVar('H')
+            c = LocalVar('i')
+            d = LocalVar('Q')
 
         e = Local(ProgType.XDP, "GPL")
         e.a = 5
@@ -159,10 +159,10 @@ class Tests(TestCase):
 
     def test_local_subprog(self):
         class Local(EBPF):
-            a = LocalVar(32, False)
+            a = LocalVar('I')
 
         class Sub(SubProgram):
-            b = LocalVar(32, False)
+            b = LocalVar('I')
 
             def program(self):
                 self.b *= 3
@@ -182,11 +182,11 @@ class Tests(TestCase):
 
     def test_lock_add(self):
         class Local(EBPF):
-            a = LocalVar(32, False)
+            a = LocalVar('I')
 
         e = Local(ProgType.XDP, "GPL")
         e.a += 3
-        e.m32[e.r1] += e.r1
+        e.mI[e.r1] += e.r1
         e.a -= 3
 
         self.assertEqual(e.opcodes, [
@@ -473,11 +473,11 @@ class Tests(TestCase):
         self.maxDiff = None
         e = EBPF()
         e.r3 = e.r1 - (2 * e.r10)
-        e.m16[e.r10 - 10] = 2 * e.r3
-        e.m16[e.r10 + e.r3] = 2 * e.r3
-        e.r5 = e.m16[e.r10 + e.r3]
+        e.mH[e.r10 - 10] = 2 * e.r3
+        e.mH[e.r10 + e.r3] = 2 * e.r3
+        e.r5 = e.mH[e.r10 + e.r3]
         e.r0 = (e.r1 * e.r3) - (e.r10 * e.r5)
-        e.r5 = (e.r1 * e.r3) + e.m32[e.r10 + e.r0]
+        e.r5 = (e.r1 * e.r3) + e.mI[e.r10 + e.r0]
         e.r5 = e.r3 + e.r5
         self.assertEqual(e.opcodes, [
             Instruction(opcode=191, dst=3, src=1, off=0, imm=0),
@@ -538,7 +538,7 @@ class Tests(TestCase):
     def test_xdp(self):
         e = XDP(license="GPL")
         with e.packetSize > 100 as p:
-            e.r3 = p.H[22]
+            e.r3 = p.pH[22]
         with p.Else():
             e.r3 = 77
         self.assertEqual(e.opcodes, [

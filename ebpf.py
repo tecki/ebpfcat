@@ -605,6 +605,10 @@ class IAdd:
 
 class Memory(Expression):
     bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
+    fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
+                     'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW}
+    fmt_to_size = {'I': 4, 'H': 2, 'B': 1, 'Q': 8,
+                   'i': 4, 'h': 2, 'b': 1, 'q': 8}
 
     def __init__(self, ebpf, bits, address, signed=False):
         self.ebpf = ebpf
@@ -641,9 +645,12 @@ class Memory(Expression):
 
 
 class MemoryDesc:
-    def __init__(self, bits=32, signed=False):
-        self.bits = bits
-        self.signed = signed
+    def __init__(self, fmt='I'):
+        self.fmt = fmt
+
+    @property
+    def signed(self):
+        return self.fmt.islower()
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -652,7 +659,7 @@ class MemoryDesc:
             ebpf = instance.ebpf
         else:
             ebpf = instance
-        return Memory(ebpf, Memory.bits_to_opcode[self.bits],
+        return Memory(ebpf, Memory.fmt_to_opcode[self.fmt],
                       ebpf.r[self.base_register] + self.addr(instance),
                       self.signed)
 
@@ -661,7 +668,7 @@ class MemoryDesc:
             ebpf = instance.ebpf
         else:
             ebpf = instance
-        bits = Memory.bits_to_opcode[self.bits]
+        bits = Memory.fmt_to_opcode[self.fmt]
         if isinstance(value, int):
             ebpf.append(Opcode.ST + bits, self.base_register, 0,
                         self.addr(instance), value)
@@ -677,7 +684,7 @@ class MemoryDesc:
             opcode = Opcode.XADD
         else:
             opcode = Opcode.STX
-        with value.calculate(None, self.bits == 64, self.signed) \
+        with value.calculate(None, self.fmt in 'qQ', self.signed) \
                 as (src, _, _):
             ebpf.append(opcode + bits, self.base_register,
                         src, self.addr(instance), 0)
@@ -687,7 +694,7 @@ class LocalVar(MemoryDesc):
     base_register = 10
 
     def __set_name__(self, owner, name):
-        size = int(self.bits // 8)
+        size = Memory.fmt_to_size[self.fmt]
         owner.stack -= size
         owner.stack &= -size
         self.relative_addr = owner.stack
@@ -850,10 +857,10 @@ class EBPF:
             self.name = name
         self.loaded = False
 
-        self.m8 = MemoryMap(self, Opcode.B)
-        self.m16 = MemoryMap(self, Opcode.H)
-        self.m32 = MemoryMap(self, Opcode.W)
-        self.m64 = MemoryMap(self, Opcode.DW)
+        self.mB = MemoryMap(self, Opcode.B)
+        self.mH = MemoryMap(self, Opcode.H)
+        self.mI = MemoryMap(self, Opcode.W)
+        self.mQ = MemoryMap(self, Opcode.DW)
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)

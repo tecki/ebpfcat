@@ -31,7 +31,7 @@ class TerminalVar(MemoryDesc):
     base_register = 9
 
     def __init__(self):
-        super().__init__(bits=16)
+        super().__init__(fmt="H")
 
     def __set__(self, instance, value):
         if isinstance(value, PacketVar):
@@ -146,11 +146,11 @@ class EtherXDP(XDP):
 
     def program(self):
         e = self
-        with e.packetSize > 24 as p, e.If(p.H[12] == 0xA488), \
-                e.If(p.B[16] == 0):
+        with e.packetSize > 24 as p, e.If(p.pH[12] == 0xA488), \
+                e.If(p.pB[16] == 0):
             e.count += 1
             e.r2 = e.get_fd(self.programs)
-            e.r3 = p.W[18]
+            e.r3 = p.pI[18]
             e.call(FuncId.tail_call)
         e.allcount += 1
         e.exit(2)

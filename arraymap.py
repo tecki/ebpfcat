@@ -37,7 +37,7 @@ class ArrayGlobalVarDesc:
             ebpf.__dict__[self.map.name].data[
                     position : position + self.size] = pack(self.fmt, value)
         else:
-            getattr(ebpf, f"m{self.size * 8}")[ebpf.r0 + position] = value
+            getattr(ebpf, f"m{self.fmt}")[ebpf.r0 + position] = value
 
 
 class ArrayMapAccess:
