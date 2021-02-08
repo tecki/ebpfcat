@@ -6,7 +6,7 @@ test:
 docs:
     image: tk0miya/sphinx-html
     script:
-        - make html
+        - sphinx-build -b html -d _build/doctrees . _build/html
         - eval $(ssh-agent)
         - echo "$SSHKEY" | ssh-add -
         - ssh -o UserKnownHostsFile=known_hosts wp86team@exflqr30526 "./doc-prepare ec_$CI_COMMIT_REF_NAME"
