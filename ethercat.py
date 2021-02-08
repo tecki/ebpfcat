@@ -1,3 +1,7 @@
+"""Low-level access to EtherCAT
+
+this modules contains the code to actually talk to EtherCAT terminals.
+"""
 from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue
 from enum import Enum
 from random import randint
@@ -115,6 +119,12 @@ def datasize(args, data):
 
 
 class Packet:
+    """An EtherCAT packet representation
+
+    A packet contains one or more datagrams which are sent as EtherNet
+    packets. We implicitly add a datagram in the front which later serves
+    as an identifier for the packet.
+    """
     MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
     ETHERNET_HEADER = 14
     DATAGRAM_HEADER = 10
@@ -125,10 +135,27 @@ class Packet:
         self.size = 14
 
     def append(self, cmd, data, idx, *address):
+        """Append a datagram to the packet
+
+        :param cmd: EtherCAT command
+        :type cmd: ECCmd
+        :param data: the data in the datagram
+        :param idx: the datagram index, unchanged by terminals
+        
+        Depending on the command, one or two more parameters represent the
+        address, either terminal and offset for position or node addressing,
+        or one value for logical addressing."""
         self.data.append((cmd, data, idx) + address)
         self.size += len(data) + self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
 
     def assemble(self, index):
+        """Assemble the datagrams into a packet
+
+        :param index: an identifier for the packet
+
+        An implicit empty datagram is added at the beginning of the packet
+        that may be used as an identifier for the packet.
+        """
         ret = [pack("<HBBiHHH", self.size | 0x1000, 0, 0, index, 1 << 15, 0, 0)]
         for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
             ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
@@ -154,27 +181,37 @@ class Packet:
         return ''.join(f"{i}: {c} {f} {d}\n" for i, (c, d, f) in enumerate(ret))
 
     def full(self):
-        return self.size > self.MAXSIZE
-
-
-class AsyncBase:
-    async def __new__(cls, *args, **kwargs):
-        ret = super().__new__(cls)
-        await ret.__init__(*args, **kwargs)
-        return ret
+        """Is the data limit reached?"""
+        return self.size > self.MAXSIZE or len(self.data) > 14
 
 
 class EtherCat(Protocol):
+    """The EtherCAT connection
+
+    An object of this class represents one connection to an EtherCAT loop.
+    It keeps the socket, and eventually all data flows through it.
+
+    This class supports both to send individual datagrams and wait for their
+    response, but also to send and receive entire packets. """
     def __init__(self, network):
+        """
+        :param network: the name of the network adapter, like "eth0"
+        """
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
         self.send_queue = Queue()
         self.wait_futures = {}
 
     async def connect(self):
+        """connect to the EtherCAT loop"""
         await get_event_loop().create_datagram_endpoint(
             lambda: self, family=AF_PACKET, proto=0xA488)
 
     async def sendloop(self):
+        """the eternal datagram sending loop
+
+        This method runs while we are connected, takes the datagrams
+        to be sent from a queue, packs them in a packet and ships them
+        out. """
         packet = Packet()
         dgrams = []
         while True:
@@ -190,6 +227,10 @@ class EtherCat(Protocol):
                 packet = Packet()
 
     async def roundtrip_packet(self, packet):
+        """Send a packet and return the response
+
+        Send the `packet` to the loop and wait that it comes back,
+        and return that to the caller. """
         index = randint(2000, 1000000000)
         while index in self.wait_futures:
             index = randint(2000, 1000000000)
@@ -197,6 +238,7 @@ class EtherCat(Protocol):
         return await self.receive_index(index)
 
     async def receive_index(self, index):
+        """Wait for packet identified by `index`"""
         future = Future()
         self.wait_futures[index] = future
         try:
@@ -205,9 +247,24 @@ class EtherCat(Protocol):
             del self.wait_futures[index]
 
     def send_packet(self, packet):
+        """simply send the `packet`, fire-and-forget"""
         self.transport.sendto(packet, self.addr)
 
     async def roundtrip(self, cmd, pos, offset, *args, data=None, idx=0):
+        """Send a datagram and wait for its response
+
+        :param cmd: the EtherCAT command
+        :type cmd: ECCmd
+        :param pos: the positional address of the terminal
+        :param offset: the offset within the terminal
+        :param idx: the EtherCAT datagram index
+        :param data: the data to be sent, or and integer for the number of
+            zeros to be sent as placeholder
+
+        Any additional parameters will be interpreted as follows: every `str` is
+        interpreted as a format for a `struct.pack`, everything else is the data
+        for those format. Upon returning, the received data will be unpacked
+        accoding to the format strings. """
         future = Future()
         fmt = "<" + "".join(arg for arg in args[:-1] if isinstance(arg, str))
         out = pack(fmt, *[arg for arg in args if not isinstance(arg, str)])
@@ -230,17 +287,31 @@ class EtherCat(Protocol):
             return ret
 
     def connection_made(self, transport):
+        """start the send loop once the connection is made"""
         transport.get_extra_info("socket").bind(self.addr)
         self.transport = transport
         ensure_future(self.sendloop())
 
     def datagram_received(self, data, addr):
+        """distribute received packets to the recipients"""
         index, = unpack("<I", data[4:8])
         self.wait_futures[index].set_result(data)
 
 
 class Terminal:
+    """Represent one terminal ("slave") in the loop"""
+
     async def initialize(self, relative, absolute):
+        """Initialize the terminal
+
+        this sets up the connection to the terminal we represent.
+
+        :param relative: the position of the terminal in the loop,
+            a negative number counted down from 0 for the first terminal
+        :param absolute: the number used to identify the terminal henceforth
+
+        This also reads the EEPROM and sets up the sync manager as defined
+        therein. It still leaves the terminal in the init state. """
         await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
 
@@ -300,16 +371,23 @@ class Terminal:
             parse_pdo(self.eeprom[51])
 
     async def set_state(self, state):
+        """try to set the state, and return the new state"""
         await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H", state)
         ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
         return ret
 
     async def get_state(self):
+        """get the current state"""
         ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
         return ret
 
     async def to_operational(self):
-        """try to bring the terminal to operational state"""
+        """try to bring the terminal to operational state
+
+        this tries to push the terminal through its state machine to the
+        operational state. Note that even if it reaches there, the terminal
+        will quickly return to pre-operational if no packets are sent to keep
+        it operational. """
         order = [1, 2, 4, 8]
         ret, error = await self.ec.roundtrip(
                 ECCmd.FPRD, self.position, 0x0130, "H2xH")
@@ -326,23 +404,31 @@ class Terminal:
             while s != state:
                 s, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                                    0x0130, "H2xH")
+                print('State', self.position, s, error)
                 if error != 0:
                     raise RuntimeError(f"AL register {error}")
     
     async def get_error(self):
+        """read the error register"""
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                         0x0134, "H"))[0]
 
     async def read(self, start, *args, **kwargs):
+        """read data from the terminal at offset `start`
+
+        see `EtherCat.roundtrip` for details on more parameters. """
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                         start, *args, **kwargs))
 
     async def write(self, start, *args, **kwargs):
+        """write data from the terminal at offset `start`
+
+        see `EtherCat.roundtrip` for details on more parameters"""
         return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                         start, *args, **kwargs))
 
     async def eeprom_read_one(self, start):
-        """read 8 bytes from the eeprom at start"""
+        """read 8 bytes from the eeprom at `start`"""
         while (await self.read(0x502, "H"))[0] & 0x8000:
             pass
         await self.write(0x502, "HI", 0x100, start)
@@ -373,6 +459,7 @@ class Terminal:
             eeprom[hd] = await get_data(ws * 2)
 
     async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
+        """send data to the mailbox"""
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
             raise RuntimeError("mailbox full, read first")
@@ -385,6 +472,7 @@ class Terminal:
         self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
 
     async def mbx_recv(self):
+        """receive data from the mailbox"""
         status = 0
         while status & 8 == 0:
             status, = await self.read(0x80D, "B")  # always using mailbox 1, OK?
