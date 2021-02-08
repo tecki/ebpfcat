@@ -1,7 +1,20 @@
+"""\
+A collection of devices
+=======================
+
+This modules contains a collection of devices which may be helpful
+in many projects.
+"""
 from .ebpfcat import Device, FastSyncGroup, TerminalVar, DeviceVar
 
 
 class AnalogInput(Device):
+    """Generic analog input device
+
+    This device can be linked to an analog input of a terminal.
+    It will read from there and return the result in its
+    parameter `value`.
+    """
     value = DeviceVar()
     data = TerminalVar()
 
@@ -16,6 +29,11 @@ class AnalogInput(Device):
 
 
 class AnalogOutput(Device):
+    """Generic analog output device
+
+    This device can be linked to an analog output of a terminal.
+    It will write the `value` to that terminal.
+    """
     value = DeviceVar()
     data = TerminalVar()
 

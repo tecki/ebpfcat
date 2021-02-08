@@ -6,6 +6,7 @@ test:
 docs:
     image: tk0miya/sphinx-html
     script:
+        - python3 setup.py install --user
         - sphinx-build -b html -d _build/doctrees . _build/html
         - eval $(ssh-agent)
         - echo "$SSHKEY" | ssh-add -
