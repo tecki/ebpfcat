@@ -1,4 +1,4 @@
 test:
     image: python:3.8-slim
     script:
-        - python3 -m ebpfcat.ebpf_test -v
+        - python3 -m ebpfcat.ebpf_test -v Tests
