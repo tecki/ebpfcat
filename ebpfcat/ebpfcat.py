@@ -5,7 +5,7 @@ from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import ECCmd, EtherCat, Packet, Terminal
 from .ebpf import FuncId, MemoryDesc, SubProgram
-from .xdp import XDP
+from .xdp import XDP, XDPExitCode
 from .hashmap import HashMap
 from .bpf import (
     ProgType, MapType, create_map, update_elem, prog_test_run, lookup_elem)
@@ -165,7 +165,7 @@ class EtherXDP(XDP):
             e.r3 = p.pI[18]
             e.call(FuncId.tail_call)
         e.allcount += 1
-        e.exit(2)
+        e.exit(XDPExitCode.PASS)
 
 
 class FastEtherCat(EtherCat):
@@ -257,7 +257,7 @@ class FastSyncGroup(XDP):
         with self.packetSize >= self.packet.size + 14 as p:
             for dev in self.devices:
                 dev.program()
-        self.exit(3)
+        self.exit(XDPExitCode.TX)
 
     def start(self):
         self.packet = Packet()

@@ -930,7 +930,7 @@ class EBPF:
 
     def exit(self, no=None):
         if no is not None:
-            self.r0 = no
+            self.r0 = no.value
         self.append(Opcode.EXIT, 0, 0, 0, 0)
 
     @contextmanager

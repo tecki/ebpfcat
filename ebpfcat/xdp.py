@@ -1,4 +1,5 @@
 from asyncio import DatagramProtocol, Future, get_event_loop
+from enum import Enum
 from contextlib import contextmanager
 from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
@@ -6,6 +7,14 @@ from struct import pack, unpack
 
 from .ebpf import EBPF, Expression, Memory, Opcode, Comparison
 from .bpf import ProgType
+
+
+class XDPExitCode(Enum):
+    ABORTED = 0
+    DROP = 1
+    PASS = 2
+    TX = 3
+    REDIRECT = 4
 
 
 class XDRFD(DatagramProtocol):
