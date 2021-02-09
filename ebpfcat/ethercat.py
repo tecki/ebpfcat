@@ -398,13 +398,12 @@ class Terminal:
                                                  0x0130, "H2xH")
         pos = order.index(ret)
         s = 0x11 
-        for state in order[pos:]:
+        for state in order[pos+1:]:
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                     0x0120, "H", state)
             while s != state:
                 s, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                                    0x0130, "H2xH")
-                print('State', self.position, s, error)
                 if error != 0:
                     raise RuntimeError(f"AL register {error}")
     

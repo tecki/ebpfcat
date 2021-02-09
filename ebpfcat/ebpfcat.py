@@ -229,11 +229,10 @@ class SyncGroup:
         self.packet = Packet()
         for term in self.terminals:
             term.allocate(self.packet)
-        print(self.packet)
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index)
-        ensure_future(self.run())
+        return ensure_future(self.run())
 
 
 class FastSyncGroup(XDP):
