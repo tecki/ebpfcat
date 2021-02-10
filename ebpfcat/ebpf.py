@@ -265,6 +265,8 @@ class Comparison:
         self.else_origin = None
 
     def __enter__(self):
+        if self.else_origin is None:
+            self.compare(True)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -916,7 +918,6 @@ class EBPF:
         return comp
 
     def If(self, comp):
-        comp.compare(True)
         return comp
 
     def get_fd(self, fd):
