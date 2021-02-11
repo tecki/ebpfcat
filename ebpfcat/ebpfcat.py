@@ -31,43 +31,50 @@ class PacketVar:
 class TerminalVar(MemoryDesc):
     base_register = 9
 
-    def __init__(self):
-        super().__init__(fmt="H")
-
     def __set__(self, instance, value):
         if isinstance(value, PacketVar):
-            self.terminal = value.terminal
-            self.position = value.desc.position
             instance.__dict__[self.name] = value
         elif instance.sync_group.current_data is None:
-            super().__set__(instance.sync_group, value)
+            super().__set__(instance, value)
         else:
-            pv = instance.__dict__.get(self.name)
             data = instance.sync_group.current_data
-            start = self.terminal.bases[self.position[0]] + self.position[1]
-            fmt = "<" + pv.desc.size
-            pack_into(fmt, data, start, value)
+            fmt, start = self._fmt_start(instance)
+            if isinstance(fmt, int):
+                if value:
+                    data[start] |= 1 << fmt
+                else:
+                    data[start] &= ~(1 << fmt)
+            else:
+                pack_into("<" + fmt, data, start, value)
 
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        pv = instance.__dict__.get(self.name)
-        if pv is None:
+        elif self.name not in instance.__dict__:
             return None
         elif instance.sync_group.current_data is None:
-            return super().__get__(instance.sync_group, owner)
+            return super().__get__(instance, owner)
         else:
             data = instance.sync_group.current_data
-            start = self.terminal.bases[self.position[0]] + self.position[1]
-            fmt = "<" + pv.desc.size
-            return unpack_from(fmt, data, start)[0]
+            fmt, start = self._fmt_start(instance)
+            if isinstance(fmt, int):
+                return bool(data[start] & (1 << fmt))
+            else:
+                return unpack_from("<" + fmt, data, start)[0]
 
-    def __set_name__(self, name, owner):
+    def _fmt_start(self, instance):
+        pv = instance.__dict__[self.name]
+        base, offset = pv.desc.position
+        start = pv.terminal.bases[base] + offset
+        return pv.desc.size, start
+
+    def __set_name__(self, owner, name):
         self.name = name
 
     def addr(self, instance):
+        _, start = self._fmt_start(instance)
         # 14 is Ethernet header
-        return self.terminal.bases[self.position[0]] + self.position[1] + 14
+        return start + 14
 
 
 class DeviceVar(ArrayGlobalVarDesc):
