@@ -319,6 +319,9 @@ class Comparison:
     def __invert__(self):
         return InvertComparison(self.ebpf, self)
 
+    def __bool__(self):
+        raise RuntimeError("Use with statement for comparisons")
+
 
 class SimpleComparison(Comparison):
     def __init__(self, ebpf, left, right, opcode):
@@ -429,6 +432,17 @@ class Expression:
 
     def __neg__(self):
         return Negate(self.ebpf, self)
+
+    def __bool__(self):
+        raise RuntimeError("Expression only has a value at execution time")
+
+    def __enter__(self):
+        ret = self != 0
+        self.as_comparison = ret
+        return ret.__enter__()
+
+    def __exit__(self, exc_type, exc, tb):
+        return self.as_comparison.__exit__(exc_type, exc, tb)
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
@@ -547,7 +561,7 @@ class Sum(Binary):
             return super().__sub__(value)
 
 
-class AndExpression(Binary, SimpleComparison):
+class AndExpression(SimpleComparison, Binary):
     def __init__(self, ebpf, left, right):
         Binary.__init__(self, ebpf, left, right, Opcode.AND)
         SimpleComparison.__init__(self, ebpf, left, right, Opcode.JSET)
