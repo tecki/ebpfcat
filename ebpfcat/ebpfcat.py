@@ -31,10 +31,40 @@ class PacketVar:
 class TerminalVar(MemoryDesc):
     base_register = 9
 
+    def __init__(self):
+        pass  # do not call parent to set self.fmt
+
+    def fmt(self):
+        pv = instance.__dict__[self.name]
+        if isinstance(pv.desc.size, int):
+            return "B"
+        else:
+            return pv.desc.size
+
     def __set__(self, instance, value):
         if isinstance(value, PacketVar):
             instance.__dict__[self.name] = value
         elif instance.sync_group.current_data is None:
+            fmt, _ = self._fmt_start(instance)
+            if isinstance(fmt, int):
+                try:
+                    bool(value)
+                except RuntimeError:
+                    e = instance.sync_group
+                    with e.wtmp:
+                        e.wtmp = super().__get__(instance, None)
+                        with value as cond:
+                            e.wtmp |= 1 << fmt
+                        with cond.Else():
+                            e.wtmp &= ~(1 << fmt)
+                        super().__set__(instance, e.wtmp)
+                    return
+                else:
+                    old = super().__get__(instance, None)
+                    if value:
+                        value = old | (1 << fmt)
+                    else:
+                        value = old & ~(1 << fmt)
             super().__set__(instance, value)
         else:
             data = instance.sync_group.current_data
@@ -53,7 +83,11 @@ class TerminalVar(MemoryDesc):
         elif self.name not in instance.__dict__:
             return None
         elif instance.sync_group.current_data is None:
-            return super().__get__(instance, owner)
+            fmt, _ = self._fmt_start(instance)
+            if isinstance(fmt, int):
+                return super().__get__(instance, owner) & (1 << fmt)
+            else:
+                return super().__get__(instance, owner)
         else:
             data = instance.sync_group.current_data
             fmt, start = self._fmt_start(instance)
@@ -71,15 +105,16 @@ class TerminalVar(MemoryDesc):
     def __set_name__(self, owner, name):
         self.name = name
 
-    def addr(self, instance):
-        _, start = self._fmt_start(instance)
-        # 14 is Ethernet header
-        return start + 14
+    def fmt_addr(self, instance):
+        fmt, start = self._fmt_start(instance)
+        if isinstance(fmt, int):
+            fmt = "B"
+        return fmt, start + Packet.ETHERNET_HEADER
 
 
 class DeviceVar(ArrayGlobalVarDesc):
-    def __init__(self, size=4, signed=False):
-        super().__init__(FastSyncGroup.properties, size, signed)
+    def __init__(self, size="I"):
+        super().__init__(FastSyncGroup.properties, size)
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -217,10 +252,12 @@ class SyncGroup:
         self.ec = ec
         self.devices = devices
 
-        self.terminals = set()
+        terminals = set()
         for dev in self.devices:
-            self.terminals.update(dev.get_terminals())
+            terminals.update(dev.get_terminals())
             dev.sync_group = self
+        # sorting is only necessary for test stability
+        self.terminals = sorted(terminals, key=lambda t: t.position)
 
     async def run(self):
         await gather(*[t.to_operational() for t in self.terminals])
@@ -254,13 +291,15 @@ class FastSyncGroup(XDP):
         self.ec = ec
         self.devices = devices
 
-        self.terminals = set()
+        terminals = set()
         for dev in self.devices:
-            self.terminals.update(dev.get_terminals())
+            terminals.update(dev.get_terminals())
             dev.sync_group = self
+        # sorting is only necessary for test stability
+        self.terminals = sorted(terminals, key=lambda t: t.position)
 
     def program(self):
-        with self.packetSize >= self.packet.size + 14 as p:
+        with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as p:
             for dev in self.devices:
                 dev.program()
         self.exit(XDPExitCode.TX)
@@ -273,3 +312,4 @@ class FastSyncGroup(XDP):
         self.ec.send_packet(self.packet.assemble(index))
         self.monitor = ensure_future(gather(*[t.to_operational()
                                               for t in self.terminals]))
+        return self.monitor

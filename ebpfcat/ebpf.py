@@ -661,13 +661,6 @@ class Memory(Expression):
 
 
 class MemoryDesc:
-    def __init__(self, fmt='I'):
-        self.fmt = fmt
-
-    @property
-    def signed(self):
-        return self.fmt.islower()
-
     def __get__(self, instance, owner):
         if instance is None:
             return self
@@ -675,16 +668,17 @@ class MemoryDesc:
             ebpf = instance.ebpf
         else:
             ebpf = instance
-        return Memory(ebpf, Memory.fmt_to_opcode[self.fmt],
-                      ebpf.r[self.base_register] + self.addr(instance),
-                      self.signed)
+        fmt, addr = self.fmt_addr(instance)
+        return Memory(ebpf, Memory.fmt_to_opcode[fmt],
+                      ebpf.r[self.base_register] + addr, fmt.islower())
 
     def __set__(self, instance, value):
         if isinstance(instance, SubProgram):
             ebpf = instance.ebpf
         else:
             ebpf = instance
-        bits = Memory.fmt_to_opcode[self.fmt]
+        fmt, addr = self.fmt_addr(instance)
+        bits = Memory.fmt_to_opcode[fmt]
         if isinstance(value, int):
             ebpf.append(Opcode.ST + bits, self.base_register, 0,
                         self.addr(instance), value)
@@ -695,19 +689,20 @@ class MemoryDesc:
                 with ebpf.get_free_register(None) as src:
                     ebpf.r[src] = value
                     ebpf.append(Opcode.XADD + bits, self.base_register,
-                                src, self.addr(instance), 0)
+                                src, addr, 0)
                 return
             opcode = Opcode.XADD
         else:
             opcode = Opcode.STX
-        with value.calculate(None, self.fmt in 'qQ', self.signed) \
-                as (src, _, _):
-            ebpf.append(opcode + bits, self.base_register,
-                        src, self.addr(instance), 0)
+        with value.calculate(None, fmt in 'qQ', fmt.islower()) as (src, _, _):
+            ebpf.append(opcode + bits, self.base_register, src, addr, 0)
 
 
 class LocalVar(MemoryDesc):
     base_register = 10
+
+    def __init__(self, fmt='I'):
+        self.fmt = fmt
 
     def __set_name__(self, owner, name):
         size = Memory.fmt_to_size[self.fmt]
@@ -716,11 +711,11 @@ class LocalVar(MemoryDesc):
         self.relative_addr = owner.stack
         self.name = name
 
-    def addr(self, instance):
+    def fmt_addr(self, instance):
         if isinstance(instance, SubProgram):
-            return (instance.ebpf.stack & -8) + self.relative_addr
+            return self.fmt, (instance.ebpf.stack & -8) + self.relative_addr
         else:
-            return self.relative_addr
+            return self.fmt, self.relative_addr
 
 
 class MemoryMap:

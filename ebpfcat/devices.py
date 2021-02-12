@@ -84,3 +84,33 @@ class DigitalOutput(Device):
 
     def update(self):
         self.data = self.value
+
+
+class PWM(Device):
+    """Generic digital output device
+
+    This device can be linked to an analog output of a terminal.
+    It will write the `value` to that terminal.
+    """
+    seed = DeviceVar("I")
+    value = DeviceVar("I")
+    data = TerminalVar()
+
+    def __init__(self, data):
+        self.data = data
+
+    def program(self):
+        self.seed = self.seed * 0xcf019d85 + 1
+        self.data = self.value > self.seed
+
+    def update(self):
+        self.data = self.value
+
+
+class Counter(Device):
+    """A fake device counting the loops"""
+
+    count = DeviceVar("I")
+
+    def program(self):
+        self.count += 1

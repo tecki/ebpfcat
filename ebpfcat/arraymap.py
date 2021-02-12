@@ -1,17 +1,13 @@
-from struct import pack, unpack
+from struct import pack, unpack, calcsize
 
 from .ebpf import FuncId, Map, Memory, Opcode, SubProgram
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
 class ArrayGlobalVarDesc:
-    def __init__(self, map, size, signed):
+    def __init__(self, map, size):
         self.map = map
-        self.signed = signed
-        self.size = size
-        self.fmt = {1: "B", 2: "H", 4: "I", 8: "Q"}[size]
-        if signed:
-            self.fmt = self.fmt.lower()
+        self.fmt = size
 
     def __get__(self, ebpf, owner):
         if ebpf is None:
@@ -21,10 +17,10 @@ class ArrayGlobalVarDesc:
             ebpf = ebpf.ebpf
         if ebpf.loaded:
             data = ebpf.__dict__[self.map.name].data[
-                    position : position+self.size]
+                    position : position+calcsize(self.fmt)]
             return unpack(self.fmt, data)[0]
-        return Memory(ebpf, Memory.bits_to_opcode[self.size * 8],
-                      ebpf.r0 + position, self.signed)
+        return Memory(ebpf, Memory.fmt_to_opcode[self.fmt],
+                      ebpf.r0 + position, self.fmt.islower())
 
     def __set_name__(self, owner, name):
         self.name = name
@@ -35,7 +31,7 @@ class ArrayGlobalVarDesc:
             ebpf = ebpf.ebpf
         if ebpf.loaded:
             ebpf.__dict__[self.map.name].data[
-                    position : position + self.size] = pack(self.fmt, value)
+               position : position+calcsize(self.fmt)] = pack(self.fmt, value)
         else:
             getattr(ebpf, f"m{self.fmt}")[ebpf.r0 + position] = value
 
@@ -62,7 +58,8 @@ class ArrayMap(Map):
             if not isinstance(v, ArrayGlobalVarDesc):
                 continue
             prog.__dict__[k] = position
-            position = (position + 2 * v.size - 1) & -v.size
+            size = calcsize(v.fmt)
+            position = (position + 2 * size - 1) & -size
         setattr(owner, self.name, position)
 
     def __set_name__(self, owner, name):
@@ -74,6 +71,8 @@ class ArrayMap(Map):
         for prog in ebpf.subprograms:
             self.add_program(ebpf, prog)
         size = getattr(ebpf, self.name)
+        if not size:  # nobody is actually using the map
+            return
         fd = create_map(MapType.ARRAY, 4, size, 1)
         setattr(ebpf, self.name, ArrayMapAccess(fd, size))
         with ebpf.save_registers(list(range(6))), ebpf.get_stack(4) as stack:
