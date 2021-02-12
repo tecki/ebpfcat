@@ -1,39 +1,39 @@
-from struct import pack, unpack, calcsize
+from struct import pack_into, unpack_from, calcsize
 
-from .ebpf import FuncId, Map, Memory, Opcode, SubProgram
+from .ebpf import FuncId, Map, Memory, MemoryDesc, Opcode
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
-class ArrayGlobalVarDesc:
-    def __init__(self, map, size):
-        self.map = map
-        self.fmt = size
+class ArrayGlobalVarDesc(MemoryDesc):
+    base_register = 0
 
-    def __get__(self, ebpf, owner):
-        if ebpf is None:
-            return self
-        position = ebpf.__dict__[self.name]
-        if isinstance(ebpf, SubProgram):
-            ebpf = ebpf.ebpf
-        if ebpf.loaded:
-            data = ebpf.__dict__[self.map.name].data[
-                    position : position+calcsize(self.fmt)]
-            return unpack(self.fmt, data)[0]
-        return Memory(ebpf, Memory.fmt_to_opcode[self.fmt],
-                      ebpf.r0 + position, self.fmt.islower())
+    def __init__(self, map, fmt):
+        self.map = map
+        self.fmt = fmt
+
+    def fmt_addr(self, ebpf):
+        return self.fmt, ebpf.__dict__[self.name]
 
     def __set_name__(self, owner, name):
         self.name = name
 
-    def __set__(self, ebpf, value):
-        position = ebpf.__dict__[self.name]
-        if isinstance(ebpf, SubProgram):
-            ebpf = ebpf.ebpf
-        if ebpf.loaded:
-            ebpf.__dict__[self.map.name].data[
-               position : position+calcsize(self.fmt)] = pack(self.fmt, value)
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        fmt, addr = self.fmt_addr(instance)
+        if instance.ebpf.loaded:
+            data = instance.ebpf.__dict__[self.map.name].data
+            return unpack_from(fmt, data, addr)[0]
         else:
-            getattr(ebpf, f"m{self.fmt}")[ebpf.r0 + position] = value
+            return super().__get__(instance, owner)
+
+    def __set__(self, instance, value):
+        fmt, addr = self.fmt_addr(instance)
+        if instance.ebpf.loaded:
+            pack_into(fmt, instance.ebpf.__dict__[self.map.name].data,
+                      addr, value)
+        else:
+            super().__set__(instance, value)
 
 
 class ArrayMapAccess:
@@ -49,8 +49,8 @@ class ArrayMapAccess:
 
 
 class ArrayMap(Map):
-    def globalVar(self, signed=False, size=4):
-        return ArrayGlobalVarDesc(self, size, signed)
+    def globalVar(self, fmt="I"):
+        return ArrayGlobalVarDesc(self, fmt)
 
     def add_program(self, owner, prog):
         position = getattr(owner, self.name)

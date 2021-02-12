@@ -664,24 +664,18 @@ class MemoryDesc:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        elif isinstance(instance, SubProgram):
-            ebpf = instance.ebpf
-        else:
-            ebpf = instance
         fmt, addr = self.fmt_addr(instance)
-        return Memory(ebpf, Memory.fmt_to_opcode[fmt],
-                      ebpf.r[self.base_register] + addr, fmt.islower())
+        return Memory(instance.ebpf, Memory.fmt_to_opcode[fmt],
+                      instance.ebpf.r[self.base_register] + addr,
+                      fmt.islower())
 
     def __set__(self, instance, value):
-        if isinstance(instance, SubProgram):
-            ebpf = instance.ebpf
-        else:
-            ebpf = instance
+        ebpf = instance.ebpf
         fmt, addr = self.fmt_addr(instance)
         bits = Memory.fmt_to_opcode[fmt]
         if isinstance(value, int):
             ebpf.append(Opcode.ST + bits, self.base_register, 0,
-                        self.addr(instance), value)
+                        addr, value)
             return
         elif isinstance(value, IAdd):
             value = value.value
@@ -986,6 +980,10 @@ class EBPF:
         self.stack = (self.stack - size) & -size
         yield self.stack
         self.stack = oldstack
+
+    @property
+    def ebpf(self):
+        return self
 
     tmp = TemporaryDesc(None, "r")
     stmp = TemporaryDesc(None, "sr")
