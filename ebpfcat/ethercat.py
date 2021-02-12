@@ -26,34 +26,41 @@ class ECCmd(Enum):
    FRMW = 14  # Configured Read Multiple Write
 
 
-class ECDatatype(Enum):
-   BOOLEAN = 0x1
-   INTEGER8 = 0x2
-   INTEGER16 = 0x3
-   INTEGER32 = 0x4
-   UNSIGNED8 = 0x5
-   UNSIGNED16 = 0x6
-   UNSIGNED32 = 0x7
-   REAL32 = 0x8
-   VISIBLE_STRING = 0x9
-   OCTET_STRING = 0xA
-   UNICODE_STRING = 0xB
-   TIME_OF_DAY = 0xC
-   TIME_DIFFERENCE = 0xD
-   DOMAIN = 0xF
-   INTEGER24 = 0x10
-   REAL64 = 0x11
-   INTEGER64 = 0x15
-   UNSIGNED24 = 0x16
-   UNSIGNED64 = 0x1B
-   BIT1 = 0x30
-   BIT2 = 0x31
-   BIT3 = 0x32
-   BIT4 = 0x33
-   BIT5 = 0x34
-   BIT6 = 0x35
-   BIT7 = 0x36
-   BIT8 = 0x37
+class ECDataType(Enum):
+   def __new__(cls, value, fmt):
+       obj = object.__new__(cls)
+       obj._value_ = value
+       obj.fmt = fmt
+       return obj
+   BOOLEAN = 0x1, "?"
+   INTEGER8 = 0x2, "b"
+   INTEGER16 = 0x3, "h"
+   INTEGER32 = 0x4, "i"
+   UNSIGNED8 = 0x5, "B"
+   UNSIGNED16 = 0x6, "H"
+   UNSIGNED32 = 0x7, "I"
+   REAL32 = 0x8, "f"
+   VISIBLE_STRING = 0x9, None
+   OCTET_STRING = 0xA, None
+   UNICODE_STRING = 0xB, None
+   TIME_OF_DAY = 0xC, "I"
+   TIME_DIFFERENCE = 0xD, "i"
+   DOMAIN = 0xF, "i"
+   INTEGER24 = 0x10, "i"
+   REAL64 = 0x11, "d"
+   INTEGER64 = 0x15, "q"
+   UNSIGNED24 = 0x16, "i"
+   UNSIGNED64 = 0x1B, "Q"
+   BIT1 = 0x30, "B"
+   BIT2 = 0x31, "B"
+   BIT3 = 0x32, "B"
+   BIT4 = 0x33, "B"
+   BIT5 = 0x34, "B"
+   BIT6 = 0x35, "B"
+   BIT7 = 0x36, "B"
+   BIT8 = 0x37, "B"
+   UNKNOWN1 = 2048, None
+   UNKNOWN2 = 2049, None
 
 class MBXType(Enum):
    ERR = 0  # Error
@@ -102,11 +109,23 @@ class ODCmd(Enum):
 
 
 class ObjectDescription:
-    pass
+    def __init__(self, terminal):
+        self.terminal = terminal
 
 
 class ObjectEntry:
-    pass
+    def __init__(self, desc):
+        self.desc = desc
+
+    async def read(self):
+        ret = await self.desc.terminal.sdo_read(self.desc.index, self.valueInfo)
+        if self.dataType in (ECDataType.VISIBLE_STRING,
+                             ECDataType.UNICODE_STRING):
+            return ret.decode("utf8")
+        elif self.dataType.fmt is None:
+            return ret
+        else:
+            return unpack("<" + self.dataType.fmt, ret)[0]
 
 
 def datasize(args, data):
@@ -550,9 +569,9 @@ class Terminal:
         for index in idxes:
             data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OD_REQ,
                                           "H", index)
-            dtype, oc, ms = unpack("<HBB", data[:4])
+            dtype, ms, oc = unpack("<HBB", data[:4])
 
-            od = ObjectDescription()
+            od = ObjectDescription(self)
             od.index = index
             od.dataType = dtype  # ECDataType(dtype)
             od.maxSub = ms
@@ -561,16 +580,16 @@ class Terminal:
 
         for od in ret:
             od.entries = {}
-            for i in range(od.maxSub):
-                try:
-                    data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
-                                                  "HBB", od.index, i, 7)
-                except RuntimeError:
-                    # many OEs just do not have more description
-                    continue
-                oe = ObjectEntry()
-                oe.valueInfo, oe.dataType, oe.bitLength, oe.objectAccess = \
+            for i in range(1 if od.maxSub > 0 else 0, od.maxSub + 1):
+                data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
+                                              "HBB", od.index, i, 7)
+                oe = ObjectEntry(od)
+                oe.valueInfo, dataType, oe.bitLength, oe.objectAccess = \
                         unpack("<HHHH", data[:8])
+                if dataType == 0:
+                    continue
+                assert i == oe.valueInfo
+                oe.dataType = ECDataType(dataType)
                 oe.name = data[8:].decode("utf8")
                 od.entries[i] = oe
         return ret
@@ -596,14 +615,12 @@ async def main():
     await tout.to_operational(),
     odlist = await tin.read_ODlist()
     for o in odlist:
-        print(o.index, o.name)
+        print(hex(o.index), o.name, o.maxSub)
         for i, p in o.entries.items():
-            print("   ", i, p.name, p.valueInfo, p.dataType, p.bitLength, p.objectAccess)
-            try:
-                sdo = await tin.sdo_read(o.index, i)
-                print("   ", sdo)
-            except RuntimeError as e:
-                print("   ", e)
+            print("   ", i, p.name, "|", p.dataType, p.bitLength, p.objectAccess)
+            #sdo = await tin.sdo_read(o.index, i)
+            sdo = await p.read()
+            print("   ", sdo)
     print("tdigi")
     print("bla", lookup_elem(map_fd, b"AAAA", 4))
     await tdigi.to_operational(),
