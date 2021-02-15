@@ -80,6 +80,6 @@ class ArrayMap(Map):
             ebpf.r1 = ebpf.get_fd(fd)
             ebpf.r2 = ebpf.r10 + stack
             ebpf.call(FuncId.map_lookup_elem)
-            with ebpf.If(ebpf.r0 == 0):
+            with ebpf.r0 == 0:
                 ebpf.exit()
         ebpf.owners.add(0)

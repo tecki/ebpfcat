@@ -920,9 +920,6 @@ class EBPF:
         self.opcodes.append(None)
         return comp
 
-    def If(self, comp):
-        return comp
-
     def get_fd(self, fd):
         return PseudoFd(self, fd)
 

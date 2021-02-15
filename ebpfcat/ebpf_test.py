@@ -285,19 +285,6 @@ class Tests(TestCase):
              Instruction(opcode=0x4d, dst=1, src=2, off=1, imm=0),
              Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1)])
 
-    def test_old_with(self):
-        e = EBPF()
-        e.owners = set(range(11))
-        with e.If(e.r2 > 3) as cond:
-            e.r2 = 5
-        with cond.Else():
-            e.r6 = 7
-        self.assertEqual(e.opcodes,
-            [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
-             Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
-             Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=6, src=0, off=0, imm=7)])
-
     def test_with(self):
         e = EBPF()
         e.owners = set(range(11))
@@ -458,7 +445,7 @@ class Tests(TestCase):
 
     def test_with_data(self):
         e = EBPF()
-        with e.If(e.r1 > 0) as cond:
+        with e.r1 > 0 as cond:
             e.r2 = 3
             e.r3 = 5
         with cond.Else():

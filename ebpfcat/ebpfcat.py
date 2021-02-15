@@ -200,8 +200,7 @@ class EtherXDP(XDP):
 
     def program(self):
         e = self
-        with e.packetSize > 24 as p, e.If(p.pH[12] == 0xA488), \
-                e.If(p.pB[16] == 0):
+        with e.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
             e.count += 1
             e.r2 = e.get_fd(self.programs)
             e.r3 = p.pI[18]
