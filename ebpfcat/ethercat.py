@@ -81,15 +81,6 @@ class CoECmd(Enum):
    RXPDO_RR = 7
    SDOINFO = 8
 
-class SDOCmd(Enum):
-   DOWN_INIT = 0x21
-   DOWN_EXP = 0x23
-   DOWN_INIT_CA = 0x31
-   UP_REQ = 0x40
-   UP_REQ_CA = 0x50
-   SEG_UP_REQ = 0x60
-   ABORT = 0x80
-
 class ODCmd(Enum):
    LIST_REQ = 1
    LIST_RES = 2
@@ -112,6 +103,9 @@ class ObjectDescription:
     def __init__(self, terminal):
         self.terminal = terminal
 
+    def __getitem__(self, idx):
+        return self.entries[idx]
+
 
 class ObjectEntry:
     def __init__(self, desc):
@@ -126,6 +120,18 @@ class ObjectEntry:
             return ret
         else:
             return unpack("<" + self.dataType.fmt, ret)[0]
+
+    async def write(self, data):
+        if self.dataType in (ECDataType.VISIBLE_STRING,
+                             ECDataType.UNICODE_STRING):
+            d = data.encode("utf8")
+        elif self.dataType.fmt is None:
+            d = data
+        else:
+            d = pack("<" + self.dataType.fmt, data)
+
+        return await self.desc.terminal.sdo_write(d, self.desc.index,
+                                                  self.valueInfo)
 
 
 def datasize(args, data):
@@ -160,7 +166,7 @@ class Packet:
         :type cmd: ECCmd
         :param data: the data in the datagram
         :param idx: the datagram index, unchanged by terminals
-        
+
         Depending on the command, one or two more parameters represent the
         address, either terminal and offset for position or node addressing,
         or one value for logical addressing."""
@@ -416,7 +422,7 @@ class Terminal:
             ret, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                                  0x0130, "H2xH")
         pos = order.index(ret)
-        s = 0x11 
+        s = 0x11
         for state in order[pos+1:]:
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                     0x0120, "H", state)
@@ -425,7 +431,7 @@ class Terminal:
                                                    0x0130, "H2xH")
                 if error != 0:
                     raise RuntimeError(f"AL register {error}")
-    
+
     async def get_error(self):
         """read the error register"""
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
@@ -560,11 +566,66 @@ class Terminal:
             raise RuntimeError(f"expected {size} bytes, got {retsize}")
         return b"".join(ret)
 
+    async def sdo_write(self, data, index, subindex=None):
+        if len(data) <= 4 and subindex is not None:
+            await self.mbx_send(
+                    MBXType.COE, "HBHB", CoECmd.SDOREQ.value << 12,
+                    ODCmd.DOWN_EXP.value | ((4 - len(data)) << 2),
+                    index, subindex, data=data)
+            type, data = await self.mbx_recv()
+            if type is not MBXType.COE:
+                raise RuntimeError(f"expected CoE, got {type}")
+            coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
+            if idx != index or subindex != subidx:
+                raise RuntimeError(f"requested index {index}, got {idx}")
+            if coecmd >> 12 != CoECmd.SDORES.value:
+                raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
+        else:
+            stop = min(len(data), self.mbx_out_sz - 16)
+            await self.mbx_send(
+                    MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                    ODCmd.DOWN_INIT_CA.value if subindex is None
+                    else ODCmd.DOWN_INIT.value,
+                    index, 1 if subindex is None else subindex,
+                    data=data[:stop])
+            type, data = await self.mbx_recv()
+            if type is not MBXType.COE:
+                raise RuntimeError(f"expected CoE, got {type}")
+            coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
+            if coecmd >> 12 != CoECmd.SDORES.value:
+                raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
+            if idx != index or subindex != subidx:
+                raise RuntimeError(f"requested index {index}, got {idx}")
+            toggle = 0
+            while stop < len(data):
+                start = stop
+                stop = min(len(data), start + self.mbx_out_sz - 9)
+                if stop == len(data):
+                    if stop - start < 7:
+                        cmd = 1 + (7-stop+start << 1)
+                        d = data[start:stop] + b"\0" * (7 - stop + start)
+                    else:
+                        cmd = 1
+                        d = data[start:stop]
+                    await self.mbx_send(
+                            MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                            cmd + toggle, index,
+                            1 if subindex is None else subindex, data=d)
+                    type, data = await self.mbx_recv()
+                    if type is not MBXType.COE:
+                        raise RuntimeError(f"expected CoE, got {type}")
+                    coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
+                    if coecmd >> 12 != CoECmd.SDORES.value:
+                        raise RuntimeError(f"expected CoE SDORES")
+                    if idx != index or subindex != subidx:
+                        raise RuntimeError(f"requested index {index}")
+                toggle ^= 0x10
+
     async def read_ODlist(self):
         idxes = await self.coe_request(CoECmd.SDOINFO, ODCmd.LIST_REQ, "H", 1)
         idxes = unpack("<" + "H" * int(len(idxes) // 2), idxes)
 
-        ret = []
+        ret = {}
 
         for index in idxes:
             data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OD_REQ,
@@ -576,9 +637,9 @@ class Terminal:
             od.dataType = dtype  # ECDataType(dtype)
             od.maxSub = ms
             od.name = data[4:].decode("utf8")
-            ret.append(od)
+            ret[od.index] = od
 
-        for od in ret:
+        for od in ret.values():
             od.entries = {}
             for i in range(1 if od.maxSub > 0 else 0, od.maxSub + 1):
                 data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
