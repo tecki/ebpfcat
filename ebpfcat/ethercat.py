@@ -116,7 +116,7 @@ class ObjectEntry:
         if self.dataType in (ECDataType.VISIBLE_STRING,
                              ECDataType.UNICODE_STRING):
             return ret.decode("utf8")
-        elif self.dataType.fmt is None:
+        elif isinstance(self.dataType, int) or self.dataType.fmt is None:
             return ret
         else:
             return unpack("<" + self.dataType.fmt, ret)[0]
@@ -125,7 +125,7 @@ class ObjectEntry:
         if self.dataType in (ECDataType.VISIBLE_STRING,
                              ECDataType.UNICODE_STRING):
             d = data.encode("utf8")
-        elif self.dataType.fmt is None:
+        elif isinstance(self.dataType, int) or self.dataType.fmt is None:
             d = data
         else:
             d = pack("<" + self.dataType.fmt, data)
@@ -569,9 +569,9 @@ class Terminal:
     async def sdo_write(self, data, index, subindex=None):
         if len(data) <= 4 and subindex is not None:
             await self.mbx_send(
-                    MBXType.COE, "HBHB", CoECmd.SDOREQ.value << 12,
-                    ODCmd.DOWN_EXP.value | ((4 - len(data)) << 2),
-                    index, subindex, data=data)
+                    MBXType.COE, "HBHB4s", CoECmd.SDOREQ.value << 12,
+                    ODCmd.DOWN_EXP.value | (((4 - len(data)) << 2) & 0xc),
+                    index, subindex, data)
             type, data = await self.mbx_recv()
             if type is not MBXType.COE:
                 raise RuntimeError(f"expected CoE, got {type}")
