@@ -32,3 +32,23 @@ class EK1814(EBPFTerminal):
     ch6 = PacketDesc((1, 0), 1)
     ch7 = PacketDesc((1, 0), 2)
     ch8 = PacketDesc((1, 0), 3)
+
+
+class EL6022(EBPFTerminal):
+    class Channel(Struct):
+        transmit_accept = PacketDesc((0, 0), 0)
+        receive_request = PacketDesc((0, 0), 1)
+        init_accept = PacketDesc((0, 0), 2)
+        status = PacketDesc((0, 0), "H")
+        in_string = PacketDesc((0, 1), "23p")
+        wkc1 = PacketDesc((0, 24), "H")
+
+        transmit_request = PacketDesc((1, 0), 0)
+        receive_accept = PacketDesc((1, 0), 1)
+        init_request = PacketDesc((1, 0), 2)
+        control = PacketDesc((1, 0), "H")
+        out_string = PacketDesc((1, 1), "23p")
+        wkc2 = PacketDesc((0, 24), "H")
+
+    channel1 = Channel(0, 0)
+    channel2 = Channel(24, 24)

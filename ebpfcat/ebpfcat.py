@@ -321,6 +321,7 @@ class SyncGroup(SyncGroupBase):
             self.current_data = bytearray(data)
             for dev in self.devices:
                 dev.update()
+            await sleep(0)
 
     def start(self):
         self.allocate()
