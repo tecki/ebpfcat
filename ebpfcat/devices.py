@@ -114,3 +114,18 @@ class Counter(Device):
 
     def program(self):
         self.count += 1
+
+    def update(self):
+        self.count += 1
+
+
+class Dummy(Device):
+    """A placeholder device assuring a terminal is initialized"""
+    def __init__(self, terminals):
+        self.terminals = terminals
+
+    def get_terminals(self):
+        return set(self.terminals)
+
+    def program(self):
+        pass
