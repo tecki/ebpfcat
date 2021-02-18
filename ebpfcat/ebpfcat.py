@@ -19,97 +19,142 @@ class PacketDesc:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        return PacketVar(instance, self)
-
-
-class PacketVar:
-    def __init__(self, terminal, desc):
-        self.terminal = terminal
-        self.desc = desc
-
-
-class TerminalVar(MemoryDesc):
-    base_register = 9
-
-    def __init__(self):
-        pass  # do not call parent to set self.fmt
-
-    def fmt(self):
-        pv = instance.__dict__[self.name]
-        if isinstance(pv.desc.size, int):
-            return "B"
+        offset = instance.position_offset[self.position[0]]
+        if isinstance(instance, Struct):
+            terminal = instance.terminal
+            device = instance.device
         else:
-            return pv.desc.size
+            terminal = instance
+            device = None
+        ret = PacketVar(terminal, (self.position[0],
+                                   self.position[1] + offset), self.size)
+        if device is None:
+            return ret
+        else:
+            return ret.get(device)
 
     def __set__(self, instance, value):
-        if isinstance(value, PacketVar):
-            instance.__dict__[self.name] = value
-        elif instance.sync_group.current_data is None:
-            fmt, _ = self._fmt_start(instance)
-            if isinstance(fmt, int):
+        offset = instance.position_offset[self.position[0]]
+        ret = PacketVar(instance.terminal,
+                        (self.position[0], self.position[1] + offset),
+                        self.size)
+        return ret.set(instance.device, value)
+
+
+class PacketVar(MemoryDesc):
+    base_register = 9
+
+    def fmt(self):
+        if isinstance(self.size, int):
+            return "B"
+        else:
+            return self.size
+
+    def __init__(self, terminal, position, size):
+        self.terminal = terminal
+        self.position = position
+        self.size = size
+
+    def set(self, device, value):
+        if device.sync_group.current_data is None:
+            if isinstance(self.size, int):
                 try:
                     bool(value)
                 except RuntimeError:
-                    e = instance.sync_group
+                    e = device.sync_group
                     with e.wtmp:
-                        e.wtmp = super().__get__(instance, None)
+                        e.wtmp = super().__get__(device, None)
                         with value as cond:
-                            e.wtmp |= 1 << fmt
+                            e.wtmp |= 1 << self.size
                         with cond.Else():
-                            e.wtmp &= ~(1 << fmt)
-                        super().__set__(instance, e.wtmp)
+                            e.wtmp &= ~(1 << self.size)
+                        super().__set__(device, e.wtmp)
                     return
                 else:
-                    old = super().__get__(instance, None)
+                    old = super().__get__(device, None)
                     if value:
-                        value = old | (1 << fmt)
+                        value = old | (1 << self.size)
                     else:
-                        value = old & ~(1 << fmt)
-            super().__set__(instance, value)
+                        value = old & ~(1 << self.size)
+            super().__set__(device, value)
         else:
-            data = instance.sync_group.current_data
-            fmt, start = self._fmt_start(instance)
-            if isinstance(fmt, int):
+            data = device.sync_group.current_data
+            start = self._start(device)
+            if isinstance(self.size, int):
                 if value:
-                    data[start] |= 1 << fmt
+                    data[start] |= 1 << self.size
                 else:
-                    data[start] &= ~(1 << fmt)
+                    data[start] &= ~(1 << self.size)
             else:
-                pack_into("<" + fmt, data, start, value)
+                pack_into("<" + self.size, data, start, value)
+
+    def get(self, device):
+        if device.sync_group.current_data is None:
+            if isinstance(self.size, int):
+                return super().__get__(device, None) & (1 << self.size)
+            else:
+                return super().__get__(device, None)
+        else:
+            data = device.sync_group.current_data
+            start = self._start(device)
+            if isinstance(self.size, int):
+                return bool(data[start] & (1 << self.size))
+            else:
+                return unpack_from("<" + self.size, data, start)[0]
+
+    def _start(self, device):
+        base, offset = self.position
+        return device.sync_group.terminals[self.terminal][base] + offset
+
+    def fmt_addr(self, device):
+        return ("B" if isinstance(self.size, int) else self.size,
+                self._start(device) + Packet.ETHERNET_HEADER)
+
+
+class Struct:
+    device = None
+
+    def __new__(cls, *args):
+        return StructDesc(cls, *args)
+
+
+class StructDesc:
+    def __init__(self, struct, *position_offset):
+        self.struct = struct
+        self.position_offset = position_offset
 
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        elif self.name not in instance.__dict__:
-            return None
-        elif instance.sync_group.current_data is None:
-            fmt, _ = self._fmt_start(instance)
-            if isinstance(fmt, int):
-                return super().__get__(instance, owner) & (1 << fmt)
-            else:
-                return super().__get__(instance, owner)
-        else:
-            data = instance.sync_group.current_data
-            fmt, start = self._fmt_start(instance)
-            if isinstance(fmt, int):
-                return bool(data[start] & (1 << fmt))
-            else:
-                return unpack_from("<" + fmt, data, start)[0]
+        ret = object.__new__(self.struct)
+        ret.position_offset = self.position_offset
+        ret.terminal = instance
+        return ret
 
-    def _fmt_start(self, instance):
-        pv = instance.__dict__[self.name]
-        base, offset = pv.desc.position
-        start = pv.terminal.bases[base] + offset
-        return pv.desc.size, start
+
+class TerminalVar:
+    def __set__(self, instance, value):
+        if isinstance(value, PacketVar):
+            instance.__dict__[self.name] = value
+        elif isinstance(value, Struct):
+            instance.__dict__[self.name] = value
+            value.device = instance
+        else:
+            return instance.__dict__[self.name].set(instance, value)
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        var = instance.__dict__.get(self.name)
+        if var is None:
+            return None
+        elif isinstance(var, Struct):
+            return var
+        else:
+            return instance.__dict__[self.name].get(instance)
 
     def __set_name__(self, owner, name):
         self.name = name
-
-    def fmt_addr(self, instance):
-        fmt, start = self._fmt_start(instance)
-        if isinstance(fmt, int):
-            fmt = "B"
-        return fmt, start + Packet.ETHERNET_HEADER
 
 
 class DeviceVar(ArrayGlobalVarDesc):
@@ -122,7 +167,7 @@ class DeviceVar(ArrayGlobalVarDesc):
         elif instance.sync_group.current_data is None:
             return super().__get__(instance, owner)
         else:
-            return instance.__dict__[self.name]
+            return instance.__dict__.get(self.name, 0)
 
     def __set__(self, instance, value):
         if instance.sync_group.current_data is None:
@@ -140,13 +185,14 @@ class Device(SubProgram):
     def get_terminals(self):
         ret = set()
         for pv in self.__dict__.values():
-            if isinstance(pv, PacketVar):
+            if isinstance(pv, (PacketVar, Struct)):
                 ret.add(pv.terminal)
         return ret
 
 
 class EBPFTerminal(Terminal):
     compatibility = None
+    position_offset = 0, 0
 
     def __init_subclass__(cls):
         cls.pdo = {}
@@ -163,15 +209,16 @@ class EBPFTerminal(Terminal):
 
     def allocate(self, packet):
         if self.pdo_in_sz:
-            self.bases = [packet.size + packet.DATAGRAM_HEADER]
+            bases = [packet.size + packet.DATAGRAM_HEADER]
             packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
                           self.position, self.pdo_in_off)
         else:
-            self.bases = [None]
+            bases = [None]
         if self.pdo_out_sz:
-            self.bases.append(packet.size + packet.DATAGRAM_HEADER)
+            bases.append(packet.size + packet.DATAGRAM_HEADER)
             packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
                           self.position, self.pdo_out_off)
+        return bases
 
     def update(self, data):
         pass
@@ -239,15 +286,9 @@ class FastEtherCat(EtherCat):
         self.ebpf.programs = self.programs
         self.fd = await self.ebpf.attach(self.addr[0])
 
-
-class SyncGroup:
-    """A group of devices communicating at the same time"""
-
-    packet_index = 1000
-
-    current_data = False  # None is used to indicate FastSyncGroup
-
+class SyncGroupBase:
     def __init__(self, ec, devices, **kwargs):
+        super().__init__(**kwargs)
         self.ec = ec
         self.devices = devices
 
@@ -256,7 +297,20 @@ class SyncGroup:
             terminals.update(dev.get_terminals())
             dev.sync_group = self
         # sorting is only necessary for test stability
-        self.terminals = sorted(terminals, key=lambda t: t.position)
+        self.terminals = {t: None for t in
+                          sorted(terminals, key=lambda t: t.position)}
+
+    def allocate(self):
+        self.packet = Packet()
+        self.terminals = {t: t.allocate(self.packet) for t in self.terminals}
+
+
+class SyncGroup(SyncGroupBase):
+    """A group of devices communicating at the same time"""
+
+    packet_index = 1000
+
+    current_data = False  # None is used to indicate FastSyncGroup
 
     async def run(self):
         await gather(*[t.to_operational() for t in self.terminals])
@@ -269,16 +323,14 @@ class SyncGroup:
                 dev.update()
 
     def start(self):
-        self.packet = Packet()
-        for term in self.terminals:
-            term.allocate(self.packet)
+        self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index)
         return ensure_future(self.run())
 
 
-class FastSyncGroup(XDP):
+class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
 
     current_data = None
@@ -286,16 +338,7 @@ class FastSyncGroup(XDP):
     properties = ArrayMap()
 
     def __init__(self, ec, devices, **kwargs):
-        super().__init__(subprograms=devices, **kwargs)
-        self.ec = ec
-        self.devices = devices
-
-        terminals = set()
-        for dev in self.devices:
-            terminals.update(dev.get_terminals())
-            dev.sync_group = self
-        # sorting is only necessary for test stability
-        self.terminals = sorted(terminals, key=lambda t: t.position)
+        super().__init__(ec, devices, subprograms=devices, **kwargs)
 
     def program(self):
         with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as p:
@@ -304,9 +347,7 @@ class FastSyncGroup(XDP):
         self.exit(XDPExitCode.TX)
 
     def start(self):
-        self.packet = Packet()
-        for term in self.terminals:
-            term.allocate(self.packet)
+        self.allocate()
         index = self.ec.register_sync_group(self)
         self.ec.send_packet(self.packet.assemble(index))
         self.monitor = ensure_future(gather(*[t.to_operational()
