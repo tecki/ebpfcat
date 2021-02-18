@@ -34,6 +34,10 @@ class EK1814(EBPFTerminal):
     ch8 = PacketDesc((1, 0), 3)
 
 
+class EL5042(EBPFTerminal):
+    position = PacketDesc((), "I")
+
+
 class EL6022(EBPFTerminal):
     class Channel(Struct):
         transmit_accept = PacketDesc((0, 0), 0)
@@ -52,3 +56,9 @@ class EL6022(EBPFTerminal):
 
     channel1 = Channel(0, 0)
     channel2 = Channel(24, 24)
+
+
+class EL7041(EBPFTerminal):
+    velocity = PacketDesc((), "H")
+    low_switch = PacketDesc((), 1)
+    high_switch = PacketDesc((), 1)

@@ -597,8 +597,6 @@ class Register(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if long is not None and long != self.long:
-            raise AssembleError("cannot compile")
         if signed is not None and signed != self.signed:
             raise AssembleError("cannot compile")
         if self.no not in self.ebpf.owners:
@@ -895,7 +893,7 @@ class EBPF:
                  i.off % 0x10000, i.imm % 0x100000000)
             for i in self.opcodes)
 
-    def load(self, log_level=0, log_size=4096):
+    def load(self, log_level=0, log_size=10 * 4096):
         ret = bpf.prog_load(self.prog_type, self.assemble(), self.license,
                             log_level, log_size, self.kern_version,
                             name=self.name)

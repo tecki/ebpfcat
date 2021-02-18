@@ -119,6 +119,34 @@ class Counter(Device):
         self.count += 1
 
 
+class Motor(Device):
+    velocity = TerminalVar()
+    encoder = TerminalVar()
+    low_switch = TerminalVar()
+    high_switch = TerminalVar()
+
+    max_velocity = DeviceVar()
+    max_acceleration = DeviceVar()
+    target = DeviceVar()
+    proportional = DeviceVar()
+
+    def program(self):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = self.proportional * (self.target - self.encoder)
+            with self.ebpf.tmp > self.velocity + self.max_acceleration:
+                self.ebpf.tmp = self.velocity + self.max_acceleration
+            with self.ebpf.tmp + self.max_acceleration < self.velocity:
+                self.ebpf.tmp = self.velocity - self.max_acceleration
+            self.velocity = self.ebpf.tmp
+        with self.velocity > self.max_velocity:
+            self.velocity = self.max_velocity
+        with self.velocity < -self.max_velocity:
+            self.velocity = -self.max_velocity
+        with self.low_switch, self.velocity < 0:
+            self.velocity = 0
+        with self.high_switch, self.velocity > 0:
+            self.velocity = 0
+
 class Dummy(Device):
     """A placeholder device assuring a terminal is initialized"""
     def __init__(self, terminals):
