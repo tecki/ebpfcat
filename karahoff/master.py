@@ -1,7 +1,7 @@
-from asyncio import gather
+from asyncio import gather, sleep, Event
 from karabo.middlelayer import (
     Device, getDevice, String, AccessMode, VectorString, Slot, State,
-    waitUntil)
+    waitUntil, Float, background)
 
 from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat
 from ebpfcat import terminals, devices
@@ -47,8 +47,8 @@ class EtherCATSyncGroupBase(Device):
         devs = await gather(*[getDevice(d) for d in self.devices])
         with master:
             await waitUntil(lambda: master.state == State.ON)
-        devices = [EtherCATDevice.instances[d] for d in self.devices]
-        for d in devices:
+        self.devs = [EtherCATDevice.instances[d] for d in self.devices]
+        for d in self.devs:
             d.syncGroup = self
             d.ethercat = self.ethercat
         self.status = "waiting for devices to join"
@@ -64,19 +64,39 @@ class EtherCATSyncGroupBase(Device):
 class EtherCATSyncGroup(EtherCATSyncGroupBase):
     async def onInitialization(self):
         await super().onInitialization()
-        devices = [EtherCATDevice.instances[d] for d in self.devices]
         self.syncGroup = SyncGroup(self.ethercat.ethercat,
-                                   [d.device for d in devices])
+                                   [d.device for d in self.devs])
         self.state = State.OFF
 
 
 class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
+    interval = Float(defaultValue=0.05)
+
     async def onInitialization(self):
         await super().onInitialization()
         devices = [EtherCATDevice.instances[d] for d in self.devices]
         self.syncGroup = FastSyncGroup(self.ethercat.ethercat,
-                                       [d.device for d in devices])
+                                       [d.device for d in self.devs])
         self.state = State.OFF
+
+    @Slot(allowedStates={State.OFF})
+    async def start(self):
+        self.syncGroup.start()
+        self.state = State.ON
+        background(self.run())
+
+    async def run(self):
+        try:
+            self.state = State.RUNNING
+
+            while True:
+                self.syncGroup.properties.read()
+                await sleep(self.interval)
+                for d in self.devs:
+                    d.update_properties()
+                self.syncGroup.properties.write()
+        finally:
+            self.state = State.ERROR
 
 
 class EtherCATDevice(Device):
@@ -92,3 +112,6 @@ class EtherCATDevice(Device):
         for c in channel.split("."):
             ret = getattr(ret, c)
         return ret
+
+    def update_properties(self):
+        pass
