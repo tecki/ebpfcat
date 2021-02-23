@@ -1,5 +1,7 @@
+from struct import pack
+
 from karabo.middlelayer import (
-    AccessMode, String, Int16, Slot, isSet, background, State)
+    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 
@@ -65,3 +67,78 @@ class AnalogOutput(EtherCATDevice):
         self.device.owner = self
         self.device.value = self.find_channel(self.channel)
         self.state = State.ON
+
+
+class MotorDevice(Device):
+    velocity = TerminalVar()
+    encoder = TerminalVar()
+    low_switch = TerminalVar()
+    high_switch = TerminalVar()
+    enable = TerminalVar()
+
+    current_position = DeviceVar('Q')
+    set_enable = DeviceVar('B')
+    max_velocity = DeviceVar('i')
+    max_acceleration = DeviceVar('i')
+    target = DeviceVar('Q')
+    proportional = DeviceVar('i')
+
+    def program(self):
+        self.enable = self.set_enable
+        self.current_position = self.encoder
+        with self.ebpf.tmp:
+            self.ebpf.tmp = (self.proportional * (self.target - self.encoder)) >> 16
+            with self.ebpf.tmp > self.velocity + self.max_acceleration:
+                self.ebpf.tmp = self.velocity + self.max_acceleration
+            with self.ebpf.tmp + self.max_acceleration < self.velocity:
+                self.ebpf.tmp = self.velocity - self.max_acceleration
+            self.velocity = self.ebpf.swtmp
+        with self.velocity > self.max_velocity:
+            self.velocity = self.max_velocity
+        with self.velocity < -self.max_velocity:
+            self.velocity = -self.max_velocity
+
+    def whatever(self):
+        with self.low_switch, self.velocity < 0:
+            self.velocity = 0
+        with self.high_switch, self.velocity > 0:
+            self.velocity = 0
+
+
+class Motor(EtherCATDevice):
+    motor = String(accessMode=AccessMode.INITONLY)
+    encoder = String(accessMode=AccessMode.INITONLY)
+    proportional = Float(accessMode=AccessMode.INITONLY)
+    max_velocity = Int16()
+
+    current_position = Int32(accessMode=AccessMode.READONLY)
+
+    motor_term = encoder_term = None
+
+    @Int16()
+    async def max_current(self, value):
+        if not isSet(value) or self.motor_term is None:
+            return
+        await self.motor_term.sdo_write(pack("H", value), 0x8010, 0x1)
+
+    @Slot()
+    async def join(self):
+        self.device = MotorDevice()
+        self.motor_term = self.find_channel(self.motor)
+        self.encoder_term = self.find_channel(self.encoder)
+        self.device.velocity = self.motor_term.velocity
+        self.device.encoder = self.encoder_term.position
+        self.device.enable = self.motor_term.enable
+
+    @Slot()
+    async def on(self):
+        self.device.proportional = int(self.proportional * (1 << 16))
+        self.device.max_velocity = self.max_velocity
+        self.device.set_enable = True
+
+    @Slot()
+    async def off(self):
+        self.device.set_enable = False
+
+    def update_properties(self):
+        self.current_position = self.device.current_position

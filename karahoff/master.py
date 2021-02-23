@@ -107,9 +107,9 @@ class EtherCATDevice(Device):
         self.instances[self.deviceId] = self
 
     def find_channel(self, name):
-        terminal, channel = name.split(".", 1)
+        terminal, *channel = name.split(".")
         ret = self.ethercat.the_terminals[int(terminal)]
-        for c in channel.split("."):
+        for c in channel:
             ret = getattr(ret, c)
         return ret
 
