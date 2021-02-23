@@ -1,8 +1,9 @@
 from asyncio import gather
 from karabo.middlelayer import (
-    Device, getDevice, String, AccessMode, VectorString, Slot, State)
+    Device, getDevice, String, AccessMode, VectorString, Slot, State,
+    waitUntil)
 
-from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup
+from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat
 from ebpfcat import terminals, devices
 
 
@@ -40,10 +41,12 @@ class EtherCATSyncGroupBase(Device):
 
     async def onInitialization(self):
         self.status = "waiting for master"
-        await getDevice(self.master)
+        master = await getDevice(self.master)
         self.ethercat = EtherCATMaster.instances[self.master]
         self.status = "waiting for devices"
         devs = await gather(*[getDevice(d) for d in self.devices])
+        with master:
+            await waitUntil(lambda: master.state == State.ON)
         devices = [EtherCATDevice.instances[d] for d in self.devices]
         for d in devices:
             d.syncGroup = self
@@ -52,7 +55,7 @@ class EtherCATSyncGroupBase(Device):
         await gather(*[d.join() for d in devs])
         self.status = "ready"
 
-    @Slot()
+    @Slot(allowedStates={State.OFF})
     async def start(self):
         self.syncGroup.start()
         self.state = State.RUNNING
@@ -61,8 +64,18 @@ class EtherCATSyncGroupBase(Device):
 class EtherCATSyncGroup(EtherCATSyncGroupBase):
     async def onInitialization(self):
         await super().onInitialization()
+        devices = [EtherCATDevice.instances[d] for d in self.devices]
         self.syncGroup = SyncGroup(self.ethercat.ethercat,
                                    [d.device for d in devices])
+        self.state = State.OFF
+
+
+class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
+    async def onInitialization(self):
+        await super().onInitialization()
+        devices = [EtherCATDevice.instances[d] for d in self.devices]
+        self.syncGroup = FastSyncGroup(self.ethercat.ethercat,
+                                       [d.device for d in devices])
         self.state = State.OFF
 
 
