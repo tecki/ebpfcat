@@ -1,8 +1,8 @@
-from struct import pack
+from struct import pack, unpack
 from time import time
 
 from karabo.middlelayer import (
-    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16)
+    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16, UInt64)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 
@@ -111,21 +111,23 @@ class MotorDevice(Device):
     max_acceleration = DeviceVar('i')
     target = DeviceVar('Q')
     proportional = DeviceVar('i')
+    current_velocity = DeviceVar('i')
 
     def program(self):
         self.enable = self.set_enable
         self.current_position = self.encoder
-        with self.ebpf.tmp:
-            self.ebpf.tmp = (self.proportional * (self.target - self.encoder)) >> 16
-            with self.ebpf.tmp > self.velocity + self.max_acceleration:
-                self.ebpf.tmp = self.velocity + self.max_acceleration
-            with self.ebpf.tmp + self.max_acceleration < self.velocity:
-                self.ebpf.tmp = self.velocity - self.max_acceleration
-            self.velocity = self.ebpf.swtmp
-        with self.velocity > self.max_velocity:
-            self.velocity = self.max_velocity
-        with self.velocity < -self.max_velocity:
-            self.velocity = -self.max_velocity
+        with self.ebpf.stmp:
+            self.ebpf.stmp = (self.proportional * (self.target - self.encoder)) >> 16
+            #with self.ebpf.tmp > self.velocity + self.max_acceleration:
+            #    self.ebpf.tmp = self.velocity + self.max_acceleration
+            #with self.ebpf.tmp + self.max_acceleration < self.velocity:
+            #    self.ebpf.tmp = self.velocity - self.max_acceleration
+            with self.ebpf.stmp > self.max_velocity:
+                self.ebpf.stmp = self.max_velocity
+            with self.ebpf.stmp + self.max_velocity < 0:
+                self.ebpf.stmp = -self.max_velocity
+            self.velocity = self.ebpf.stmp
+            self.current_velocity = self.ebpf.stmp
 
     def whatever(self):
         with self.low_switch, self.velocity < 0:
@@ -141,6 +143,7 @@ class Motor(EtherCATDevice):
     max_velocity = Int16()
 
     current_position = Int32(accessMode=AccessMode.READONLY)
+    current_velocity = Int32(accessMode=AccessMode.READONLY)
 
     motor_term = encoder_term = None
 
@@ -148,7 +151,20 @@ class Motor(EtherCATDevice):
     async def max_current(self, value):
         if not isSet(value) or self.motor_term is None:
             return
-        await self.motor_term.sdo_write(pack("H", value), 0x8010, 0x1)
+        state = await self.motor_term.get_state()
+        if state < 2:
+            state = await self.motor_term.set_state(2)
+        assert state >= 2
+        await self.motor_term.sdo_write(pack("<H", value), 0x8010, 0x1)
+        self.max_current, = unpack(
+            "<H", await self.motor_term.sdo_read(0x8010, 0x1))
+
+    @UInt64()
+    async def target(self, value):
+        if not isSet(value):
+            return
+        self.device.target = int(value)
+        self.target = self.device.target
 
     @Slot()
     async def join(self):
@@ -171,3 +187,4 @@ class Motor(EtherCATDevice):
 
     def update_properties(self):
         self.current_position = self.device.current_position
+        self.current_velocity = self.device.current_velocity
