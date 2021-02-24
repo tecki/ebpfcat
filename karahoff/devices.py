@@ -1,4 +1,5 @@
 from struct import pack
+from time import time
 
 from karabo.middlelayer import (
     AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16)
@@ -67,6 +68,34 @@ class AnalogOutput(EtherCATDevice):
         self.device.owner = self
         self.device.value = self.find_channel(self.channel)
         self.state = State.ON
+
+
+class CounterDevice(Device):
+    counter = DeviceVar()
+
+    def program(self):
+        self.counter += 1
+
+
+class Counter(EtherCATDevice):
+    counter = Int32(accessMode=AccessMode.READONLY, defaultValue=0)
+    frequency = Float(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        self.value = self.device.current_value
+
+    @Slot()
+    async def join(self):
+        self.state = State.ON
+        self.device = CounterDevice()
+        self.lasttime = time()
+
+    def update_properties(self):
+        lc = self.counter
+        self.counter = self.device.counter
+        t1 = time()
+        self.frequency = (self.counter - lc) / (t1 - self.lasttime)
+        self.lasttime = t1
 
 
 class MotorDevice(Device):
