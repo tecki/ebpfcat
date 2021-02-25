@@ -256,14 +256,22 @@ class EtherXDP(XDP):
         e.exit(XDPExitCode.PASS)
 
 
-class FastEtherCat(EtherCat):
-    MAX_PROGS = 64
-
+class SimpleEtherCat(EtherCat):
     def __init__(self, network, terminals):
         super().__init__(network)
         self.terminals = terminals
         for t in terminals:
             t.ec = self
+
+    async def scan_bus(self):
+        await gather(*[t.initialize(-i, i + 1)
+                     for (i, t) in enumerate(self.terminals)])
+
+class FastEtherCat(SimpleEtherCat):
+    MAX_PROGS = 64
+
+    def __init__(self, network, terminals):
+        super().__init__(network, terminals)
         self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 
@@ -275,10 +283,6 @@ class FastEtherCat(EtherCat):
         update_elem(self.programs, pack("<I", index), pack("<I", fd), 0)
         self.sync_groups[index] = sg
         return index
-
-    async def scan_bus(self):
-        await gather(*[t.initialize(-i, i + 1)
-                     for (i, t) in enumerate(self.terminals)])
 
     async def connect(self):
         await super().connect()
