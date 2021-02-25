@@ -1,7 +1,9 @@
 from asyncio import gather, sleep, Event
+from struct import pack, unpack
+
 from karabo.middlelayer import (
     Device, getDevice, String, AccessMode, VectorString, Slot, State,
-    waitUntil, Float, background)
+    waitUntil, Float, background, Simple, isSet)
 
 from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat
 from ebpfcat import terminals, devices
@@ -90,21 +92,72 @@ class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
             self.state = State.RUNNING
 
             while True:
-                self.syncGroup.properties.read()
-                await sleep(self.interval)
+                self.syncGroup.properties.readwrite()
                 for d in self.devs:
                     d.update_properties()
-                self.syncGroup.properties.write()
+                await sleep(self.interval)
         finally:
             self.state = State.ERROR
 
 
 class EtherCATDevice(Device):
     instances = {}
+    terminals = None
 
     def __init__(self, configuration):
         super().__init__(configuration)
         self.instances[self.deviceId] = self
+
+    @classmethod
+    def sdo_setter(cls, attr):
+        term, idx, subidx = attr.alias.split(':')
+        attr.idx = int(idx, 16)
+        attr.subidx = int(subidx, 16)
+        attr.terminal = term
+
+        async def setter(self, value):
+            if self.terminals is None:
+                setattr(self, attr.key, value)
+            else:
+                term = self.terminals[attr.terminal]
+                print("Get state")
+                state = await term.get_state()
+                if state < 2:
+                    await term.set_state(2)
+                print("Set state")
+                await term.sdo_write(pack(attr.format, value),
+                                     attr.idx, attr.subidx)
+                print("middle", attr.key)
+                ret = await term.sdo_read(attr.idx, attr.subidx)
+                print("end", ret)
+                setattr(self, attr.key, *unpack(attr.format, ret))
+                print("done", ret)
+        return setter
+
+    async def sdo_set(self):
+        for attr in self._sdo_attrs:
+            val = getattr(self, attr.key)
+            if isSet(val):
+                await attr.setter(self, val)
+            else:
+                term = self.terminals[attr.terminal]
+                print("get state")
+                state = await term.get_state()
+                if state < 2:
+                    await term.set_state(2)
+                print("set state")
+                ret = await term.sdo_read(attr.idx, attr.subidx)
+                setattr(self, attr.key, *unpack(attr.format, ret))
+
+    @classmethod
+    def register(cls, name, dct):
+        super(EtherCATDevice, cls).register(name, dct)
+        cls._sdo_attrs = []
+        for name in cls._allattrs:
+            attr = getattr(cls, name)
+            if isinstance(attr, Simple) and attr.alias is not None:
+                attr(cls.sdo_setter(attr))
+                cls._sdo_attrs.append(attr)
 
     def find_channel(self, name):
         terminal, *channel = name.split(".")

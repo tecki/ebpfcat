@@ -147,8 +147,10 @@ class Motor(EtherCATDevice):
 
     motor_term = encoder_term = None
 
-    @Int16()
-    async def max_current(self, value):
+    max_current = Int16(alias="M:8010:1")
+
+    #@Int16()
+    async def mx_current(self, value):
         if not isSet(value) or self.motor_term is None:
             return
         state = await self.motor_term.get_state()
