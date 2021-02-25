@@ -40,7 +40,7 @@ class AnalogInput(EtherCATDevice):
 
 class AnalogOutputDevice(Device):
     value = TerminalVar()
-    set_value = DeviceVar()
+    set_value = DeviceVar(write=True)
 
     def update(self):
         if not isSet(self.owner.value):
@@ -106,11 +106,11 @@ class MotorDevice(Device):
     enable = TerminalVar()
 
     current_position = DeviceVar('Q')
-    set_enable = DeviceVar('B')
-    max_velocity = DeviceVar('i')
-    max_acceleration = DeviceVar('i')
-    target = DeviceVar('Q')
-    proportional = DeviceVar('i')
+    set_enable = DeviceVar('B', write=True)
+    max_velocity = DeviceVar('i', write=True)
+    max_acceleration = DeviceVar('i', write=True)
+    target = DeviceVar('Q', write=True)
+    proportional = DeviceVar('i', write=True)
     current_velocity = DeviceVar('i')
 
     def program(self):
@@ -159,12 +159,7 @@ class Motor(EtherCATDevice):
         self.max_current, = unpack(
             "<H", await self.motor_term.sdo_read(0x8010, 0x1))
 
-    @UInt64()
-    async def target(self, value):
-        if not isSet(value):
-            return
-        self.device.target = int(value)
-        self.target = self.device.target
+    target = UInt64()
 
     @Slot()
     async def join(self):
@@ -174,17 +169,31 @@ class Motor(EtherCATDevice):
         self.device.velocity = self.motor_term.velocity
         self.device.encoder = self.encoder_term.position
         self.device.enable = self.motor_term.enable
+        self.terminals = dict(M=self.motor_term, E=self.encoder_term)
+        try:
+            await self.sdo_set()
+        except:
+            print("laber")
+            import traceback
+            traceback.print_exc()
+        print("ende")
 
     @Slot()
     async def on(self):
-        self.device.proportional = int(self.proportional * (1 << 16))
-        self.device.max_velocity = self.max_velocity
-        self.device.set_enable = True
+        if isSet(self.target):
+            self.state = State.ON
 
     @Slot()
     async def off(self):
-        self.device.set_enable = False
+        self.state = State.OFF
 
     def update_properties(self):
         self.current_position = self.device.current_position
         self.current_velocity = self.device.current_velocity
+
+        self.device.set_enable = bool(self.state == State.ON)
+        if self.state != State.ON:
+            return
+        self.device.max_velocity = self.max_velocity
+        self.device.proportional = int(self.proportional * (1 << 16))
+        self.device.target = self.target
