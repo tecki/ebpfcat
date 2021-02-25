@@ -265,6 +265,8 @@ class Comparison:
         self.else_origin = None
 
     def __enter__(self):
+        if self.else_origin is None:
+            self.compare(True)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -316,6 +318,9 @@ class Comparison:
 
     def __invert__(self):
         return InvertComparison(self.ebpf, self)
+
+    def __bool__(self):
+        raise RuntimeError("Use with statement for comparisons")
 
 
 class SimpleComparison(Comparison):
@@ -427,6 +432,17 @@ class Expression:
 
     def __neg__(self):
         return Negate(self.ebpf, self)
+
+    def __bool__(self):
+        raise RuntimeError("Expression only has a value at execution time")
+
+    def __enter__(self):
+        ret = self != 0
+        self.as_comparison = ret
+        return ret.__enter__()
+
+    def __exit__(self, exc_type, exc, tb):
+        return self.as_comparison.__exit__(exc_type, exc, tb)
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
@@ -545,7 +561,7 @@ class Sum(Binary):
             return super().__sub__(value)
 
 
-class AndExpression(Binary, SimpleComparison):
+class AndExpression(SimpleComparison, Binary):
     def __init__(self, ebpf, left, right):
         Binary.__init__(self, ebpf, left, right, Opcode.AND)
         SimpleComparison.__init__(self, ebpf, left, right, Opcode.JSET)
@@ -581,8 +597,6 @@ class Register(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if long is not None and long != self.long:
-            raise AssembleError("cannot compile")
         if signed is not None and signed != self.signed:
             raise AssembleError("cannot compile")
         if self.no not in self.ebpf.owners:
@@ -645,33 +659,21 @@ class Memory(Expression):
 
 
 class MemoryDesc:
-    def __init__(self, fmt='I'):
-        self.fmt = fmt
-
-    @property
-    def signed(self):
-        return self.fmt.islower()
-
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        elif isinstance(instance, SubProgram):
-            ebpf = instance.ebpf
-        else:
-            ebpf = instance
-        return Memory(ebpf, Memory.fmt_to_opcode[self.fmt],
-                      ebpf.r[self.base_register] + self.addr(instance),
-                      self.signed)
+        fmt, addr = self.fmt_addr(instance)
+        return Memory(instance.ebpf, Memory.fmt_to_opcode[fmt],
+                      instance.ebpf.r[self.base_register] + addr,
+                      fmt.islower())
 
     def __set__(self, instance, value):
-        if isinstance(instance, SubProgram):
-            ebpf = instance.ebpf
-        else:
-            ebpf = instance
-        bits = Memory.fmt_to_opcode[self.fmt]
+        ebpf = instance.ebpf
+        fmt, addr = self.fmt_addr(instance)
+        bits = Memory.fmt_to_opcode[fmt]
         if isinstance(value, int):
             ebpf.append(Opcode.ST + bits, self.base_register, 0,
-                        self.addr(instance), value)
+                        addr, value)
             return
         elif isinstance(value, IAdd):
             value = value.value
@@ -679,19 +681,20 @@ class MemoryDesc:
                 with ebpf.get_free_register(None) as src:
                     ebpf.r[src] = value
                     ebpf.append(Opcode.XADD + bits, self.base_register,
-                                src, self.addr(instance), 0)
+                                src, addr, 0)
                 return
             opcode = Opcode.XADD
         else:
             opcode = Opcode.STX
-        with value.calculate(None, self.fmt in 'qQ', self.signed) \
-                as (src, _, _):
-            ebpf.append(opcode + bits, self.base_register,
-                        src, self.addr(instance), 0)
+        with value.calculate(None, fmt in 'qQ', fmt.islower()) as (src, _, _):
+            ebpf.append(opcode + bits, self.base_register, src, addr, 0)
 
 
 class LocalVar(MemoryDesc):
     base_register = 10
+
+    def __init__(self, fmt='I'):
+        self.fmt = fmt
 
     def __set_name__(self, owner, name):
         size = Memory.fmt_to_size[self.fmt]
@@ -700,11 +703,11 @@ class LocalVar(MemoryDesc):
         self.relative_addr = owner.stack
         self.name = name
 
-    def addr(self, instance):
+    def fmt_addr(self, instance):
         if isinstance(instance, SubProgram):
-            return (instance.ebpf.stack & -8) + self.relative_addr
+            return self.fmt, (instance.ebpf.stack & -8) + self.relative_addr
         else:
-            return self.relative_addr
+            return self.fmt, self.relative_addr
 
 
 class MemoryMap:
@@ -890,7 +893,7 @@ class EBPF:
                  i.off % 0x10000, i.imm % 0x100000000)
             for i in self.opcodes)
 
-    def load(self, log_level=0, log_size=4096):
+    def load(self, log_level=0, log_size=10 * 4096):
         ret = bpf.prog_load(self.prog_type, self.assemble(), self.license,
                             log_level, log_size, self.kern_version,
                             name=self.name)
@@ -915,10 +918,6 @@ class EBPF:
         self.opcodes.append(None)
         return comp
 
-    def If(self, comp):
-        comp.compare(True)
-        return comp
-
     def get_fd(self, fd):
         return PseudoFd(self, fd)
 
@@ -930,7 +929,7 @@ class EBPF:
 
     def exit(self, no=None):
         if no is not None:
-            self.r0 = no
+            self.r0 = no.value
         self.append(Opcode.EXIT, 0, 0, 0, 0)
 
     @contextmanager
@@ -976,6 +975,10 @@ class EBPF:
         self.stack = (self.stack - size) & -size
         yield self.stack
         self.stack = oldstack
+
+    @property
+    def ebpf(self):
+        return self
 
     tmp = TemporaryDesc(None, "r")
     stmp = TemporaryDesc(None, "sr")

@@ -42,7 +42,7 @@ class Tests(TestCase):
         e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         e.r5 = 7
         e.r6 = e.r3
-        self.assertEqual(e.opcodes, 
+        self.assertEqual(e.opcodes,
             [Instruction(0xb7, 5, 0, 0, 7),
              Instruction(0xbf, 6, 3, 0, 0)])
 
@@ -53,7 +53,7 @@ class Tests(TestCase):
         e.w4 = e.w1
         e.w2 += 3
         e.w5 += e.w6
-        self.assertEqual(e.opcodes, 
+        self.assertEqual(e.opcodes,
             [Instruction(O.MOV+O.LONG, 3, 0, 0, 7),
              Instruction(0xbc, 4, 1, 0, 0),
              Instruction(opcode=4, dst=2, src=0, off=0, imm=3),
@@ -85,7 +85,7 @@ class Tests(TestCase):
         e.sr4 >>= 3
         e.sr4 >>= e.r7
 
-        self.assertEqual(e.opcodes, 
+        self.assertEqual(e.opcodes,
             [Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=15, dst=3, src=6, off=0, imm=0),
              Instruction(opcode=7, dst=4, src=0, off=0, imm=-3),
@@ -288,21 +288,25 @@ class Tests(TestCase):
     def test_with(self):
         e = EBPF()
         e.owners = set(range(11))
-        with e.If(e.r2 > 3) as cond:
+        with e.r2 > 3 as cond:
             e.r2 = 5
         with cond.Else():
             e.r6 = 7
+        with e.r2:
+            e.r3 = 2
         self.assertEqual(e.opcodes,
             [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
              Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=6, src=0, off=0, imm=7)])
+             Instruction(opcode=O.MOV+O.LONG, dst=6, src=0, off=0, imm=7),
+             Instruction(opcode=O.JEQ, dst=2, src=0, off=1, imm=0),
+             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2)])
 
     def test_with_inversion(self):
         e = EBPF()
-        with e.If(e.r1 & 1) as cond:
+        with e.r1 & 1 as cond:
             e.r0 = 2
-        with e.If(e.r1 & 7) as cond:
+        with e.r1 & 7 as cond:
             e.r0 = 2
             e.r1 = 4
         with cond.Else():
@@ -320,7 +324,7 @@ class Tests(TestCase):
     def test_comp_binary(self):
         e = EBPF()
         e.owners = {1, 2, 3, 5}
-        with e.If(e.r1 + e.r3 > 3) as cond:
+        with e.r1 + e.r3 > 3 as cond:
             e.r0 = 5
         with cond.Else():
             e.r0 = 7
@@ -441,7 +445,7 @@ class Tests(TestCase):
 
     def test_with_data(self):
         e = EBPF()
-        with e.If(e.r1 > 0) as cond:
+        with e.r1 > 0 as cond:
             e.r2 = 3
             e.r3 = 5
         with cond.Else():
@@ -573,34 +577,55 @@ class KernelTests(TestCase):
     def test_arraymap(self):
         class Global(EBPF):
             map = ArrayMap()
-            a = map.globalVar()
+            ar = map.globalVar()
+            aw = map.globalVar(write=True)
 
         class Sub(SubProgram):
-            b = Global.map.globalVar()
+            br = Global.map.globalVar()
+            bw = Global.map.globalVar(write=True)
 
             def program(self):
-                self.b -= -33
+                self.br -= -33
+                self.bw = self.br + 3
 
         s1 = Sub()
         s2 = Sub()
         e = Global(ProgType.XDP, "GPL", subprograms=[s1, s2])
-        e.a += 7
+        e.ar = e.aw + 7
+        e.aw += 11
         s1.program()
         s2.program()
+        e.r0 = 55
         e.exit()
 
         fd, _ = e.load(log_level=1)
+        prog_test_run(fd, 1000, 1000, 100, 100, 1)
+        e.map.readwrite()
+        self.assertEqual(e.ar, 7)
+        self.assertEqual(e.aw, 11)
+        self.assertEqual(s1.br, 33)
+        self.assertEqual(s1.bw, 36)
+        self.assertEqual(s2.br, 33)
+        self.assertEqual(s2.bw, 36)
+        e.aw = e.ar * 2
+        s1.br = 3
+        s2.br *= 5
+        e.ar = 1111
+        self.assertEqual(e.ar, 1111)
+        self.assertEqual(e.aw, 14)
+        self.assertEqual(s1.br, 3)
+        self.assertEqual(s1.bw, 36)
+        self.assertEqual(s2.br, 165)
+        self.assertEqual(s2.bw, 36)
+        e.map.readwrite()
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
-        e.map.read()
-        e.a *= 2
-        s1.b = 3
-        s2.b *= 5
-        e.map.write()
-        prog_test_run(fd, 1000, 1000, 0, 0, 1)
-        e.map.read()
-        self.assertEqual(e.a, 21)
-        self.assertEqual(s1.b, 36)
-        self.assertEqual(s2.b, 5 * 33 + 33)
+        e.map.readwrite()
+        self.assertEqual(e.ar, 21)
+        self.assertEqual(e.aw, 25)
+        self.assertEqual(s1.br, 66)
+        self.assertEqual(s1.bw, 69)
+        self.assertEqual(s2.br, 66)
+        self.assertEqual(s2.bw, 69)
 
     def test_minimal(self):
         class Global(XDP):

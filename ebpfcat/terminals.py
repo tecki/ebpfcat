@@ -1,4 +1,4 @@
-from .ebpfcat import EBPFTerminal, PacketDesc
+from .ebpfcat import EBPFTerminal, PacketDesc, Struct
 
 
 class Generic(EBPFTerminal):
@@ -13,11 +13,52 @@ class EL4104(EBPFTerminal):
 
 
 class EL3164(EBPFTerminal):
-    ch1_attrs = PacketDesc((0, 0), 'H')
-    ch2_attrs = PacketDesc((0, 4), 'H')
-    ch3_attrs = PacketDesc((0, 8), 'H')
-    ch4_attrs = PacketDesc((0, 12), 'H')
-    ch1_value = PacketDesc((0, 2), 'H')
-    ch2_value = PacketDesc((0, 6), 'H')
-    ch3_value = PacketDesc((0, 10), 'H')
-    ch4_value = PacketDesc((0, 14), 'H')
+    class Channel(Struct):
+        attrs = PacketDesc((0, 0), 'H')
+        value = PacketDesc((0, 2), 'H')
+
+    channel1 = Channel(0)
+    channel2 = Channel(4)
+    channel3 = Channel(8)
+    channel4 = Channel(12)
+
+
+class EK1814(EBPFTerminal):
+    ch1 = PacketDesc((0, 0), 0)
+    ch2 = PacketDesc((0, 0), 1)
+    ch3 = PacketDesc((0, 0), 2)
+    ch4 = PacketDesc((0, 0), 3)
+    ch5 = PacketDesc((1, 0), 0)
+    ch6 = PacketDesc((1, 0), 1)
+    ch7 = PacketDesc((1, 0), 2)
+    ch8 = PacketDesc((1, 0), 3)
+
+
+class EL5042(EBPFTerminal):
+    position = PacketDesc((), "I")
+
+
+class EL6022(EBPFTerminal):
+    class Channel(Struct):
+        transmit_accept = PacketDesc((0, 0), 0)
+        receive_request = PacketDesc((0, 0), 1)
+        init_accept = PacketDesc((0, 0), 2)
+        status = PacketDesc((0, 0), "H")
+        in_string = PacketDesc((0, 1), "23p")
+        wkc1 = PacketDesc((0, 24), "H")
+
+        transmit_request = PacketDesc((1, 0), 0)
+        receive_accept = PacketDesc((1, 0), 1)
+        init_request = PacketDesc((1, 0), 2)
+        control = PacketDesc((1, 0), "H")
+        out_string = PacketDesc((1, 1), "23p")
+        wkc2 = PacketDesc((0, 24), "H")
+
+    channel1 = Channel(0, 0)
+    channel2 = Channel(24, 24)
+
+
+class EL7041(EBPFTerminal):
+    velocity = PacketDesc((), "H")
+    low_switch = PacketDesc((), 1)
+    high_switch = PacketDesc((), 1)

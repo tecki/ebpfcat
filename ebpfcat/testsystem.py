@@ -1,9 +1,9 @@
 from asyncio import gather, sleep, ensure_future
-from .terminals import EL3164, EL4104, Generic
-from .devices import AnalogInput, AnalogOutput
+from .terminals import EL3164, EL4104, EK1814
+from .devices import AnalogInput, AnalogOutput, DigitalInput, DigitalOutput
 from .ebpfcat import FastEtherCat, FastSyncGroup, SyncGroup
 
-tdigi = Generic()
+tdigi = EK1814()
 tout = EL4104()
 tin = EL3164()
 
@@ -23,18 +23,22 @@ async def main():
 
     ai = AnalogInput(tin.ch1_value)
     ao = AnalogOutput(tout.ch1_value)
-    #fsg = FastSyncGroup(ec, [ai])
-    fsg = SyncGroup(ec, [ai, ao])
-
-    ao.value = 0
+    di = DigitalInput(tdigi.ch1)
+    do = DigitalOutput(tdigi.ch8)
+    #fsg = FastSyncGroup(ec, [ai, ao])
+    fsg = SyncGroup(ec, [ai, ao, do, di])
 
     fsg.start()
+    ao.value = 0
+    do.value = False
 
-    for i in range(10):
+    for i in range(100):
         await sleep(0.1)
         #fsg.properties.read()
-        ao.value = 3000 * i
-        print(i, ai.value, ao.data, await tout.get_state())
+        ao.value = 300 * i
+        do.value = (i % 7) in (0, 1, 2, 5)
+        #fsg.properties.write()
+        print(i, ai.value, ao.value, di.value, await tout.get_state())
 
 if __name__ == "__main__":
     from asyncio import get_event_loop

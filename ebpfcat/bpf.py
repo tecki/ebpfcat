@@ -1,4 +1,4 @@
-from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p
+from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p, addressof, c_char
 from enum import Enum
 from struct import pack, unpack
 from platform import machine
@@ -81,15 +81,20 @@ def create_map(map_type, key_size, value_size, max_entries):
     return bpf(0, "IIII", map_type.value, key_size, value_size, max_entries)[0]
 
 def lookup_elem(fd, key, size):
-    value = create_string_buffer(size)
-    ret, _ = bpf(1, "IQQQ", fd, addrof(key), addrof(value), 0)
+    value = bytearray(size)
+    addr = addressof(c_char.from_buffer(value))
+    ret, _ = bpf(1, "IQQQ", fd, addrof(key), addr, 0)
     if ret == 0:
         return value
     else:
         return None
 
 def update_elem(fd, key, value, flags):
-    return bpf(2, "IQQQ", fd, addrof(key), addrof(value), flags)[0]
+    if isinstance(value, bytearray):
+        addr = addressof(c_char.from_buffer(value))
+    else:
+        addr = addrof(value)
+    return bpf(2, "IQQQ", fd, addrof(key), addr, flags)[0]
 
 def prog_load(prog_type, insns, license,
               log_level=0, log_size=4096, kern_version=0, flags=0,

@@ -92,3 +92,10 @@ The communication with the terminals can happen in three different ways:
 - fast: the data is sent, received and processed using XDP in the Linux
   Kernel. Only very limited operations can be done, but the loop cycle
   frequency exceeds 10 kHz.
+
+
+.. automodule:: ebpfcat.devices
+   :members:
+
+.. automodule:: ebpfcat.ethercat
+   :members:

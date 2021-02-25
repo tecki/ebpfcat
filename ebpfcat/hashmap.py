@@ -1,21 +1,20 @@
 from contextlib import contextmanager
 from struct import pack, unpack, unpack
 
-from .ebpf import AssembleError, Expression, Opcode, Map, FuncId
+from .ebpf import AssembleError, Expression, Opcode, Map, FuncId, Memory
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
 class HashGlobalVar(Expression):
-    def __init__(self, ebpf, count, signed):
+    def __init__(self, ebpf, count, fmt):
         self.ebpf = ebpf
         self.count = count
-        self.signed = signed
+        self.fmt = fmt
+        self.signed = fmt.islower()
 
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
-        if long:
-            raise AssembleError("HashMap is only for words")
-        if signed != self.signed:
+        if signed != self.fmt.islower():
             raise AssembleError("HashMap variable has wrong signedness")
         with self.ebpf.save_registers([i for i in range(6) if i != dst]), \
                 self.ebpf.get_stack(4) as stack:
@@ -23,19 +22,20 @@ class HashGlobalVar(Expression):
             self.ebpf.r1 = self.ebpf.get_fd(self.fd)
             self.ebpf.r2 = self.ebpf.r10 + stack
             self.ebpf.call(FuncId.map_lookup_elem)
-            with self.ebpf.If(self.ebpf.r0 == 0):
+            with self.ebpf.r0 == 0:
                 self.ebpf.exit()
             if dst != 0 and force:
-                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG, dst, 0, 0, 0)
+                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG, dst,
+                                 0, 0, 0)
             else:
                 dst = 0
-        yield dst, Opcode.W
+        yield dst, Memory.fmt_to_opcode[self.fmt]
 
 
 class HashGlobalVarDesc:
-    def __init__(self, count, signed, default=0):
+    def __init__(self, count, fmt, default=0):
         self.count = count
-        self.signed = signed
+        self.fmt = fmt
         self.default = default
 
     def __get__(self, instance, owner):
@@ -44,10 +44,10 @@ class HashGlobalVarDesc:
         if instance.loaded:
             fd = instance.__dict__[self.name].fd
             ret = lookup_elem(fd, pack("B", self.count), 4)
-            return unpack("i" if self.signed else "I", ret)[0]
+            return unpack(self.fmt, ret)[0]
         ret = instance.__dict__.get(self.name, None)
         if ret is None:
-            ret = HashGlobalVar(instance, self.count, self.signed)
+            ret = HashGlobalVar(instance, self.count, self.fmt)
             instance.__dict__[self.name] = ret
         return ret
 
@@ -58,10 +58,10 @@ class HashGlobalVarDesc:
         if ebpf.loaded:
             fd = ebpf.__dict__[self.name].fd
             update_elem(fd, pack("B", self.count),
-                        pack("i" if self.signed else "I", value), 0)
+                        pack("q" if self.fmt.islower() else "Q", value), 0)
             return
         with ebpf.save_registers([3]):
-            with value.get_address(3, False, self.signed, True):
+            with value.get_address(3, True, self.fmt.islower(), True):
                 with ebpf.save_registers([0, 1, 2, 4, 5]), \
                         ebpf.get_stack(4) as stack:
                     ebpf.r1 = ebpf.get_fd(ebpf.__dict__[self.name].fd)
@@ -77,14 +77,14 @@ class HashMap(Map):
     def __init__(self):
         self.vars = []
 
-    def globalVar(self, signed=False, default=0):
+    def globalVar(self, fmt="I", default=0):
         self.count += 1
-        ret = HashGlobalVarDesc(self.count, signed, default)
+        ret = HashGlobalVarDesc(self.count, fmt, default)
         self.vars.append(ret)
         return ret
 
     def init(self, ebpf):
-        fd = create_map(MapType.HASH, 1, 4, self.count)
+        fd = create_map(MapType.HASH, 1, 8, self.count)
         for v in self.vars:
             getattr(ebpf, v.name).fd = fd
 
