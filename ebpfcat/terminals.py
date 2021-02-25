@@ -5,6 +5,11 @@ class Generic(EBPFTerminal):
     pass
 
 
+class Skip(EBPFTerminal):
+    async def initialize(self, relative, absolute):
+        pass
+
+
 class EL4104(EBPFTerminal):
     ch1_value = PacketDesc((1, 0), 'H')
     ch2_value = PacketDesc((1, 2), 'H')
