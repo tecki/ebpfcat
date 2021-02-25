@@ -577,34 +577,55 @@ class KernelTests(TestCase):
     def test_arraymap(self):
         class Global(EBPF):
             map = ArrayMap()
-            a = map.globalVar()
+            ar = map.globalVar()
+            aw = map.globalVar(write=True)
 
         class Sub(SubProgram):
-            b = Global.map.globalVar()
+            br = Global.map.globalVar()
+            bw = Global.map.globalVar(write=True)
 
             def program(self):
-                self.b -= -33
+                self.br -= -33
+                self.bw = self.br + 3
 
         s1 = Sub()
         s2 = Sub()
         e = Global(ProgType.XDP, "GPL", subprograms=[s1, s2])
-        e.a += 7
+        e.ar = e.aw + 7
+        e.aw += 11
         s1.program()
         s2.program()
+        e.r0 = 55
         e.exit()
 
         fd, _ = e.load(log_level=1)
+        prog_test_run(fd, 1000, 1000, 100, 100, 1)
+        e.map.readwrite()
+        self.assertEqual(e.ar, 7)
+        self.assertEqual(e.aw, 11)
+        self.assertEqual(s1.br, 33)
+        self.assertEqual(s1.bw, 36)
+        self.assertEqual(s2.br, 33)
+        self.assertEqual(s2.bw, 36)
+        e.aw = e.ar * 2
+        s1.br = 3
+        s2.br *= 5
+        e.ar = 1111
+        self.assertEqual(e.ar, 1111)
+        self.assertEqual(e.aw, 14)
+        self.assertEqual(s1.br, 3)
+        self.assertEqual(s1.bw, 36)
+        self.assertEqual(s2.br, 165)
+        self.assertEqual(s2.bw, 36)
+        e.map.readwrite()
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
-        e.map.read()
-        e.a *= 2
-        s1.b = 3
-        s2.b *= 5
-        e.map.write()
-        prog_test_run(fd, 1000, 1000, 0, 0, 1)
-        e.map.read()
-        self.assertEqual(e.a, 21)
-        self.assertEqual(s1.b, 36)
-        self.assertEqual(s2.b, 5 * 33 + 33)
+        e.map.readwrite()
+        self.assertEqual(e.ar, 21)
+        self.assertEqual(e.aw, 25)
+        self.assertEqual(s1.br, 66)
+        self.assertEqual(s1.bw, 69)
+        self.assertEqual(s2.br, 66)
+        self.assertEqual(s2.bw, 69)
 
     def test_minimal(self):
         class Global(XDP):
