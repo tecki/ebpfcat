@@ -158,8 +158,8 @@ class TerminalVar:
 
 
 class DeviceVar(ArrayGlobalVarDesc):
-    def __init__(self, size="I"):
-        super().__init__(FastSyncGroup.properties, size)
+    def __init__(self, size="I", write=False):
+        super().__init__(FastSyncGroup.properties, size, write)
 
     def __get__(self, instance, owner):
         if instance is None:

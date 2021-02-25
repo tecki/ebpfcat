@@ -15,7 +15,7 @@ class AnalogInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=False)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -34,7 +34,7 @@ class AnalogOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=True)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -54,7 +54,7 @@ class DigitalInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=False)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -73,7 +73,7 @@ class DigitalOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=True)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -92,8 +92,8 @@ class PWM(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    seed = DeviceVar("I")
-    value = DeviceVar("I")
+    seed = DeviceVar("I", write=True)
+    value = DeviceVar("I", write=True)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -110,7 +110,7 @@ class PWM(Device):
 class Counter(Device):
     """A fake device counting the loops"""
 
-    count = DeviceVar("I")
+    count = DeviceVar("I", write=False)
 
     def program(self):
         self.count += 1
@@ -127,12 +127,12 @@ class Motor(Device):
     enable = TerminalVar()
 
     current_position = DeviceVar()
-    set_velocity = DeviceVar()
-    set_enable = DeviceVar()
-    max_velocity = DeviceVar()
-    max_acceleration = DeviceVar()
-    target = DeviceVar()
-    proportional = DeviceVar()
+    set_velocity = DeviceVar(write=True)
+    set_enable = DeviceVar(write=True)
+    max_velocity = DeviceVar(write=True)
+    max_acceleration = DeviceVar(write=True)
+    target = DeviceVar(write=True)
+    proportional = DeviceVar(write=True)
 
     def update(self):
         velocity = self.proportional * (self.target - self.encoder)
