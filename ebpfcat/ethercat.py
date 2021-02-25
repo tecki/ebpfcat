@@ -59,8 +59,6 @@ class ECDataType(Enum):
    BIT6 = 0x35, "B"
    BIT7 = 0x36, "B"
    BIT8 = 0x37, "B"
-   UNKNOWN1 = 2048, None
-   UNKNOWN2 = 2049, None
 
 class MBXType(Enum):
    ERR = 0  # Error
@@ -650,7 +648,10 @@ class Terminal:
                 if dataType == 0:
                     continue
                 assert i == oe.valueInfo
-                oe.dataType = ECDataType(dataType)
+                try:
+                    oe.dataType = ECDataType(dataType)
+                except:
+                    oe.dataType = dataType
                 oe.name = data[8:].decode("utf8")
                 od.entries[i] = oe
         return ret
