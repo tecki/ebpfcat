@@ -2,7 +2,7 @@
 
 this modules contains the code to actually talk to EtherCAT terminals.
 """
-from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue
+from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue, Lock
 from enum import Enum
 from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
@@ -352,6 +352,7 @@ class Terminal:
         #     await read_eeprom(0x18, "<HHHH")
 
         self.mbx_cnt = 1
+        self.mbx_lock = Lock()
 
         self.eeprom = await self.read_eeprom()
         await self.write(0x800, data=0x80)  # empty out sync manager
@@ -482,24 +483,29 @@ class Terminal:
 
     async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
         """send data to the mailbox"""
-        status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
-        if status & 8:
-            raise RuntimeError("mailbox full, read first")
-        await gather(self.write(self.mbx_out_off, "HHBB", datasize(args, data),
-                                address, channel | priority << 6,
-                                type.value | self.mbx_cnt << 4,
-                                *args, data=data),
-                     self.write(self.mbx_out_off + self.mbx_out_sz - 1, data=1)
-                    )
-        self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
+        async with self.mbx_lock:
+            status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
+            if status & 8:
+                raise RuntimeError("mailbox full, read first")
+            await gather(self.write(self.mbx_out_off, "HHBB",
+                                    datasize(args, data),
+                                    address, channel | priority << 6,
+                                    type.value | self.mbx_cnt << 4,
+                                    *args, data=data),
+                         self.write(self.mbx_out_off + self.mbx_out_sz - 1,
+                                    data=1)
+                        )
+            self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
 
     async def mbx_recv(self):
         """receive data from the mailbox"""
         status = 0
-        while status & 8 == 0:
-            status, = await self.read(0x80D, "B")  # always using mailbox 1, OK?
-        dlen, address, prio, type, data = await self.read(
-                self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
+        async with self.mbx_lock:
+            while status & 8 == 0:
+                # always using mailbox 1, OK?
+                status, = await self.read(0x80D, "B")
+            dlen, address, prio, type, data = await self.read(
+                    self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
         return MBXType(type & 0xf), data[:dlen]
 
     async def coe_request(self, coecmd, odcmd, *args, **kwargs):
