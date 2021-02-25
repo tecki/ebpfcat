@@ -124,11 +124,25 @@ class Motor(Device):
     encoder = TerminalVar()
     low_switch = TerminalVar()
     high_switch = TerminalVar()
+    enable = TerminalVar()
 
+    current_position = DeviceVar()
+    set_velocity = DeviceVar()
+    set_enable = DeviceVar()
     max_velocity = DeviceVar()
     max_acceleration = DeviceVar()
     target = DeviceVar()
     proportional = DeviceVar()
+
+    def update(self):
+        velocity = self.proportional * (self.target - self.encoder)
+        if velocity > self.max_velocity:
+            velocity = self.max_velocity
+        elif velocity < -self.max_velocity:
+            velocity = -self.max_velocity
+        self.current_position = self.encoder
+        self.velocity = velocity
+        self.enable = self.set_enable
 
     def program(self):
         with self.ebpf.tmp:

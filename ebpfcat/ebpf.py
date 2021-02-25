@@ -597,8 +597,8 @@ class Register(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if signed is not None and signed != self.signed:
-            raise AssembleError("cannot compile")
+        #if signed is not None and signed != self.signed:
+        #    raise AssembleError("cannot compile")
         if self.no not in self.ebpf.owners:
             raise AssembleError("register has no value")
         if dst != self.no and force:
