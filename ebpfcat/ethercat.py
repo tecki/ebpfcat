@@ -487,14 +487,13 @@ class Terminal:
             status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
             if status & 8:
                 raise RuntimeError("mailbox full, read first")
-            await gather(self.write(self.mbx_out_off, "HHBB",
+            await self.write(self.mbx_out_off, "HHBB",
                                     datasize(args, data),
                                     address, channel | priority << 6,
                                     type.value | self.mbx_cnt << 4,
-                                    *args, data=data),
-                         self.write(self.mbx_out_off + self.mbx_out_sz - 1,
+                                    *args, data=data)
+            await self.write(self.mbx_out_off + self.mbx_out_sz - 1,
                                     data=1)
-                        )
             self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
 
     async def mbx_recv(self):
