@@ -2,7 +2,7 @@ from struct import pack, unpack
 from time import time
 
 from karabo.middlelayer import (
-    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16, UInt64)
+    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16, UInt64, UInt8)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 
@@ -25,7 +25,7 @@ class AnalogInputDevice(Device):
 class AnalogInput(EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY)
 
-    value = Int16(accessMode=AccessMode.READONLY)
+    value = Int32(accessMode=AccessMode.READONLY)
 
     def update_properties(self):
         self.value = self.device.current_value
@@ -147,7 +147,13 @@ class Motor(EtherCATDevice):
 
     motor_term = encoder_term = None
 
+    statusbits = UInt8(alias="E:8008:2", defaultValue=0)
+    crc_invert = UInt8(alias="E:8008:3", defaultValue=1)
+    multiturn = UInt8(alias="E:8008:15", defaultValue=0)
+    singleturn = UInt8(alias="E:8008:16", defaultValue=26)
+
     max_current = Int16(alias="M:8010:1")
+    max_voltage = Int16(alias="M:8010:3")
 
     #@Int16()
     async def mx_current(self, value):

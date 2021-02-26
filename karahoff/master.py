@@ -5,7 +5,7 @@ from karabo.middlelayer import (
     Device, getDevice, String, AccessMode, VectorString, Slot, State,
     waitUntil, Float, background, Simple, isSet)
 
-from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat
+from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat, Struct
 from ebpfcat import terminals, devices
 
 
@@ -120,18 +120,18 @@ class EtherCATDevice(Device):
                 setattr(self, attr.key, value)
             else:
                 term = self.terminals[attr.terminal]
-                print("Get state")
+                if isinstance(term, Struct):
+                    idx = attr.idx + term.position_offset[2]
+                    term = term.terminal
+                else:
+                    idx = attr.idx
                 state = await term.get_state()
                 if state < 2:
                     await term.set_state(2)
-                print("Set state")
                 await term.sdo_write(pack(attr.format, value),
-                                     attr.idx, attr.subidx)
-                print("middle", attr.key)
-                ret = await term.sdo_read(attr.idx, attr.subidx)
-                print("end", ret)
+                                     idx, attr.subidx)
+                ret = await term.sdo_read(idx, attr.subidx)
                 setattr(self, attr.key, *unpack(attr.format, ret))
-                print("done", ret)
         return setter
 
     async def sdo_set(self):
@@ -141,12 +141,17 @@ class EtherCATDevice(Device):
                 await attr.setter(self, val)
             else:
                 term = self.terminals[attr.terminal]
+                if isinstance(term, Struct):
+                    idx = attr.idx + term.position_offset[2]
+                    term = term.terminal
+                else:
+                    idx = attr.idx
                 print("get state")
                 state = await term.get_state()
                 if state < 2:
                     await term.set_state(2)
                 print("set state")
-                ret = await term.sdo_read(attr.idx, attr.subidx)
+                ret = await term.sdo_read(idx, attr.subidx)
                 setattr(self, attr.key, *unpack(attr.format, ret))
 
     @classmethod
