@@ -638,8 +638,6 @@ class Memory(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if not long and self.bits == Opcode.DW:
-            raise AssembleError("cannot compile")
         if isinstance(self.address, Sum):
             with self.ebpf.get_free_register(dst) as dst:
                 self.ebpf.append(Opcode.LD + self.bits, dst,
@@ -766,6 +764,20 @@ class PseudoFd(Expression):
             self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
             self.ebpf.append(Opcode.W, 0, 0, 0, 0)
             yield dst, long, signed
+
+
+class ktime(Expression):
+    def __init__(self, ebpf):
+        self.ebpf = ebpf
+
+    @contextmanager
+    def calculate(self, dst, long, signed, force):
+        with self.ebpf.get_free_register(dst) as dst:
+            with self.ebpf.save_registers([i for i in range(6) if i != dst]):
+                self.ebpf.call(FuncId.ktime_get_ns)
+                if dst != 0:
+                    self.ebpf.r[dst] = self.ebpf.r0
+                yield dst, True, False
 
 
 class RegisterDesc:

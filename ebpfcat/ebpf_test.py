@@ -4,7 +4,7 @@ from . import ebpf
 from .arraymap import ArrayMap
 from .ebpf import (
     AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
-    SubProgram)
+    SubProgram, ktime)
 from .hashmap import HashMap
 from .xdp import XDP
 from .bpf import ProgType, prog_test_run
@@ -538,6 +538,15 @@ class Tests(TestCase):
             Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=2),
             Instruction(opcode=O.MOV+O.LONG+O.REG, dst=3, src=2, off=0, imm=0)
             ])
+
+    def test_ktime(self):
+        e = EBPF()
+        e.r3 = ktime(e)
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=6, src=1, off=0, imm=0),
+            Instruction(opcode=O.CALL, dst=0, src=0, off=0, imm=5),
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=0, off=0, imm=0),
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=6, off=0, imm=0)])
 
     def test_xdp(self):
         e = XDP(license="GPL")
