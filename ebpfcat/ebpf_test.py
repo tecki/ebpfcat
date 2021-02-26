@@ -514,7 +514,8 @@ class Tests(TestCase):
             Instruction(opcode=15, dst=5, src=2, off=0, imm=0),
             Instruction(opcode=O.LONG+O.MOV+O.REG, dst=2, src=3, off=0, imm=0),
             Instruction(opcode=O.LONG+O.ADD+O.REG, dst=2, src=5, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.MOV, dst=5, src=2, off=0, imm=0)])
+            Instruction(opcode=O.LONG+O.MOV+O.REG, dst=5, src=2, off=0, imm=0)
+            ])
         with self.assertRaises(AssembleError):
             e.r8 = e.r2
 

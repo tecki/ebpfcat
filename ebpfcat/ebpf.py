@@ -493,7 +493,7 @@ class Binary(Expression):
             if orig_dst is None or orig_dst == dst:
                 yield dst, long, signed
                 return
-        self.ebpf.append(Opcode.MOV + Opcode.LONG * long, orig_dst, dst, 0, 0)
+        self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long, orig_dst, dst, 0, 0)
         yield orig_dst, long, signed
 
     def contains(self, no):
