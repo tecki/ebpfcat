@@ -541,12 +541,17 @@ class Tests(TestCase):
 
     def test_ktime(self):
         e = EBPF()
+        e.r0 = 3
         e.r3 = ktime(e)
         self.assertEqual(e.opcodes, [
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=6, src=1, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=6, src=0, off=0, imm=0),
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.CALL, dst=0, src=0, off=0, imm=5),
             Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=0, off=0, imm=0),
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=6, off=0, imm=0)])
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=0, src=6, off=0, imm=0),
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=7, off=0, imm=0)
+            ])
 
     def test_xdp(self):
         e = XDP(license="GPL")

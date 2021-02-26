@@ -759,7 +759,7 @@ class PseudoFd(Expression):
         self.fd = fd
 
     @contextmanager
-    def calculate(self, dst, long, signed, force):
+    def calculate(self, dst, long, signed, force=False):
         with self.ebpf.get_free_register(dst) as dst:
             self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
             self.ebpf.append(Opcode.W, 0, 0, 0, 0)
@@ -771,13 +771,13 @@ class ktime(Expression):
         self.ebpf = ebpf
 
     @contextmanager
-    def calculate(self, dst, long, signed, force):
+    def calculate(self, dst, long, signed, force=False):
         with self.ebpf.get_free_register(dst) as dst:
             with self.ebpf.save_registers([i for i in range(6) if i != dst]):
                 self.ebpf.call(FuncId.ktime_get_ns)
                 if dst != 0:
                     self.ebpf.r[dst] = self.ebpf.r0
-                yield dst, True, False
+            yield dst, True, False
 
 
 class RegisterDesc:
