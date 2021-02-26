@@ -6,6 +6,7 @@ This modules contains a collection of devices which may be helpful
 in many projects.
 """
 from .ebpfcat import Device, FastSyncGroup, TerminalVar, DeviceVar
+from .ebpf import ktime
 
 
 class AnalogInput(Device):
@@ -15,7 +16,7 @@ class AnalogInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=False)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -34,7 +35,7 @@ class AnalogOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=True)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -54,7 +55,7 @@ class DigitalInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=False)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -73,7 +74,7 @@ class DigitalOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    value = DeviceVar()
+    value = DeviceVar(write=True)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -92,8 +93,8 @@ class PWM(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    seed = DeviceVar("I")
-    value = DeviceVar("I")
+    seed = DeviceVar("I", write=True)
+    value = DeviceVar("I", write=True)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -111,9 +112,21 @@ class Counter(Device):
     """A fake device counting the loops"""
 
     count = DeviceVar("I")
+    lasttime = DeviceVar("Q")
+    maxtime = DeviceVar("Q", write=True)
+    squared = DeviceVar("Q", write=True)
 
     def program(self):
         self.count += 1
+
+        with self.ebpf.tmp:
+            self.ebpf.tmp = self.lasttime
+            self.lasttime = ktime(self.ebpf)
+            with self.ebpf.tmp != 0:
+                self.ebpf.tmp = self.lasttime - self.ebpf.tmp
+                with self.ebpf.tmp > self.maxtime:
+                    self.maxtime = self.ebpf.tmp
+                self.squared += self.ebpf.tmp * self.ebpf.tmp
 
     def update(self):
         self.count += 1
@@ -124,11 +137,25 @@ class Motor(Device):
     encoder = TerminalVar()
     low_switch = TerminalVar()
     high_switch = TerminalVar()
+    enable = TerminalVar()
 
-    max_velocity = DeviceVar()
-    max_acceleration = DeviceVar()
-    target = DeviceVar()
-    proportional = DeviceVar()
+    current_position = DeviceVar()
+    set_velocity = DeviceVar(write=True)
+    set_enable = DeviceVar(write=True)
+    max_velocity = DeviceVar(write=True)
+    max_acceleration = DeviceVar(write=True)
+    target = DeviceVar(write=True)
+    proportional = DeviceVar(write=True)
+
+    def update(self):
+        velocity = self.proportional * (self.target - self.encoder)
+        if velocity > self.max_velocity:
+            velocity = self.max_velocity
+        elif velocity < -self.max_velocity:
+            velocity = -self.max_velocity
+        self.current_position = self.encoder
+        self.velocity = velocity
+        self.enable = self.set_enable
 
     def program(self):
         with self.ebpf.tmp:

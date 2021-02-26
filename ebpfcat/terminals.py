@@ -5,6 +5,11 @@ class Generic(EBPFTerminal):
     pass
 
 
+class Skip(EBPFTerminal):
+    async def initialize(self, relative, absolute):
+        pass
+
+
 class EL4104(EBPFTerminal):
     ch1_value = PacketDesc((1, 0), 'H')
     ch2_value = PacketDesc((1, 2), 'H')
@@ -35,7 +40,14 @@ class EK1814(EBPFTerminal):
 
 
 class EL5042(EBPFTerminal):
-    position = PacketDesc((), "I")
+    class Channel(Struct):
+        position = PacketDesc((0, 2), "Q")
+        warning = PacketDesc((0, 0), 0)
+        error = PacketDesc((0, 0), 1)
+        status = PacketDesc((0, 0), "H")
+
+    channel1 = Channel(0)
+    channel2 = Channel(10)
 
 
 class EL6022(EBPFTerminal):
@@ -59,6 +71,8 @@ class EL6022(EBPFTerminal):
 
 
 class EL7041(EBPFTerminal):
-    velocity = PacketDesc((), "H")
-    low_switch = PacketDesc((), 1)
-    high_switch = PacketDesc((), 1)
+    velocity = PacketDesc((1, 6), "h")
+    enable = PacketDesc((1, 4), 0)
+    status = PacketDesc((0, 6), "H")
+    low_switch = PacketDesc((0, 1), 7)
+    high_switch = PacketDesc((0, 1), 8)

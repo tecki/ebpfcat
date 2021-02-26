@@ -493,7 +493,7 @@ class Binary(Expression):
             if orig_dst is None or orig_dst == dst:
                 yield dst, long, signed
                 return
-        self.ebpf.append(Opcode.MOV + Opcode.LONG * long, orig_dst, dst, 0, 0)
+        self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long, orig_dst, dst, 0, 0)
         yield orig_dst, long, signed
 
     def contains(self, no):
@@ -597,8 +597,8 @@ class Register(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if signed is not None and signed != self.signed:
-            raise AssembleError("cannot compile")
+        #if signed is not None and signed != self.signed:
+        #    raise AssembleError("cannot compile")
         if self.no not in self.ebpf.owners:
             raise AssembleError("register has no value")
         if dst != self.no and force:
@@ -638,8 +638,6 @@ class Memory(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        if not long and self.bits == Opcode.DW:
-            raise AssembleError("cannot compile")
         if isinstance(self.address, Sum):
             with self.ebpf.get_free_register(dst) as dst:
                 self.ebpf.append(Opcode.LD + self.bits, dst,
@@ -761,11 +759,25 @@ class PseudoFd(Expression):
         self.fd = fd
 
     @contextmanager
-    def calculate(self, dst, long, signed, force):
+    def calculate(self, dst, long, signed, force=False):
         with self.ebpf.get_free_register(dst) as dst:
             self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
             self.ebpf.append(Opcode.W, 0, 0, 0, 0)
             yield dst, long, signed
+
+
+class ktime(Expression):
+    def __init__(self, ebpf):
+        self.ebpf = ebpf
+
+    @contextmanager
+    def calculate(self, dst, long, signed, force=False):
+        with self.ebpf.get_free_register(dst) as dst:
+            with self.ebpf.save_registers([i for i in range(6) if i != dst]):
+                self.ebpf.call(FuncId.ktime_get_ns)
+                if dst != 0:
+                    self.ebpf.r[dst] = self.ebpf.r0
+            yield dst, True, False
 
 
 class RegisterDesc:
