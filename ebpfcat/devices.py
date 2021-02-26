@@ -114,15 +114,19 @@ class Counter(Device):
     count = DeviceVar("I")
     lasttime = DeviceVar("Q")
     maxtime = DeviceVar("Q", write=True)
+    squared = DeviceVar("Q", write=True)
 
     def program(self):
         self.count += 1
 
         with self.ebpf.tmp:
-            self.ebpf.tmp = ktime(self.ebpf)
-            with self.lasttime, self.ebpf.tmp - self.lasttime > self.maxtime:
-                self.maxtime = self.ebpf.tmp - self.lasttime
-            self.lasttime = self.ebpf.tmp
+            self.ebpf.tmp = self.lasttime
+            self.lasttime = ktime(self.ebpf)
+            with self.ebpf.tmp != 0:
+                self.ebpf.tmp = self.lasttime - self.ebpf.tmp
+                with self.ebpf.tmp > self.maxtime:
+                    self.maxtime = self.ebpf.tmp
+                self.squared += self.ebpf.tmp * self.ebpf.tmp
 
     def update(self):
         self.count += 1
