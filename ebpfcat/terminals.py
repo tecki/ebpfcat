@@ -46,8 +46,8 @@ class EL5042(EBPFTerminal):
         error = PacketDesc((0, 0), 1)
         status = PacketDesc((0, 0), "H")
 
-    channel1 = Channel(0)
-    channel2 = Channel(10)
+    channel1 = Channel(0, None, 0)
+    channel2 = Channel(10, None, 0x10)
 
 
 class EL6022(EBPFTerminal):
@@ -57,14 +57,12 @@ class EL6022(EBPFTerminal):
         init_accept = PacketDesc((0, 0), 2)
         status = PacketDesc((0, 0), "H")
         in_string = PacketDesc((0, 1), "23p")
-        wkc1 = PacketDesc((0, 24), "H")
 
         transmit_request = PacketDesc((1, 0), 0)
         receive_accept = PacketDesc((1, 0), 1)
         init_request = PacketDesc((1, 0), 2)
         control = PacketDesc((1, 0), "H")
         out_string = PacketDesc((1, 1), "23p")
-        wkc2 = PacketDesc((0, 24), "H")
 
     channel1 = Channel(0, 0)
     channel2 = Channel(24, 24)
