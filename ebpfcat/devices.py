@@ -6,6 +6,7 @@ This modules contains a collection of devices which may be helpful
 in many projects.
 """
 from .ebpfcat import Device, FastSyncGroup, TerminalVar, DeviceVar
+from .ebpf import ktime
 
 
 class AnalogInput(Device):
@@ -110,10 +111,18 @@ class PWM(Device):
 class Counter(Device):
     """A fake device counting the loops"""
 
-    count = DeviceVar("I", write=False)
+    count = DeviceVar("I")
+    lasttime = DeviceVar("Q")
+    maxtime = DeviceVar("Q", write=True)
 
     def program(self):
         self.count += 1
+
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            with self.lasttime, self.ebpf.tmp - self.lasttime > self.maxtime:
+                self.maxtime = self.ebpf.tmp - self.lasttime
+            self.lasttime = self.ebpf.tmp
 
     def update(self):
         self.count += 1
