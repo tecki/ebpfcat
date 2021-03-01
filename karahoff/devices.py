@@ -2,7 +2,8 @@ from struct import pack, unpack
 from time import time
 
 from karabo.middlelayer import (
-    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32, Int16, UInt64, UInt8)
+    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32,
+    Int16, UInt64, UInt8, Double, Unit, MetricPrefix)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 
@@ -141,8 +142,13 @@ class Motor(EtherCATDevice):
     encoder = String(accessMode=AccessMode.INITONLY)
     proportional = Float(accessMode=AccessMode.INITONLY)
     max_velocity = Int16()
+    stepSize = Double(
+        accessMode=AccessMode.INITONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
-    current_position = Int32(accessMode=AccessMode.READONLY)
+    current_position = Double(
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     current_velocity = Int32(accessMode=AccessMode.READONLY)
 
     motor_term = encoder_term = None
@@ -155,19 +161,8 @@ class Motor(EtherCATDevice):
     max_current = Int16(alias="M:8010:1")
     max_voltage = Int16(alias="M:8010:3")
 
-    #@Int16()
-    async def mx_current(self, value):
-        if not isSet(value) or self.motor_term is None:
-            return
-        state = await self.motor_term.get_state()
-        if state < 2:
-            state = await self.motor_term.set_state(2)
-        assert state >= 2
-        await self.motor_term.sdo_write(pack("<H", value), 0x8010, 0x1)
-        self.max_current, = unpack(
-            "<H", await self.motor_term.sdo_read(0x8010, 0x1))
-
-    target = UInt64()
+    target = Double(unitSymbol=Unit.METER,
+                    metricPrefixSymbol=MetricPrefix.MILLI)
 
     @Slot()
     async def join(self):
@@ -178,13 +173,7 @@ class Motor(EtherCATDevice):
         self.device.encoder = self.encoder_term.position
         self.device.enable = self.motor_term.enable
         self.terminals = dict(M=self.motor_term, E=self.encoder_term)
-        try:
-            await self.sdo_set()
-        except:
-            print("laber")
-            import traceback
-            traceback.print_exc()
-        print("ende")
+        await self.sdo_set()
 
     @Slot()
     async def on(self):
@@ -196,7 +185,7 @@ class Motor(EtherCATDevice):
         self.state = State.OFF
 
     def update_properties(self):
-        self.current_position = self.device.current_position
+        self.current_position = self.device.current_position * self.stepSize
         self.current_velocity = self.device.current_velocity
 
         self.device.set_enable = bool(self.state == State.ON)
@@ -204,4 +193,4 @@ class Motor(EtherCATDevice):
             return
         self.device.max_velocity = self.max_velocity
         self.device.proportional = int(self.proportional * (1 << 16))
-        self.device.target = self.target
+        self.device.target = int(self.target // self.stepSize)
