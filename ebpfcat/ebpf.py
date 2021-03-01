@@ -477,6 +477,8 @@ class Binary(Expression):
         with self.ebpf.get_free_register(dst) as dst:
             with self.left.calculate(dst, long, signed, True) \
                     as (dst, l_long, l_signed):
+                if long is None:
+                    long = l_long
                 signed = signed or l_signed
             if self.operator is Opcode.RSH and signed:  # >>=
                 operator = Opcode.ARSH
@@ -628,11 +630,12 @@ class Memory(Expression):
     fmt_to_size = {'I': 4, 'H': 2, 'B': 1, 'Q': 8,
                    'i': 4, 'h': 2, 'b': 1, 'q': 8}
 
-    def __init__(self, ebpf, bits, address, signed=False):
+    def __init__(self, ebpf, bits, address, signed=False, long=False):
         self.ebpf = ebpf
         self.bits = bits
         self.address = address
         self.signed = signed
+        self.long = long
 
     def __iadd__(self, value):
         return IAdd(value)
@@ -646,10 +649,10 @@ class Memory(Expression):
             with self.ebpf.get_free_register(dst) as dst:
                 self.ebpf.append(Opcode.LD + self.bits, dst,
                                  self.address.left.no, self.address.right, 0)
-                yield dst, long, self.signed
+                yield dst, self.long, self.signed
         else:
-            with super().calculate(dst, long, signed, force) as ret:
-                yield ret
+            with super().calculate(dst, long, signed, force) as (dst, _, _):
+                yield dst, self.long, self.signed
 
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
@@ -713,9 +716,11 @@ class LocalVar(MemoryDesc):
 
 
 class MemoryMap:
-    def __init__(self, ebpf, bits):
+    def __init__(self, ebpf, bits, signed=False, long=False):
         self.ebpf = ebpf
         self.bits = bits
+        self.long = long
+        self.signed = signed
 
     def __setitem__(self, addr, value):
         with ExitStack() as exitStack:
@@ -746,7 +751,7 @@ class MemoryMap:
     def __getitem__(self, addr):
         if isinstance(addr, Register):
             addr = addr + 0
-        return Memory(self.ebpf, self.bits, addr)
+        return Memory(self.ebpf, self.bits, addr, self.signed, self.long)
 
 
 class Map:
@@ -879,7 +884,8 @@ class EBPF:
         self.mB = MemoryMap(self, Opcode.B)
         self.mH = MemoryMap(self, Opcode.H)
         self.mI = MemoryMap(self, Opcode.W)
-        self.mQ = MemoryMap(self, Opcode.DW)
+        self.mA = MemoryMap(self, Opcode.W, False, True)
+        self.mQ = MemoryMap(self, Opcode.DW, False, True)
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)
