@@ -294,13 +294,21 @@ class Tests(TestCase):
             e.r6 = 7
         with e.r2:
             e.r3 = 2
+        with e.r4 > 3 as cond:
+            e.r5 = 7
+        with cond.Else():
+            e.r7 = 8
         self.assertEqual(e.opcodes,
             [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
              Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=O.MOV+O.LONG, dst=6, src=0, off=0, imm=7),
              Instruction(opcode=O.JEQ, dst=2, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2)])
+             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2),
+             Instruction(opcode=O.JLE, dst=4, src=0, off=2, imm=3),
+             Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=7),
+             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
+             Instruction(opcode=O.MOV+O.LONG, dst=7, src=0, off=0, imm=8)])
 
     def test_with_inversion(self):
         e = EBPF()
