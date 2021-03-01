@@ -333,14 +333,14 @@ class SimpleComparison(Comparison):
     def compare(self, negative):
         with self.left.calculate(None, None, None) as (self.dst, _, lsigned):
             with ExitStack() as exitStack:
-                if not isinstance(self.right, int):
+                if isinstance(self.right, int):
+                    rsigned = (self.right < 0)
+                else:
                     self.src, _, rsigned = exitStack.enter_context(
                             self.right.calculate(None, None, None))
-                    if rsigned != rsigned:
-                        raise AssembleError("need same signedness for comparison")
                 self.origin = len(self.ebpf.opcodes)
                 self.ebpf.opcodes.append(None)
-                self.opcode = self.opcode[negative + 2 * lsigned]
+                self.opcode = self.opcode[negative + 2 * (lsigned or rsigned)]
         self.owners = self.ebpf.owners.copy()
 
     def target(self):
@@ -476,28 +476,29 @@ class Binary(Expression):
             dst = None
         with self.ebpf.get_free_register(dst) as dst:
             with self.left.calculate(dst, long, signed, True) \
-                    as (dst, l_long, signed):
-                pass
+                    as (dst, l_long, l_signed):
+                signed = signed or l_signed
             if self.operator is Opcode.RSH and signed:  # >>=
                 operator = Opcode.ARSH
             else:
                 operator = self.operator
             if isinstance(self.right, int):
+                r_signed = self.right < 0
                 self.ebpf.append(operator + Opcode.LONG * long,
                                  dst, 0, 0, self.right)
             else:
                 with self.right.calculate(None, long, None) as \
-                        (src, r_long, _):
+                        (src, r_long, r_signed):
                     self.ebpf.append(
                         operator + Opcode.REG
                         + Opcode.LONG * ((r_long or l_long)
                                          if long is None else long),
                         dst, src, 0, 0)
             if orig_dst is None or orig_dst == dst:
-                yield dst, long, signed
+                yield dst, long, signed or r_signed
                 return
         self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long, orig_dst, dst, 0, 0)
-        yield orig_dst, long, signed
+        yield orig_dst, long, signed or r_signed
 
     def contains(self, no):
         return self.left.contains(no) or (not isinstance(self.right, int)

@@ -414,6 +414,19 @@ class Tests(TestCase):
             Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
             Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0)])
 
+    def test_mixed_compare(self):
+        e = EBPF()
+        e.owners = {0, 1, 2, 3}
+        with e.r1 > e.sr2:
+            pass
+        with (e.r1 + e.sr2) > 3:
+            pass
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.JSLE+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=1, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
+            Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=3)])
+
 
     def test_reverse_binary(self):
         e = EBPF()
