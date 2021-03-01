@@ -343,7 +343,7 @@ class Tests(TestCase):
 
         self.assertEqual(e.opcodes, [
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=181, dst=0, src=0, off=2, imm=3),
             Instruction(opcode=183, dst=0, src=0, off=0, imm=5),
             Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
@@ -399,6 +399,21 @@ class Tests(TestCase):
             Instruction(opcode=12, dst=0, src=2, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=95, dst=0, src=2, off=0, imm=0)])
+
+    def test_mixed_binary(self):
+        e = EBPF()
+        e.owners = {0, 1, 2, 3}
+        e.w1 = e.r2 + e.w3
+        e.r1 = e.w2 + e.w3
+        e.w1 = e.w2 + e.w3
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0)])
+
 
     def test_reverse_binary(self):
         e = EBPF()
@@ -497,16 +512,16 @@ class Tests(TestCase):
             Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=31, dst=3, src=0, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.MUL, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=10, src=0, off=-10, imm=0),
             Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
             Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=191, dst=2, src=3, off=0, imm=0),
-            Instruction(opcode=39, dst=2, src=0, off=0, imm=2),
+            Instruction(opcode=O.MUL, dst=2, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=0, src=2, off=0, imm=0),
 
             Instruction(opcode=191, dst=5, src=10, off=0, imm=0),
-            Instruction(opcode=15, dst=5, src=3, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=5, src=3, off=0, imm=0),
             Instruction(opcode=105, dst=5, src=5, off=0, imm=0),
 
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
@@ -572,7 +587,7 @@ class Tests(TestCase):
             Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),
             Instruction(opcode=O.LD+O.W, dst=0, src=1, off=4, imm=0),
             Instruction(opcode=O.LD+O.W, dst=2, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=2, src=0, off=0, imm=100),
+            Instruction(opcode=O.ADD, dst=2, src=0, off=0, imm=100),
             Instruction(opcode=O.REG+O.JLE, dst=0, src=2, off=2, imm=0),
             Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),

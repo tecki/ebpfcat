@@ -476,20 +476,23 @@ class Binary(Expression):
             dst = None
         with self.ebpf.get_free_register(dst) as dst:
             with self.left.calculate(dst, long, signed, True) \
-                    as (dst, long, signed):
+                    as (dst, l_long, signed):
                 pass
             if self.operator is Opcode.RSH and signed:  # >>=
                 operator = Opcode.ARSH
             else:
                 operator = self.operator
             if isinstance(self.right, int):
-                self.ebpf.append(operator + (Opcode.LONG if long is None
-                                             else Opcode.LONG * long),
+                self.ebpf.append(operator + Opcode.LONG * long,
                                  dst, 0, 0, self.right)
             else:
-                with self.right.calculate(None, long, None) as (src, long, _):
-                    self.ebpf.append(operator + Opcode.LONG*long + Opcode.REG,
-                                     dst, src, 0, 0)
+                with self.right.calculate(None, long, None) as \
+                        (src, r_long, _):
+                    self.ebpf.append(
+                        operator + Opcode.REG
+                        + Opcode.LONG * ((r_long or l_long)
+                                         if long is None else long),
+                        dst, src, 0, 0)
             if orig_dst is None or orig_dst == dst:
                 yield dst, long, signed
                 return
@@ -649,7 +652,7 @@ class Memory(Expression):
 
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
-        with self.address.calculate(dst, None, None) as (src, _, _):
+        with self.address.calculate(dst, True, None) as (src, _, _):
             yield src, self.bits
 
     def contains(self, no):
@@ -720,7 +723,7 @@ class MemoryMap:
                 offset = addr.right
             else:
                 dst, _, _ = exitStack.enter_context(
-                        addr.calculate(None, None, None))
+                        addr.calculate(None, True, None))
                 offset = 0
             if isinstance(value, int):
                 self.ebpf.append(Opcode.ST + self.bits, dst, 0, offset, value)
