@@ -14,6 +14,7 @@ class EtherCATMasterBase(Device):
 
     interface = String(accessMode=AccessMode.INITONLY)
     terminals = VectorString(accessMode=AccessMode.INITONLY)
+    names = VectorString(accessMode=AccessMode.INITONLY)
 
 
     async def onInitialization(self):
@@ -22,6 +23,10 @@ class EtherCATMasterBase(Device):
                  for t in self.terminals]
         self.terminals = [t.__name__ for t in terms]
         self.the_terminals = [t() for t in terms]
+        for t, n in zip(self.the_terminals, self.names):
+            t.name = n
+        self.term_by_name = {k: v for k, v in
+                             zip(self.names, self.the_terminals)}
         self.ethercat = self.EtherCat(self.interface, self.the_terminals)
         await self.ethercat.connect()
         self.state = State.INIT
@@ -166,7 +171,7 @@ class EtherCATDevice(Device):
 
     def find_channel(self, name):
         terminal, *channel = name.split(".")
-        ret = self.ethercat.the_terminals[int(terminal)]
+        ret = self.ethercat.term_by_name[terminal]
         for c in channel:
             ret = getattr(ret, c)
         return ret
