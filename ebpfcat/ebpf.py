@@ -284,9 +284,9 @@ class Comparison:
         self.ebpf.opcodes[self.origin] = Instruction(op, dst, src, off+1, imm)
 
     def Else(self):
-        self.retarget_one()
         self.else_origin = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(None)
+        self.target(True)
         return self
 
     def __and__(self, value):
@@ -322,8 +322,8 @@ class SimpleComparison(Comparison):
                 self.opcode = self.opcode[negative + 2 * (lsigned or rsigned)]
         self.owners = self.ebpf.owners.copy()
 
-    def target(self):
-        assert self.ebpf.opcodes[self.origin] is None
+    def target(self, retarget=False):
+        assert retarget or self.ebpf.opcodes[self.origin] is None
         if self.opcode == Opcode.JMP:
             inst = Instruction(Opcode.JMP, 0, 0,
                                len(self.ebpf.opcodes) - self.origin - 1, 0)
@@ -336,8 +336,9 @@ class SimpleComparison(Comparison):
                 self.opcode + Opcode.REG, self.dst, self.src,
                 len(self.ebpf.opcodes) - self.origin - 1, 0)
         self.ebpf.opcodes[self.origin] = inst
-        self.ebpf.owners, self.owners = \
-                self.ebpf.owners & self.owners, self.ebpf.owners
+        if not retarget:
+            self.ebpf.owners, self.owners = \
+                    self.ebpf.owners & self.owners, self.ebpf.owners
 
 
 class AndOrComparison(Comparison):
@@ -357,17 +358,10 @@ class AndOrComparison(Comparison):
             self.left.target()
         self.owners = self.ebpf.owners.copy()
 
-    def target(self):
+    def target(self, retarget=False):
         if self.is_and == self.negative:
-            self.left.target()
-        self.right.target()
-
-    def Else(self):
-        self.left.retarget_one()
-        self.right.retarget_one()
-        self.else_origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        return self
+            self.left.target(retarget)
+        self.right.target(retarget)
 
 
 class InvertComparison(Comparison):

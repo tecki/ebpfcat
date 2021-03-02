@@ -361,7 +361,17 @@ class Tests(TestCase):
             e.r3 = 7
             e.r4 = 3
         self.maxDiff = None
-        self.assertEqual(e.opcodes, [])
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=3),
+            Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
+            Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
+            Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=2),
+            Instruction(opcode=O.JLE, dst=1, src=0, off=3, imm=2),
+            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=5),
+            Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=4),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
+            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
+            Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=3)])
 
     def test_comp_binary(self):
         e = EBPF()
