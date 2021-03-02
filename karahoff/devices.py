@@ -106,11 +106,11 @@ class MotorDevice(Device):
     high_switch = TerminalVar()
     enable = TerminalVar()
 
-    current_position = DeviceVar('Q')
+    current_position = DeviceVar('q')
     set_enable = DeviceVar('B', write=True)
     max_velocity = DeviceVar('i', write=True)
     max_acceleration = DeviceVar('i', write=True)
-    target = DeviceVar('Q', write=True)
+    target = DeviceVar('q', write=True)
     proportional = DeviceVar('i', write=True)
     current_velocity = DeviceVar('i')
 
@@ -185,7 +185,7 @@ class Motor(EtherCATDevice):
         self.state = State.OFF
 
     def update_properties(self):
-        self.current_position = self.device.current_position * self.stepSize
+        self.current_position = self.device.current_position * self.stepSize.value
         self.current_velocity = self.device.current_velocity
 
         self.device.set_enable = bool(self.state == State.ON)
