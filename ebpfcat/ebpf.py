@@ -261,7 +261,6 @@ def comparison(uposop, unegop, sposop=None, snegop=None):
 class Comparison:
     def __init__(self, ebpf):
         self.ebpf = ebpf
-        self.invert = None
         self.else_origin = None
 
     def __enter__(self):
@@ -280,35 +279,15 @@ class Comparison:
         self.ebpf.owners, self.owners = \
                 self.ebpf.owners & self.owners, self.ebpf.owners
 
-        if self.invert is not None:
-            olen = len(self.ebpf.opcodes)
-            assert self.ebpf.opcodes[self.invert].opcode == Opcode.JMP
-            self.ebpf.opcodes[self.invert:self.invert] = \
-                    self.ebpf.opcodes[self.else_origin+1:]
-            del self.ebpf.opcodes[olen-1:]
-            op, dst, src, off, imm = self.ebpf.opcodes[self.invert - 1]
-            self.ebpf.opcodes[self.invert - 1] = \
-                    Instruction(op, dst, src,
-                                len(self.ebpf.opcodes) - self.else_origin + 1, imm)
+    def retarget_one(self):
+        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
+        self.ebpf.opcodes[self.origin] = Instruction(op, dst, src, off+1, imm)
 
     def Else(self):
-        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
-        if op == Opcode.JMP:
-            self.invert = self.origin
-        else:
-            self.ebpf.opcodes[self.origin] = \
-                    Instruction(op, dst, src, off+1, imm)
+        self.retarget_one()
         self.else_origin = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(None)
         return self
-
-    def invert_result(self):
-        origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        self.target()
-        self.origin = origin
-        self.right = self.dst = 0
-        self.opcode = Opcode.JMP
 
     def __and__(self, value):
         return AndOrComparison(self.ebpf, self, value, True)
@@ -345,7 +324,10 @@ class SimpleComparison(Comparison):
 
     def target(self):
         assert self.ebpf.opcodes[self.origin] is None
-        if isinstance(self.right, int):
+        if self.opcode == Opcode.JMP:
+            inst = Instruction(Opcode.JMP, 0, 0,
+                               len(self.ebpf.opcodes) - self.origin - 1, 0)
+        elif isinstance(self.right, int):
             inst = Instruction(
                 self.opcode, self.dst, 0,
                 len(self.ebpf.opcodes) - self.origin - 1, self.right)
@@ -367,19 +349,25 @@ class AndOrComparison(Comparison):
         self.targetted = False
 
     def compare(self, negative):
-        self.left.compare(self.is_and != negative)
-        self.right.compare(self.is_and != negative)
+        self.negative = negative
+        self.left.compare(self.is_and)
+        self.right.compare(negative)
+        self.origin = len(self.ebpf.opcodes)
         if self.is_and != negative:
-            self.invert_result()
-            self.owners = self.ebpf.owners.copy()
+            self.left.target()
+        self.owners = self.ebpf.owners.copy()
 
     def target(self):
-        if self.targetted:
-            super().target()
-        else:
+        if self.is_and == self.negative:
             self.left.target()
-            self.right.target()
-            self.targetted = True
+        self.right.target()
+
+    def Else(self):
+        self.left.retarget_one()
+        self.right.retarget_one()
+        self.else_origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(None)
+        return self
 
 
 class InvertComparison(Comparison):
@@ -572,11 +560,38 @@ class AndExpression(SimpleComparison, Binary):
         Binary.__init__(self, ebpf, left, right, Opcode.AND)
         SimpleComparison.__init__(self, ebpf, left, right, Opcode.JSET)
         self.opcode = (Opcode.JSET, None, Opcode.JSET, None)
+        self.invert = None
 
     def compare(self, negative):
         super().compare(False)
         if negative:
-            self.invert_result()
+            origin = len(self.ebpf.opcodes)
+            self.ebpf.opcodes.append(None)
+            self.target()
+            self.origin = origin
+            self.opcode = Opcode.JMP
+
+    def __exit__(self, exc, etype, tb):
+        super().__exit__(exc, etype, tb)
+        if self.invert is not None:
+            olen = len(self.ebpf.opcodes)
+            assert self.ebpf.opcodes[self.invert].opcode == Opcode.JMP
+            self.ebpf.opcodes[self.invert:self.invert] = \
+                    self.ebpf.opcodes[self.else_origin+1:]
+            del self.ebpf.opcodes[olen-1:]
+            op, dst, src, off, imm = self.ebpf.opcodes[self.invert - 1]
+            self.ebpf.opcodes[self.invert - 1] = \
+                    Instruction(op, dst, src,
+                                len(self.ebpf.opcodes) - self.else_origin + 1, imm)
+
+    def Else(self):
+        if self.ebpf.opcodes[self.origin][0] == Opcode.JMP:
+            self.invert = self.origin
+        else:
+            self.retarget_one()
+        self.else_origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(None)
+        return self
 
 class Register(Expression):
     offset = 0
