@@ -68,7 +68,7 @@ class EK1814(EBPFTerminal):
 class EL5042(EBPFTerminal):
     compatibility = {(2, 330444882)}
     class Channel(Struct):
-        position = PacketDesc((0, 2), "Q")
+        position = PacketDesc((0, 2), "q")
         warning = PacketDesc((0, 0), 0)
         error = PacketDesc((0, 0), 1)
         status = PacketDesc((0, 0), "H")
