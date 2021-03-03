@@ -646,10 +646,16 @@ class Memory(Expression):
         self.long = long
 
     def __iadd__(self, value):
-        return IAdd(value)
+        if self.fmt in "qQiI":
+            return IAdd(value)
+        else:
+            return NotImplemented
 
     def __isub__(self, value):
-        return IAdd(-value)
+        if self.fmt in "qQiI":
+            return IAdd(-value)
+        else:
+            return NotImplemented
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
