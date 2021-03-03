@@ -75,11 +75,11 @@ class PacketArray:
         self.no = no
         self.memory = memory
 
-    def __getitem__(self, value):
-        return self.memory[self.ebpf.r[self.no] + value]
+    def __getitem__(self, pos):
+        return self.memory[self.ebpf.r[self.no] + pos]
 
-    def __setitem__(self, value):
-        self.memory[self.ebpf.r[self.no]] = value
+    def __setitem__(self, pos, value):
+        self.memory[self.ebpf.r[self.no] + pos] = value
 
 
 class Packet:

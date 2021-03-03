@@ -215,7 +215,8 @@ class EBPFTerminal(Terminal):
             bases = [None]
         if self.pdo_out_sz:
             bases.append(packet.size + packet.DATAGRAM_HEADER)
-            packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
+            packet.on_the_fly.append((packet.size, ECCmd.FPWR))
+            packet.append(ECCmd.NOP, b"\0" * self.pdo_out_sz, 0,
                           self.position, self.pdo_out_off)
         return bases
 
@@ -304,6 +305,7 @@ class SyncGroupBase:
 
     def allocate(self):
         self.packet = Packet()
+        self.packet.on_the_fly = []
         self.terminals = {t: t.allocate(self.packet) for t in self.terminals}
 
 
@@ -345,6 +347,8 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     def program(self):
         with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as p:
+            for pos, cmd in self.packet.on_the_fly:
+                p.pB[pos + Packet.ETHERNET_HEADER] = cmd.value
             for dev in self.devices:
                 dev.program()
         self.exit(XDPExitCode.TX)
