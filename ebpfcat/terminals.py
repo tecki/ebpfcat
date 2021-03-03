@@ -10,6 +10,32 @@ class Skip(EBPFTerminal):
         pass
 
 
+class EL1808(EBPFTerminal):
+    compatibility = {(2, 118501458)}
+
+    ch1 = PacketDesc((0, 0), 0)
+    ch2 = PacketDesc((0, 0), 1)
+    ch3 = PacketDesc((0, 0), 2)
+    ch4 = PacketDesc((0, 0), 3)
+    ch5 = PacketDesc((0, 0), 4)
+    ch6 = PacketDesc((0, 0), 5)
+    ch7 = PacketDesc((0, 0), 6)
+    ch8 = PacketDesc((0, 0), 7)
+
+
+class EL2808(EBPFTerminal):
+    compatibility = {(2, 184037458)}
+
+    ch1 = PacketDesc((1, 0), 0)
+    ch2 = PacketDesc((1, 0), 1)
+    ch3 = PacketDesc((1, 0), 2)
+    ch4 = PacketDesc((1, 0), 3)
+    ch5 = PacketDesc((1, 0), 4)
+    ch6 = PacketDesc((1, 0), 5)
+    ch7 = PacketDesc((1, 0), 6)
+    ch8 = PacketDesc((1, 0), 7)
+
+
 class EL4104(EBPFTerminal):
     ch1_value = PacketDesc((1, 0), 'H')
     ch2_value = PacketDesc((1, 2), 'H')
@@ -40,14 +66,15 @@ class EK1814(EBPFTerminal):
 
 
 class EL5042(EBPFTerminal):
+    compatibility = {(2, 330444882)}
     class Channel(Struct):
-        position = PacketDesc((0, 2), "Q")
+        position = PacketDesc((0, 2), "q")
         warning = PacketDesc((0, 0), 0)
         error = PacketDesc((0, 0), 1)
         status = PacketDesc((0, 0), "H")
 
-    channel1 = Channel(0)
-    channel2 = Channel(10)
+    channel1 = Channel(0, None, 0)
+    channel2 = Channel(10, None, 0x10)
 
 
 class EL6022(EBPFTerminal):
@@ -57,20 +84,19 @@ class EL6022(EBPFTerminal):
         init_accept = PacketDesc((0, 0), 2)
         status = PacketDesc((0, 0), "H")
         in_string = PacketDesc((0, 1), "23p")
-        wkc1 = PacketDesc((0, 24), "H")
 
         transmit_request = PacketDesc((1, 0), 0)
         receive_accept = PacketDesc((1, 0), 1)
         init_request = PacketDesc((1, 0), 2)
         control = PacketDesc((1, 0), "H")
         out_string = PacketDesc((1, 1), "23p")
-        wkc2 = PacketDesc((0, 24), "H")
 
     channel1 = Channel(0, 0)
     channel2 = Channel(24, 24)
 
 
 class EL7041(EBPFTerminal):
+    compatibility = {(2, 461451346)}
     velocity = PacketDesc((1, 6), "h")
     enable = PacketDesc((1, 4), 0)
     status = PacketDesc((0, 6), "H")

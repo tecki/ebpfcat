@@ -4,7 +4,8 @@ from unittest import TestCase, main
 from .devices import AnalogInput, AnalogOutput
 from .terminals import EL4104, EL3164, EK1814
 from .ethercat import ECCmd
-from .ebpfcat import FastSyncGroup, SyncGroup, TerminalVar, Device
+from .ebpfcat import (
+    FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc)
 from .ebpf import Instruction, Opcode as O
 
 
@@ -27,7 +28,7 @@ class MockEtherCat:
                 await sleep(0)
         return self.results.pop(0)
 
-    def register_sync_group(self, sg):
+    def register_sync_group(self, sg, packet):
         self.rsg = sg
         return 0x33
 
@@ -187,7 +188,9 @@ class Tests(TestCase):
             Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
             Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
             Instruction(opcode=O.ADD+O.LONG, dst=2, src=0, off=0, imm=83),
-            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=21, imm=0),
+            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=23, imm=0),
+            Instruction(opcode=O.ST+O.B, dst=9, src=0, off=41, imm=5),
+            Instruction(opcode=O.ST+O.B, dst=9, src=0, off=54, imm=5),
 
             Instruction(opcode=O.B+O.LD, dst=0, src=9, off=51, imm=0),
             Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-2),

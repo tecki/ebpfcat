@@ -483,100 +483,100 @@ class Terminal:
 
     async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
         """send data to the mailbox"""
-        async with self.mbx_lock:
-            status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
-            if status & 8:
-                raise RuntimeError("mailbox full, read first")
-            await gather(self.write(self.mbx_out_off, "HHBB",
-                                    datasize(args, data),
-                                    address, channel | priority << 6,
-                                    type.value | self.mbx_cnt << 4,
-                                    *args, data=data),
-                         self.write(self.mbx_out_off + self.mbx_out_sz - 1,
-                                    data=1)
-                        )
-            self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
+        status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
+        if status & 8:
+            raise RuntimeError("mailbox full, read first")
+        await self.write(self.mbx_out_off, "HHBB",
+                                datasize(args, data),
+                                address, channel | priority << 6,
+                                type.value | self.mbx_cnt << 4,
+                                *args, data=data)
+        await self.write(self.mbx_out_off + self.mbx_out_sz - 1,
+                                data=1)
+        self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
 
     async def mbx_recv(self):
         """receive data from the mailbox"""
         status = 0
-        async with self.mbx_lock:
-            while status & 8 == 0:
-                # always using mailbox 1, OK?
-                status, = await self.read(0x80D, "B")
-            dlen, address, prio, type, data = await self.read(
-                    self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
+        while status & 8 == 0:
+            # always using mailbox 1, OK?
+            status, = await self.read(0x80D, "B")
+        dlen, address, prio, type, data = await self.read(
+                self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
         return MBXType(type & 0xf), data[:dlen]
 
     async def coe_request(self, coecmd, odcmd, *args, **kwargs):
-        await self.mbx_send(MBXType.COE, "HBxH", coecmd.value << 12,
-                            odcmd.value, 0, *args, **kwargs)
-        fragments = True
-        ret = []
-        offset = 8  # skip header in first packet
+        async with self.mbx_lock:
+            await self.mbx_send(MBXType.COE, "HBxH", coecmd.value << 12,
+                                odcmd.value, 0, *args, **kwargs)
+            fragments = True
+            ret = []
+            offset = 8  # skip header in first packet
 
-        while fragments:
-            type, data = await self.mbx_recv()
-            if type is not MBXType.COE:
-                raise RuntimeError(f"expected CoE package, got {type}")
-            coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
-            if rodcmd & 0x7f != odcmd.value + 1:
-                raise RuntimeError(f"expected {odcmd.value}, got {odcmd}")
-            ret.append(data[offset:])
-            offset = 6
-        return b"".join(ret)
+            while fragments:
+                type, data = await self.mbx_recv()
+                if type is not MBXType.COE:
+                    raise RuntimeError(f"expected CoE package, got {type}")
+                coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
+                if rodcmd & 0x7f != odcmd.value + 1:
+                    raise RuntimeError(f"expected {odcmd.value}, got {odcmd}")
+                ret.append(data[offset:])
+                offset = 6
+            return b"".join(ret)
 
     async def sdo_read(self, index, subindex=None):
-        await self.mbx_send(
-                MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                ODCmd.UP_REQ_CA.value if subindex is None
-                else ODCmd.UP_REQ.value,
-                index, 1 if subindex is None else subindex)
-        type, data = await self.mbx_recv()
-        if type is not MBXType.COE:
-            raise RuntimeError(f"expected CoE, got {type}")
-        coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
-        if coecmd >> 12 != CoECmd.SDORES.value:
-            raise RuntimeError(f"expected CoE SDORES (3), got {coecmd>>12:x}")
-        if idx != index:
-            raise RuntimeError(f"requested index {index}, got {idx}")
-        if sdocmd & 2:
-            return data[6 : 10 - ((sdocmd>>2) & 3)]
-        ret = [data[10:]]
-        retsize = len(ret[0])
-
-        toggle = 0
-        while retsize < size:
+        async with self.mbx_lock:
             await self.mbx_send(
                     MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                    ODCmd.SEG_UP_REQ.value + toggle, index,
-                    1 if subindex is None else subindex)
+                    ODCmd.UP_REQ_CA.value if subindex is None
+                    else ODCmd.UP_REQ.value,
+                    index, 1 if subindex is None else subindex)
             type, data = await self.mbx_recv()
             if type is not MBXType.COE:
                 raise RuntimeError(f"expected CoE, got {type}")
-            coecmd, sdocmd = unpack("<HB", data[:3])
+            coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
-                raise RuntimeError(f"expected CoE cmd SDORES, got {coecmd}")
-            if sdocmd & 0xe0 != 0:
+                raise RuntimeError(f"expected CoE SDORES (3), got {coecmd>>12:x}")
+            if idx != index:
                 raise RuntimeError(f"requested index {index}, got {idx}")
-            if sdocmd & 1 and len(data) == 7:
-                data = data[:3 + (sdocmd >> 1) & 7]
-            ret += data[3:]
-            retsize += len(data) - 3
-            if sdocmd & 1:
-                break
-            toggle ^= 0x10
-        if retsize != size:
-            raise RuntimeError(f"expected {size} bytes, got {retsize}")
-        return b"".join(ret)
+            if sdocmd & 2:
+                return data[6 : 10 - ((sdocmd>>2) & 3)]
+            ret = [data[10:]]
+            retsize = len(ret[0])
+
+            toggle = 0
+            while retsize < size:
+                await self.mbx_send(
+                        MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                        ODCmd.SEG_UP_REQ.value + toggle, index,
+                        1 if subindex is None else subindex)
+                type, data = await self.mbx_recv()
+                if type is not MBXType.COE:
+                    raise RuntimeError(f"expected CoE, got {type}")
+                coecmd, sdocmd = unpack("<HB", data[:3])
+                if coecmd >> 12 != CoECmd.SDORES.value:
+                    raise RuntimeError(f"expected CoE cmd SDORES, got {coecmd}")
+                if sdocmd & 0xe0 != 0:
+                    raise RuntimeError(f"requested index {index}, got {idx}")
+                if sdocmd & 1 and len(data) == 7:
+                    data = data[:3 + (sdocmd >> 1) & 7]
+                ret += data[3:]
+                retsize += len(data) - 3
+                if sdocmd & 1:
+                    break
+                toggle ^= 0x10
+            if retsize != size:
+                raise RuntimeError(f"expected {size} bytes, got {retsize}")
+            return b"".join(ret)
 
     async def sdo_write(self, data, index, subindex=None):
         if len(data) <= 4 and subindex is not None:
-            await self.mbx_send(
-                    MBXType.COE, "HBHB4s", CoECmd.SDOREQ.value << 12,
-                    ODCmd.DOWN_EXP.value | (((4 - len(data)) << 2) & 0xc),
-                    index, subindex, data)
-            type, data = await self.mbx_recv()
+            async with self.mbx_lock:
+                await self.mbx_send(
+                        MBXType.COE, "HBHB4s", CoECmd.SDOREQ.value << 12,
+                        ODCmd.DOWN_EXP.value | (((4 - len(data)) << 2) & 0xc),
+                        index, subindex, data)
+                type, data = await self.mbx_recv()
             if type is not MBXType.COE:
                 raise RuntimeError(f"expected CoE, got {type}")
             coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
@@ -585,45 +585,46 @@ class Terminal:
             if coecmd >> 12 != CoECmd.SDORES.value:
                 raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
         else:
-            stop = min(len(data), self.mbx_out_sz - 16)
-            await self.mbx_send(
-                    MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                    ODCmd.DOWN_INIT_CA.value if subindex is None
-                    else ODCmd.DOWN_INIT.value,
-                    index, 1 if subindex is None else subindex,
-                    data=data[:stop])
-            type, data = await self.mbx_recv()
-            if type is not MBXType.COE:
-                raise RuntimeError(f"expected CoE, got {type}")
-            coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
-            if coecmd >> 12 != CoECmd.SDORES.value:
-                raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
-            if idx != index or subindex != subidx:
-                raise RuntimeError(f"requested index {index}, got {idx}")
-            toggle = 0
-            while stop < len(data):
-                start = stop
-                stop = min(len(data), start + self.mbx_out_sz - 9)
-                if stop == len(data):
-                    if stop - start < 7:
-                        cmd = 1 + (7-stop+start << 1)
-                        d = data[start:stop] + b"\0" * (7 - stop + start)
-                    else:
-                        cmd = 1
-                        d = data[start:stop]
-                    await self.mbx_send(
-                            MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                            cmd + toggle, index,
-                            1 if subindex is None else subindex, data=d)
-                    type, data = await self.mbx_recv()
-                    if type is not MBXType.COE:
-                        raise RuntimeError(f"expected CoE, got {type}")
-                    coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
-                    if coecmd >> 12 != CoECmd.SDORES.value:
-                        raise RuntimeError(f"expected CoE SDORES")
-                    if idx != index or subindex != subidx:
-                        raise RuntimeError(f"requested index {index}")
-                toggle ^= 0x10
+            async with self.mbx_lock:
+                stop = min(len(data), self.mbx_out_sz - 16)
+                await self.mbx_send(
+                        MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                        ODCmd.DOWN_INIT_CA.value if subindex is None
+                        else ODCmd.DOWN_INIT.value,
+                        index, 1 if subindex is None else subindex,
+                        data=data[:stop])
+                type, data = await self.mbx_recv()
+                if type is not MBXType.COE:
+                    raise RuntimeError(f"expected CoE, got {type}")
+                coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
+                if coecmd >> 12 != CoECmd.SDORES.value:
+                    raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
+                if idx != index or subindex != subidx:
+                    raise RuntimeError(f"requested index {index}, got {idx}")
+                toggle = 0
+                while stop < len(data):
+                    start = stop
+                    stop = min(len(data), start + self.mbx_out_sz - 9)
+                    if stop == len(data):
+                        if stop - start < 7:
+                            cmd = 1 + (7-stop+start << 1)
+                            d = data[start:stop] + b"\0" * (7 - stop + start)
+                        else:
+                            cmd = 1
+                            d = data[start:stop]
+                        await self.mbx_send(
+                                MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
+                                cmd + toggle, index,
+                                1 if subindex is None else subindex, data=d)
+                        type, data = await self.mbx_recv()
+                        if type is not MBXType.COE:
+                            raise RuntimeError(f"expected CoE, got {type}")
+                        coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
+                        if coecmd >> 12 != CoECmd.SDORES.value:
+                            raise RuntimeError(f"expected CoE SDORES")
+                        if idx != index or subindex != subidx:
+                            raise RuntimeError(f"requested index {index}")
+                    toggle ^= 0x10
 
     async def read_ODlist(self):
         idxes = await self.coe_request(CoECmd.SDOINFO, ODCmd.LIST_REQ, "H", 1)

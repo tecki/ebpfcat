@@ -5,7 +5,7 @@ from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
 
-from .ebpf import EBPF, Expression, Memory, Opcode, Comparison
+from .ebpf import EBPF
 from .bpf import ProgType
 
 
@@ -75,11 +75,11 @@ class PacketArray:
         self.no = no
         self.memory = memory
 
-    def __getitem__(self, value):
-        return self.memory[self.ebpf.r[self.no] + value]
+    def __getitem__(self, pos):
+        return self.memory[self.ebpf.r[self.no] + pos]
 
-    def __setitem__(self, value):
-        self.memory[self.ebpf.r[self.no]] = value
+    def __setitem__(self, pos, value):
+        self.memory[self.ebpf.r[self.no] + pos] = value
 
 
 class Packet:
@@ -104,15 +104,15 @@ class PacketSize:
     @contextmanager
     def __lt__(self, value):
         e = self.ebpf
-        e.r9 = e.mI[e.r1]
-        with e.mI[e.r1 + 4] < e.mI[e.r1] + value as comp:
+        e.r9 = e.mA[e.r1]
+        with e.mA[e.r1 + 4] < e.mA[e.r1] + value as comp:
             yield Packet(e, comp, 9)
 
     @contextmanager
     def __gt__(self, value):
         e = self.ebpf
-        e.r9 = e.mI[e.r1]
-        with e.mI[e.r1 + 4] > e.mI[e.r1] + value as comp:
+        e.r9 = e.mA[e.r1]
+        with e.mA[e.r1 + 4] > e.mA[e.r1] + value as comp:
             yield Packet(e, comp, 9)
 
     def __le__(self, value):

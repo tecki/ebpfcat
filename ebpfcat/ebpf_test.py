@@ -183,18 +183,35 @@ class Tests(TestCase):
     def test_lock_add(self):
         class Local(EBPF):
             a = LocalVar('I')
+            b = LocalVar('q')
+            c = LocalVar('h')
 
         e = Local(ProgType.XDP, "GPL")
         e.a += 3
         e.mI[e.r1] += e.r1
         e.a -= 3
+        e.b += 3
+        e.mQ[e.r1] += e.r1
+
+        # do not generate XADD for bytes and words
+        e.c += 3
+        e.mB[e.r1] += e.r1
 
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
            Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0),
            Instruction(opcode=O.XADD+O.W, dst=1, src=1, off=0, imm=0),
            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=-3),
-           Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0)])
+           Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
+           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-16, imm=0),
+           Instruction(opcode=O.XADD+O.DW, dst=1, src=1, off=0, imm=0),
+           Instruction(opcode=O.LD+O.REG, dst=0, src=10, off=-18, imm=0),
+           Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=3),
+           Instruction(opcode=O.STX+O.REG, dst=10, src=0, off=-18, imm=0),
+           Instruction(opcode=O.B+O.LD, dst=0, src=1, off=0, imm=0),
+           Instruction(opcode=O.ADD+O.REG, dst=0, src=1, off=0, imm=0),
+           Instruction(opcode=O.STX+O.B, dst=1, src=0, off=0, imm=0)])
 
 
     def test_jump(self):
@@ -294,13 +311,21 @@ class Tests(TestCase):
             e.r6 = 7
         with e.r2:
             e.r3 = 2
+        with e.r4 > 3 as cond:
+            e.r5 = 7
+        with cond.Else():
+            e.r7 = 8
         self.assertEqual(e.opcodes,
             [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
              Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=O.MOV+O.LONG, dst=6, src=0, off=0, imm=7),
              Instruction(opcode=O.JEQ, dst=2, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2)])
+             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2),
+             Instruction(opcode=O.JLE, dst=4, src=0, off=2, imm=3),
+             Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=7),
+             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
+             Instruction(opcode=O.MOV+O.LONG, dst=7, src=0, off=0, imm=8)])
 
     def test_with_inversion(self):
         e = EBPF()
@@ -321,6 +346,50 @@ class Tests(TestCase):
             Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=183, dst=1, src=0, off=0, imm=4)])
 
+    def test_with_and(self):
+        e = EBPF()
+        e.owners = set(range(11))
+        with (e.r2 > 3) & (e.r3 > 2) as cond:
+            e.r1 = 5
+        with (e.r2 > 2) & (e.r1 < 2) as cond:
+            e.r2 = 5
+        with cond.Else():
+            e.r3 = 7
+        self.maxDiff = None
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.JLE, dst=2, src=0, off=2, imm=3),
+            Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
+            Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
+            Instruction(opcode=O.JLE, dst=2, src=0, off=3, imm=2),
+            Instruction(opcode=O.JGE, dst=1, src=0, off=2, imm=2),
+            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=5),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7)])
+
+    def test_with_or(self):
+        e = EBPF()
+        e.owners = set(range(11))
+        with (e.r2 > 3) | (e.r3 > 2) as cond:
+            e.r1 = 5
+        with (e.r2 > 2) | (e.r1 > 2) as cond:
+            e.r2 = 5
+            e.r5 = 4
+        with cond.Else():
+            e.r3 = 7
+            e.r4 = 3
+        self.maxDiff = None
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=3),
+            Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
+            Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
+            Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=2),
+            Instruction(opcode=O.JLE, dst=1, src=0, off=3, imm=2),
+            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=5),
+            Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=4),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
+            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
+            Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=3)])
+
     def test_comp_binary(self):
         e = EBPF()
         e.owners = {1, 2, 3, 5}
@@ -335,7 +404,7 @@ class Tests(TestCase):
 
         self.assertEqual(e.opcodes, [
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=181, dst=0, src=0, off=2, imm=3),
             Instruction(opcode=183, dst=0, src=0, off=0, imm=5),
             Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
@@ -391,6 +460,34 @@ class Tests(TestCase):
             Instruction(opcode=12, dst=0, src=2, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=95, dst=0, src=2, off=0, imm=0)])
+
+    def test_mixed_binary(self):
+        e = EBPF()
+        e.owners = {0, 1, 2, 3}
+        e.w1 = e.r2 + e.w3
+        e.r1 = e.w2 + e.w3
+        e.w1 = e.w2 + e.w3
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0)])
+
+    def test_mixed_compare(self):
+        e = EBPF()
+        e.owners = {0, 1, 2, 3}
+        with e.r1 > e.sr2:
+            pass
+        with (e.r1 + e.sr2) > 3:
+            pass
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.JSLE+O.REG, dst=1, src=2, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=1, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
+            Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=3)])
+
 
     def test_reverse_binary(self):
         e = EBPF()
@@ -489,16 +586,16 @@ class Tests(TestCase):
             Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=31, dst=3, src=0, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.MUL+O.LONG, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=10, src=0, off=-10, imm=0),
             Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
             Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=191, dst=2, src=3, off=0, imm=0),
-            Instruction(opcode=39, dst=2, src=0, off=0, imm=2),
+            Instruction(opcode=O.MUL+O.LONG, dst=2, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=0, src=2, off=0, imm=0),
 
             Instruction(opcode=191, dst=5, src=10, off=0, imm=0),
-            Instruction(opcode=15, dst=5, src=3, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=5, src=3, off=0, imm=0),
             Instruction(opcode=105, dst=5, src=5, off=0, imm=0),
 
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),

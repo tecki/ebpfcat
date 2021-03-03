@@ -4,9 +4,8 @@ from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import ECCmd, EtherCat, Packet, Terminal
-from .ebpf import FuncId, MemoryDesc, SubProgram
+from .ebpf import FuncId, MemoryDesc, SubProgram, ktime
 from .xdp import XDP, XDPExitCode
-from .hashmap import HashMap
 from .bpf import (
     ProgType, MapType, create_map, update_elem, prog_test_run, lookup_elem)
 
@@ -207,7 +206,7 @@ class EBPFTerminal(Terminal):
                 (self.vendorId, self.productCode) not in self.compatibility):
             raise RuntimeError("Incompatible Terminal")
 
-    def allocate(self, packet):
+    def allocate(self, packet, readonly):
         if self.pdo_in_sz:
             bases = [packet.size + packet.DATAGRAM_HEADER]
             packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
@@ -216,44 +215,52 @@ class EBPFTerminal(Terminal):
             bases = [None]
         if self.pdo_out_sz:
             bases.append(packet.size + packet.DATAGRAM_HEADER)
-            packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
-                          self.position, self.pdo_out_off)
+            if readonly:
+                packet.on_the_fly.append((packet.size, ECCmd.FPWR))
+                packet.append(ECCmd.NOP, b"\0" * self.pdo_out_sz, 0,
+                              self.position, self.pdo_out_off)
+            else:
+                packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
+                              self.position, self.pdo_out_off)
         return bases
 
     def update(self, data):
         pass
 
 
-class EBPFCat(XDP):
-    vars = HashMap()
-
-    count = vars.globalVar()
-    ptype = vars.globalVar()
-
-    def program(self):
-        #with self.If(self.packet16[12] != 0xA488):
-        #    self.exit(2)
-        self.count += 1
-        #self.ptype = self.packet32[18]
-        self.exit(2)
-
-
 class EtherXDP(XDP):
     license = "GPL"
 
-    variables = HashMap()
-    count = variables.globalVar()
-    allcount = variables.globalVar()
+    variables = ArrayMap()
+    counters = variables.globalVar("64I")
+
+    rate = 0
 
     def program(self):
-        e = self
-        with e.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
-            e.count += 1
-            e.r2 = e.get_fd(self.programs)
-            e.r3 = p.pI[18]
-            e.call(FuncId.tail_call)
-        e.allcount += 1
-        e.exit(XDPExitCode.PASS)
+        with self.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            self.ebpf.tmp = self.ebpf.tmp * 0xcf019d85 + 1
+            with self.ebpf.tmp & 0xffff < self.rate:
+                self.ebpf.exit(XDPExitCode.DROP)
+        with self.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
+            self.r3 = p.pI[18]
+            with self.counters.get_address(None, False, False) as (dst, _), \
+                    self.r3 < FastEtherCat.MAX_PROGS:
+                self.mH[self.r[dst] + 4 * self.r3] += 1
+                p.pB[17] += 2
+                with p.pB[17] & 1 as is_regular:
+                    self.mB[self.r[dst] + 4 * self.r3 + 3] += 1
+                    self.mB[self.r[dst] + 4 * self.r3 + 2] = 0
+                with is_regular.Else():
+                    self.mB[self.r[dst] + 4 * self.r3 + 2] += 1
+                    self.mB[self.r[dst] + 4 * self.r3 + 3] = 0
+                    with self.mB[self.r[dst] + 4 * self.r3 + 2] > 3 as exceed:
+                        p.pB[17] += 1  # turn into regular package
+                    with exceed.Else():
+                        self.exit(XDPExitCode.TX)
+            self.r2 = self.get_fd(self.programs)
+            self.call(FuncId.tail_call)
+        self.exit(XDPExitCode.PASS)
 
 
 class SimpleEtherCat(EtherCat):
@@ -275,20 +282,36 @@ class FastEtherCat(SimpleEtherCat):
         self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 
-    def register_sync_group(self, sg):
+    def register_sync_group(self, sg, packet):
         index = len(self.sync_groups)
         while index in self.sync_groups:
             index = (index + 1) % self.MAX_PROGS
         fd, _ = sg.load(log_level=1)
         update_elem(self.programs, pack("<I", index), pack("<I", fd), 0)
         self.sync_groups[index] = sg
+        sg.assembled = packet.assemble(index)
         return index
+
+    async def watchdog(self):
+        lastcounts = [0] * 64
+        while True:
+            t0 = time()
+            self.ebpf.variables.read()
+            counts = self.ebpf.counters
+            for i, sg in self.sync_groups.items():
+                if ((counts[i] ^ lastcounts[i]) & 0xffff == 0
+                        or (counts[i] >> 24) > 3):
+                    self.send_packet(sg.assembled)
+                lastcounts[i] = counts[i]
+            await sleep(0.001)
 
     async def connect(self):
         await super().connect()
         self.ebpf = EtherXDP()
         self.ebpf.programs = self.programs
         self.fd = await self.ebpf.attach(self.addr[0])
+        ensure_future(self.watchdog())
+
 
 class SyncGroupBase:
     def __init__(self, ec, devices, **kwargs):
@@ -303,10 +326,6 @@ class SyncGroupBase:
         # sorting is only necessary for test stability
         self.terminals = {t: None for t in
                           sorted(terminals, key=lambda t: t.position)}
-
-    def allocate(self):
-        self.packet = Packet()
-        self.terminals = {t: t.allocate(self.packet) for t in self.terminals}
 
 
 class SyncGroup(SyncGroupBase):
@@ -334,6 +353,11 @@ class SyncGroup(SyncGroupBase):
         self.asm_packet = self.packet.assemble(self.packet_index)
         return ensure_future(self.run())
 
+    def allocate(self):
+        self.packet = Packet()
+        self.terminals = {t: t.allocate(self.packet, False)
+                          for t in self.terminals}
+
 
 class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
@@ -347,14 +371,21 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     def program(self):
         with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as p:
+            for pos, cmd in self.packet.on_the_fly:
+                p.pB[pos + Packet.ETHERNET_HEADER] = cmd.value
             for dev in self.devices:
                 dev.program()
         self.exit(XDPExitCode.TX)
 
     def start(self):
         self.allocate()
-        index = self.ec.register_sync_group(self)
-        self.ec.send_packet(self.packet.assemble(index))
+        self.ec.register_sync_group(self, self.packet)
         self.monitor = ensure_future(gather(*[t.to_operational()
                                               for t in self.terminals]))
         return self.monitor
+
+    def allocate(self):
+        self.packet = Packet()
+        self.packet.on_the_fly = []
+        self.terminals = {t: t.allocate(self.packet, True)
+                          for t in self.terminals}

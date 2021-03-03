@@ -1,6 +1,6 @@
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
-from struct import pack, unpack
+from struct import pack, unpack, calcsize
 from enum import Enum
 
 from . import bpf
@@ -261,7 +261,6 @@ def comparison(uposop, unegop, sposop=None, snegop=None):
 class Comparison:
     def __init__(self, ebpf):
         self.ebpf = ebpf
-        self.invert = None
         self.else_origin = None
 
     def __enter__(self):
@@ -280,35 +279,15 @@ class Comparison:
         self.ebpf.owners, self.owners = \
                 self.ebpf.owners & self.owners, self.ebpf.owners
 
-        if self.invert is not None:
-            olen = len(self.ebpf.opcodes)
-            assert self.ebpf.opcodes[self.invert].opcode == Opcode.JMP
-            self.ebpf.opcodes[self.invert:self.invert] = \
-                    self.ebpf.opcodes[self.else_origin+1:]
-            del self.ebpf.opcodes[olen-1:]
-            op, dst, src, off, imm = self.ebpf.opcodes[self.invert - 1]
-            self.ebpf.opcodes[self.invert - 1] = \
-                    Instruction(op, dst, src,
-                                len(self.ebpf.opcodes) - self.else_origin + 1, imm)
+    def retarget_one(self):
+        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
+        self.ebpf.opcodes[self.origin] = Instruction(op, dst, src, off+1, imm)
 
     def Else(self):
-        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
-        if op == Opcode.JMP:
-            self.invert = self.origin
-        else:
-            self.ebpf.opcodes[self.origin] = \
-                    Instruction(op, dst, src, off+1, imm)
         self.else_origin = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(None)
+        self.target(True)
         return self
-
-    def invert_result(self):
-        origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        self.target()
-        self.origin = origin
-        self.right = self.dst = 0
-        self.opcode = Opcode.JMP
 
     def __and__(self, value):
         return AndOrComparison(self.ebpf, self, value, True)
@@ -333,19 +312,22 @@ class SimpleComparison(Comparison):
     def compare(self, negative):
         with self.left.calculate(None, None, None) as (self.dst, _, lsigned):
             with ExitStack() as exitStack:
-                if not isinstance(self.right, int):
+                if isinstance(self.right, int):
+                    rsigned = (self.right < 0)
+                else:
                     self.src, _, rsigned = exitStack.enter_context(
                             self.right.calculate(None, None, None))
-                    if rsigned != rsigned:
-                        raise AssembleError("need same signedness for comparison")
                 self.origin = len(self.ebpf.opcodes)
                 self.ebpf.opcodes.append(None)
-                self.opcode = self.opcode[negative + 2 * lsigned]
+                self.opcode = self.opcode[negative + 2 * (lsigned or rsigned)]
         self.owners = self.ebpf.owners.copy()
 
-    def target(self):
-        assert self.ebpf.opcodes[self.origin] is None
-        if isinstance(self.right, int):
+    def target(self, retarget=False):
+        assert retarget or self.ebpf.opcodes[self.origin] is None
+        if self.opcode == Opcode.JMP:
+            inst = Instruction(Opcode.JMP, 0, 0,
+                               len(self.ebpf.opcodes) - self.origin - 1, 0)
+        elif isinstance(self.right, int):
             inst = Instruction(
                 self.opcode, self.dst, 0,
                 len(self.ebpf.opcodes) - self.origin - 1, self.right)
@@ -354,8 +336,9 @@ class SimpleComparison(Comparison):
                 self.opcode + Opcode.REG, self.dst, self.src,
                 len(self.ebpf.opcodes) - self.origin - 1, 0)
         self.ebpf.opcodes[self.origin] = inst
-        self.ebpf.owners, self.owners = \
-                self.ebpf.owners & self.owners, self.ebpf.owners
+        if not retarget:
+            self.ebpf.owners, self.owners = \
+                    self.ebpf.owners & self.owners, self.ebpf.owners
 
 
 class AndOrComparison(Comparison):
@@ -367,19 +350,18 @@ class AndOrComparison(Comparison):
         self.targetted = False
 
     def compare(self, negative):
-        self.left.compare(self.is_and != negative)
-        self.right.compare(self.is_and != negative)
+        self.negative = negative
+        self.left.compare(self.is_and)
+        self.right.compare(negative)
+        self.origin = len(self.ebpf.opcodes)
         if self.is_and != negative:
-            self.invert_result()
-            self.owners = self.ebpf.owners.copy()
-
-    def target(self):
-        if self.targetted:
-            super().target()
-        else:
             self.left.target()
-            self.right.target()
-            self.targetted = True
+        self.owners = self.ebpf.owners.copy()
+
+    def target(self, retarget=False):
+        if self.is_and == self.negative:
+            self.left.target(retarget)
+        self.right.target(retarget)
 
 
 class InvertComparison(Comparison):
@@ -447,8 +429,9 @@ class Expression:
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
         with self.ebpf.get_free_register(dst) as dst:
-            with self.get_address(dst, long, signed) as (src, bits):
-                self.ebpf.append(Opcode.LD + bits, dst, src, 0, 0)
+            with self.get_address(dst, long, signed) as (src, fmt):
+                self.ebpf.append(Opcode.LD + Memory.fmt_to_opcode[fmt],
+                                 dst, src, 0, 0)
                 yield dst, long, self.signed
 
     @contextmanager
@@ -476,25 +459,31 @@ class Binary(Expression):
             dst = None
         with self.ebpf.get_free_register(dst) as dst:
             with self.left.calculate(dst, long, signed, True) \
-                    as (dst, long, signed):
-                pass
+                    as (dst, l_long, l_signed):
+                if long is None:
+                    long = l_long
+                signed = signed or l_signed
             if self.operator is Opcode.RSH and signed:  # >>=
                 operator = Opcode.ARSH
             else:
                 operator = self.operator
             if isinstance(self.right, int):
-                self.ebpf.append(operator + (Opcode.LONG if long is None
-                                             else Opcode.LONG * long),
+                r_signed = self.right < 0
+                self.ebpf.append(operator + Opcode.LONG * long,
                                  dst, 0, 0, self.right)
             else:
-                with self.right.calculate(None, long, None) as (src, long, _):
-                    self.ebpf.append(operator + Opcode.LONG*long + Opcode.REG,
-                                     dst, src, 0, 0)
+                with self.right.calculate(None, long, None) as \
+                        (src, r_long, r_signed):
+                    self.ebpf.append(
+                        operator + Opcode.REG
+                        + Opcode.LONG * ((r_long or l_long)
+                                         if long is None else long),
+                        dst, src, 0, 0)
             if orig_dst is None or orig_dst == dst:
-                yield dst, long, signed
+                yield dst, long, signed or r_signed
                 return
         self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long, orig_dst, dst, 0, 0)
-        yield orig_dst, long, signed
+        yield orig_dst, long, signed or r_signed
 
     def contains(self, no):
         return self.left.contains(no) or (not isinstance(self.right, int)
@@ -566,11 +555,38 @@ class AndExpression(SimpleComparison, Binary):
         Binary.__init__(self, ebpf, left, right, Opcode.AND)
         SimpleComparison.__init__(self, ebpf, left, right, Opcode.JSET)
         self.opcode = (Opcode.JSET, None, Opcode.JSET, None)
+        self.invert = None
 
     def compare(self, negative):
         super().compare(False)
         if negative:
-            self.invert_result()
+            origin = len(self.ebpf.opcodes)
+            self.ebpf.opcodes.append(None)
+            self.target()
+            self.origin = origin
+            self.opcode = Opcode.JMP
+
+    def __exit__(self, exc, etype, tb):
+        super().__exit__(exc, etype, tb)
+        if self.invert is not None:
+            olen = len(self.ebpf.opcodes)
+            assert self.ebpf.opcodes[self.invert].opcode == Opcode.JMP
+            self.ebpf.opcodes[self.invert:self.invert] = \
+                    self.ebpf.opcodes[self.else_origin+1:]
+            del self.ebpf.opcodes[olen-1:]
+            op, dst, src, off, imm = self.ebpf.opcodes[self.invert - 1]
+            self.ebpf.opcodes[self.invert - 1] = \
+                    Instruction(op, dst, src,
+                                len(self.ebpf.opcodes) - self.else_origin + 1, imm)
+
+    def Else(self):
+        if self.ebpf.opcodes[self.origin][0] == Opcode.JMP:
+            self.invert = self.origin
+        else:
+            self.retarget_one()
+        self.else_origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(None)
+        return self
 
 class Register(Expression):
     offset = 0
@@ -621,36 +637,41 @@ class Memory(Expression):
     bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
     fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
                      'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW}
-    fmt_to_size = {'I': 4, 'H': 2, 'B': 1, 'Q': 8,
-                   'i': 4, 'h': 2, 'b': 1, 'q': 8}
 
-    def __init__(self, ebpf, bits, address, signed=False):
+    def __init__(self, ebpf, fmt, address, signed=False, long=False):
         self.ebpf = ebpf
-        self.bits = bits
+        self.fmt = fmt
         self.address = address
         self.signed = signed
+        self.long = long
 
     def __iadd__(self, value):
-        return IAdd(value)
+        if self.fmt in "qQiI":
+            return IAdd(value)
+        else:
+            return NotImplemented
 
     def __isub__(self, value):
-        return IAdd(-value)
+        if self.fmt in "qQiI":
+            return IAdd(-value)
+        else:
+            return NotImplemented
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
         if isinstance(self.address, Sum):
             with self.ebpf.get_free_register(dst) as dst:
-                self.ebpf.append(Opcode.LD + self.bits, dst,
+                self.ebpf.append(Opcode.LD + self.fmt_to_opcode[self.fmt], dst,
                                  self.address.left.no, self.address.right, 0)
-                yield dst, long, self.signed
+                yield dst, self.long, self.signed
         else:
-            with super().calculate(dst, long, signed, force) as ret:
-                yield ret
+            with super().calculate(dst, long, signed, force) as (dst, _, _):
+                yield dst, self.long, self.signed
 
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
-        with self.address.calculate(dst, None, None) as (src, _, _):
-            yield src, self.bits
+        with self.address.calculate(dst, True, None) as (src, _, _):
+            yield src, self.fmt
 
     def contains(self, no):
         return self.address.contains(no)
@@ -661,7 +682,7 @@ class MemoryDesc:
         if instance is None:
             return self
         fmt, addr = self.fmt_addr(instance)
-        return Memory(instance.ebpf, Memory.fmt_to_opcode[fmt],
+        return Memory(instance.ebpf, fmt,
                       instance.ebpf.r[self.base_register] + addr,
                       fmt.islower())
 
@@ -695,7 +716,7 @@ class LocalVar(MemoryDesc):
         self.fmt = fmt
 
     def __set_name__(self, owner, name):
-        size = Memory.fmt_to_size[self.fmt]
+        size = calcsize(self.fmt)
         owner.stack -= size
         owner.stack &= -size
         self.relative_addr = owner.stack
@@ -709,9 +730,11 @@ class LocalVar(MemoryDesc):
 
 
 class MemoryMap:
-    def __init__(self, ebpf, bits):
+    def __init__(self, ebpf, fmt, signed=False, long=False):
         self.ebpf = ebpf
-        self.bits = bits
+        self.fmt = fmt
+        self.long = long
+        self.signed = signed
 
     def __setitem__(self, addr, value):
         with ExitStack() as exitStack:
@@ -720,10 +743,11 @@ class MemoryMap:
                 offset = addr.right
             else:
                 dst, _, _ = exitStack.enter_context(
-                        addr.calculate(None, None, None))
+                        addr.calculate(None, True, None))
                 offset = 0
             if isinstance(value, int):
-                self.ebpf.append(Opcode.ST + self.bits, dst, 0, offset, value)
+                self.ebpf.append(Opcode.ST + Memory.fmt_to_opcode[self.fmt],
+                                 dst, 0, offset, value)
                 return
             elif isinstance(value, IAdd):
                 value = value.value
@@ -731,18 +755,20 @@ class MemoryMap:
                     with self.ebpf.get_free_register(None) as src:
                         self.ebpf.r[src] = value
                         self.ebpf.append(
-                            Opcode.XADD + self.bits, dst, src, offset, 0)
+                            Opcode.XADD + Memory.fmt_to_opcode[self.fmt],
+                            dst, src, offset, 0)
                     return
                 opcode = Opcode.XADD
             else:
                 opcode = Opcode.STX
             with value.calculate(None, None, None) as (src, _, _):
-                self.ebpf.append(opcode + self.bits, dst, src, offset, 0)
+                self.ebpf.append(opcode + Memory.fmt_to_opcode[self.fmt],
+                                 dst, src, offset, 0)
 
     def __getitem__(self, addr):
         if isinstance(addr, Register):
             addr = addr + 0
-        return Memory(self.ebpf, self.bits, addr)
+        return Memory(self.ebpf, self.fmt, addr, self.signed, self.long)
 
 
 class Map:
@@ -872,10 +898,11 @@ class EBPF:
             self.name = name
         self.loaded = False
 
-        self.mB = MemoryMap(self, Opcode.B)
-        self.mH = MemoryMap(self, Opcode.H)
-        self.mI = MemoryMap(self, Opcode.W)
-        self.mQ = MemoryMap(self, Opcode.DW)
+        self.mB = MemoryMap(self, "B")
+        self.mH = MemoryMap(self, "H")
+        self.mI = MemoryMap(self, "I")
+        self.mA = MemoryMap(self, "I", False, True)
+        self.mQ = MemoryMap(self, "Q", False, True)
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)

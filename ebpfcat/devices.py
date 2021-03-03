@@ -184,3 +184,15 @@ class Dummy(Device):
 
     def program(self):
         pass
+
+
+class RandomDropper(Device):
+    rate = DeviceVar("I", write=True)
+
+    def program(self):
+        from .xdp import XDPExitCode
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            self.ebpf.tmp = self.ebpf.tmp * 0xcf019d85 + 1
+            with self.ebpf.tmp & 0xffff < self.rate:
+                self.ebpf.exit(XDPExitCode.DROP)
