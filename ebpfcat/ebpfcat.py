@@ -206,7 +206,7 @@ class EBPFTerminal(Terminal):
                 (self.vendorId, self.productCode) not in self.compatibility):
             raise RuntimeError("Incompatible Terminal")
 
-    def allocate(self, packet):
+    def allocate(self, packet, readonly):
         if self.pdo_in_sz:
             bases = [packet.size + packet.DATAGRAM_HEADER]
             packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
@@ -215,9 +215,13 @@ class EBPFTerminal(Terminal):
             bases = [None]
         if self.pdo_out_sz:
             bases.append(packet.size + packet.DATAGRAM_HEADER)
-            packet.on_the_fly.append((packet.size, ECCmd.FPWR))
-            packet.append(ECCmd.NOP, b"\0" * self.pdo_out_sz, 0,
-                          self.position, self.pdo_out_off)
+            if readonly:
+                packet.on_the_fly.append((packet.size, ECCmd.FPWR))
+                packet.append(ECCmd.NOP, b"\0" * self.pdo_out_sz, 0,
+                              self.position, self.pdo_out_off)
+            else:
+                packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
+                              self.position, self.pdo_out_off)
         return bases
 
     def update(self, data):
@@ -230,7 +234,7 @@ class EtherXDP(XDP):
     variables = ArrayMap()
     counters = variables.globalVar("64I")
 
-    rate = 10
+    rate = 0
 
     def program(self):
         with self.tmp:
@@ -323,11 +327,6 @@ class SyncGroupBase:
         self.terminals = {t: None for t in
                           sorted(terminals, key=lambda t: t.position)}
 
-    def allocate(self):
-        self.packet = Packet()
-        self.packet.on_the_fly = []
-        self.terminals = {t: t.allocate(self.packet) for t in self.terminals}
-
 
 class SyncGroup(SyncGroupBase):
     """A group of devices communicating at the same time"""
@@ -354,6 +353,11 @@ class SyncGroup(SyncGroupBase):
         self.asm_packet = self.packet.assemble(self.packet_index)
         return ensure_future(self.run())
 
+    def allocate(self):
+        self.packet = Packet()
+        self.terminals = {t: t.allocate(self.packet, False)
+                          for t in self.terminals}
+
 
 class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
@@ -379,3 +383,9 @@ class FastSyncGroup(SyncGroupBase, XDP):
         self.monitor = ensure_future(gather(*[t.to_operational()
                                               for t in self.terminals]))
         return self.monitor
+
+    def allocate(self):
+        self.packet = Packet()
+        self.packet.on_the_fly = []
+        self.terminals = {t: t.allocate(self.packet, True)
+                          for t in self.terminals}
