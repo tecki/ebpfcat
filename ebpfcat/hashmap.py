@@ -29,7 +29,7 @@ class HashGlobalVar(Expression):
                                  0, 0, 0)
             else:
                 dst = 0
-        yield dst, Memory.fmt_to_opcode[self.fmt]
+        yield dst, self.fmt
 
 
 class HashGlobalVarDesc:

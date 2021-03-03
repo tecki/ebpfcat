@@ -6,7 +6,6 @@ from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import ECCmd, EtherCat, Packet, Terminal
 from .ebpf import FuncId, MemoryDesc, SubProgram
 from .xdp import XDP, XDPExitCode
-from .hashmap import HashMap
 from .bpf import (
     ProgType, MapType, create_map, update_elem, prog_test_run, lookup_elem)
 
@@ -224,36 +223,21 @@ class EBPFTerminal(Terminal):
         pass
 
 
-class EBPFCat(XDP):
-    vars = HashMap()
-
-    count = vars.globalVar()
-    ptype = vars.globalVar()
-
-    def program(self):
-        #with self.If(self.packet16[12] != 0xA488):
-        #    self.exit(2)
-        self.count += 1
-        #self.ptype = self.packet32[18]
-        self.exit(2)
-
-
 class EtherXDP(XDP):
     license = "GPL"
 
-    variables = HashMap()
-    count = variables.globalVar()
-    allcount = variables.globalVar()
+    variables = ArrayMap()
+    counters = variables.globalVar("64I", write=True)
 
     def program(self):
-        e = self
-        with e.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
-            e.count += 1
-            e.r2 = e.get_fd(self.programs)
-            e.r3 = p.pI[18]
-            e.call(FuncId.tail_call)
-        e.allcount += 1
-        e.exit(XDPExitCode.PASS)
+        with self.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
+            self.r3 = p.pI[18]
+            with self.counters.get_address(None, False, False) as (dst, _), \
+                    self.r3 < FastEtherCat.MAX_PROGS:
+                self.mI[self.r[dst] + 4 * self.r3] += 1
+            self.r2 = self.get_fd(self.programs)
+            self.call(FuncId.tail_call)
+        self.exit(XDPExitCode.PASS)
 
 
 class SimpleEtherCat(EtherCat):
@@ -275,20 +259,34 @@ class FastEtherCat(SimpleEtherCat):
         self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 
-    def register_sync_group(self, sg):
+    def register_sync_group(self, sg, packet):
         index = len(self.sync_groups)
         while index in self.sync_groups:
             index = (index + 1) % self.MAX_PROGS
         fd, _ = sg.load(log_level=1)
         update_elem(self.programs, pack("<I", index), pack("<I", fd), 0)
         self.sync_groups[index] = sg
+        sg.assembled = packet.assemble(index)
         return index
+
+    async def watchdog(self):
+        while True:
+            t0 = time()
+            self.ebpf.counters = (0,) * self.MAX_PROGS
+            self.ebpf.variables.readwrite()
+            counts = self.ebpf.counters
+            for i, sg in self.sync_groups.items():
+                if counts[i] == 0:
+                    self.send_packet(sg.assembled)
+            await sleep(0.001)
 
     async def connect(self):
         await super().connect()
         self.ebpf = EtherXDP()
         self.ebpf.programs = self.programs
         self.fd = await self.ebpf.attach(self.addr[0])
+        ensure_future(self.watchdog())
+
 
 class SyncGroupBase:
     def __init__(self, ec, devices, **kwargs):
@@ -353,8 +351,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     def start(self):
         self.allocate()
-        index = self.ec.register_sync_group(self)
-        self.ec.send_packet(self.packet.assemble(index))
+        self.ec.register_sync_group(self, self.packet)
         self.monitor = ensure_future(gather(*[t.to_operational()
                                               for t in self.terminals]))
         return self.monitor

@@ -1,7 +1,7 @@
 from itertools import chain
 from struct import pack_into, unpack_from, calcsize
 
-from .ebpf import FuncId, Map, Memory, MemoryDesc, Opcode
+from .ebpf import FuncId, Map, MemoryDesc
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
@@ -22,18 +22,24 @@ class ArrayGlobalVarDesc(MemoryDesc):
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        fmt, addr = self.fmt_addr(instance)
         if instance.ebpf.loaded:
+            fmt, addr = self.fmt_addr(instance)
             data = instance.ebpf.__dict__[self.map.name].data
-            return unpack_from(fmt, data, addr)[0]
+            ret = unpack_from(fmt, data, addr)
+            if len(ret) == 1:
+                return ret[0]
+            else:
+                return ret
         else:
             return super().__get__(instance, owner)
 
     def __set__(self, instance, value):
-        fmt, addr = self.fmt_addr(instance)
         if instance.ebpf.loaded:
+            fmt, addr = self.fmt_addr(instance)
+            if not isinstance(value, tuple):
+                value = value,
             pack_into(fmt, instance.ebpf.__dict__[self.map.name].data,
-                      addr, value)
+                      addr, *value)
         else:
             super().__set__(instance, value)
 
@@ -85,7 +91,6 @@ class ArrayMap(Map):
         else:
             return write_size, position
 
-
     def __set_name__(self, owner, name):
         self.name = name
 
@@ -97,7 +102,7 @@ class ArrayMap(Map):
         fd = create_map(MapType.ARRAY, 4, size, 1)
         setattr(ebpf, self.name, ArrayMapAccess(fd, write_size, size))
         with ebpf.save_registers(list(range(6))), ebpf.get_stack(4) as stack:
-            ebpf.append(Opcode.ST, 10, 0, stack, 0)
+            ebpf.mI[ebpf.r10 + stack] = 0
             ebpf.r1 = ebpf.get_fd(fd)
             ebpf.r2 = ebpf.r10 + stack
             ebpf.call(FuncId.map_lookup_elem)

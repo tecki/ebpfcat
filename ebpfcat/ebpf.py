@@ -1,6 +1,6 @@
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
-from struct import pack, unpack
+from struct import pack, unpack, calcsize
 from enum import Enum
 
 from . import bpf
@@ -429,8 +429,9 @@ class Expression:
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
         with self.ebpf.get_free_register(dst) as dst:
-            with self.get_address(dst, long, signed) as (src, bits):
-                self.ebpf.append(Opcode.LD + bits, dst, src, 0, 0)
+            with self.get_address(dst, long, signed) as (src, fmt):
+                self.ebpf.append(Opcode.LD + Memory.fmt_to_opcode[fmt],
+                                 dst, src, 0, 0)
                 yield dst, long, self.signed
 
     @contextmanager
@@ -636,12 +637,10 @@ class Memory(Expression):
     bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
     fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
                      'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW}
-    fmt_to_size = {'I': 4, 'H': 2, 'B': 1, 'Q': 8,
-                   'i': 4, 'h': 2, 'b': 1, 'q': 8}
 
-    def __init__(self, ebpf, bits, address, signed=False, long=False):
+    def __init__(self, ebpf, fmt, address, signed=False, long=False):
         self.ebpf = ebpf
-        self.bits = bits
+        self.fmt = fmt
         self.address = address
         self.signed = signed
         self.long = long
@@ -656,7 +655,7 @@ class Memory(Expression):
     def calculate(self, dst, long, signed, force=False):
         if isinstance(self.address, Sum):
             with self.ebpf.get_free_register(dst) as dst:
-                self.ebpf.append(Opcode.LD + self.bits, dst,
+                self.ebpf.append(Opcode.LD + self.fmt_to_opcode[self.fmt], dst,
                                  self.address.left.no, self.address.right, 0)
                 yield dst, self.long, self.signed
         else:
@@ -666,7 +665,7 @@ class Memory(Expression):
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
         with self.address.calculate(dst, True, None) as (src, _, _):
-            yield src, self.bits
+            yield src, self.fmt
 
     def contains(self, no):
         return self.address.contains(no)
@@ -677,7 +676,7 @@ class MemoryDesc:
         if instance is None:
             return self
         fmt, addr = self.fmt_addr(instance)
-        return Memory(instance.ebpf, Memory.fmt_to_opcode[fmt],
+        return Memory(instance.ebpf, fmt,
                       instance.ebpf.r[self.base_register] + addr,
                       fmt.islower())
 
@@ -711,7 +710,7 @@ class LocalVar(MemoryDesc):
         self.fmt = fmt
 
     def __set_name__(self, owner, name):
-        size = Memory.fmt_to_size[self.fmt]
+        size = calcsize(self.fmt)
         owner.stack -= size
         owner.stack &= -size
         self.relative_addr = owner.stack
@@ -725,9 +724,9 @@ class LocalVar(MemoryDesc):
 
 
 class MemoryMap:
-    def __init__(self, ebpf, bits, signed=False, long=False):
+    def __init__(self, ebpf, fmt, signed=False, long=False):
         self.ebpf = ebpf
-        self.bits = bits
+        self.fmt = fmt
         self.long = long
         self.signed = signed
 
@@ -741,7 +740,8 @@ class MemoryMap:
                         addr.calculate(None, True, None))
                 offset = 0
             if isinstance(value, int):
-                self.ebpf.append(Opcode.ST + self.bits, dst, 0, offset, value)
+                self.ebpf.append(Opcode.ST + Memory.fmt_to_opcode[self.fmt],
+                                 dst, 0, offset, value)
                 return
             elif isinstance(value, IAdd):
                 value = value.value
@@ -749,18 +749,20 @@ class MemoryMap:
                     with self.ebpf.get_free_register(None) as src:
                         self.ebpf.r[src] = value
                         self.ebpf.append(
-                            Opcode.XADD + self.bits, dst, src, offset, 0)
+                            Opcode.XADD + Memory.fmt_to_opcode[self.fmt],
+                            dst, src, offset, 0)
                     return
                 opcode = Opcode.XADD
             else:
                 opcode = Opcode.STX
             with value.calculate(None, None, None) as (src, _, _):
-                self.ebpf.append(opcode + self.bits, dst, src, offset, 0)
+                self.ebpf.append(opcode + Memory.fmt_to_opcode[self.fmt],
+                                 dst, src, offset, 0)
 
     def __getitem__(self, addr):
         if isinstance(addr, Register):
             addr = addr + 0
-        return Memory(self.ebpf, self.bits, addr, self.signed, self.long)
+        return Memory(self.ebpf, self.fmt, addr, self.signed, self.long)
 
 
 class Map:
@@ -890,11 +892,11 @@ class EBPF:
             self.name = name
         self.loaded = False
 
-        self.mB = MemoryMap(self, Opcode.B)
-        self.mH = MemoryMap(self, Opcode.H)
-        self.mI = MemoryMap(self, Opcode.W)
-        self.mA = MemoryMap(self, Opcode.W, False, True)
-        self.mQ = MemoryMap(self, Opcode.DW, False, True)
+        self.mB = MemoryMap(self, "B")
+        self.mH = MemoryMap(self, "H")
+        self.mI = MemoryMap(self, "I")
+        self.mA = MemoryMap(self, "I", False, True)
+        self.mQ = MemoryMap(self, "Q", False, True)
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)

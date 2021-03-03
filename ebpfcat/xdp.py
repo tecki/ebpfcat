@@ -5,7 +5,7 @@ from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
 
-from .ebpf import EBPF, Expression, Memory, Opcode, Comparison
+from .ebpf import EBPF
 from .bpf import ProgType
 
 
