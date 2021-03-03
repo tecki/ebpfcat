@@ -228,14 +228,25 @@ class EtherXDP(XDP):
     license = "GPL"
 
     variables = ArrayMap()
-    counters = variables.globalVar("64I", write=True)
+    counters = variables.globalVar("64I")
 
     def program(self):
         with self.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
             self.r3 = p.pI[18]
             with self.counters.get_address(None, False, False) as (dst, _), \
                     self.r3 < FastEtherCat.MAX_PROGS:
-                self.mI[self.r[dst] + 4 * self.r3] += 1
+                self.mH[self.r[dst] + 4 * self.r3] += 1
+                p.pB[17] += 2
+                with p.pB[17] & 1 as is_regular:
+                    self.mB[self.r[dst] + 4 * self.r3 + 3] += 1
+                    self.mB[self.r[dst] + 4 * self.r3 + 2] = 0
+                with is_regular.Else():
+                    self.mB[self.r[dst] + 4 * self.r3 + 2] += 1
+                    self.mB[self.r[dst] + 4 * self.r3 + 3] = 0
+                    with self.mB[self.r[dst] + 4 * self.r3 + 2] > 3 as exceed:
+                        p.pB[17] += 1  # turn into regular package
+                    with exceed.Else():
+                        self.exit(XDPExitCode.TX)
             self.r2 = self.get_fd(self.programs)
             self.call(FuncId.tail_call)
         self.exit(XDPExitCode.PASS)
@@ -271,14 +282,16 @@ class FastEtherCat(SimpleEtherCat):
         return index
 
     async def watchdog(self):
+        lastcounts = [0] * 64
         while True:
             t0 = time()
-            self.ebpf.counters = (0,) * self.MAX_PROGS
-            self.ebpf.variables.readwrite()
+            self.ebpf.variables.read()
             counts = self.ebpf.counters
             for i, sg in self.sync_groups.items():
-                if counts[i] == 0:
+                if ((counts[i] ^ lastcounts[i]) & 0xffff == 0
+                        or (counts[i] >> 24) > 3):
                     self.send_packet(sg.assembled)
+                lastcounts[i] = counts[i]
             await sleep(0.001)
 
     async def connect(self):
