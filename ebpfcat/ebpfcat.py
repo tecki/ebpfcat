@@ -4,7 +4,7 @@ from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import ECCmd, EtherCat, Packet, Terminal
-from .ebpf import FuncId, MemoryDesc, SubProgram
+from .ebpf import FuncId, MemoryDesc, SubProgram, ktime
 from .xdp import XDP, XDPExitCode
 from .bpf import (
     ProgType, MapType, create_map, update_elem, prog_test_run, lookup_elem)
@@ -230,7 +230,14 @@ class EtherXDP(XDP):
     variables = ArrayMap()
     counters = variables.globalVar("64I")
 
+    rate = 10
+
     def program(self):
+        with self.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            self.ebpf.tmp = self.ebpf.tmp * 0xcf019d85 + 1
+            with self.ebpf.tmp & 0xffff < self.rate:
+                self.ebpf.exit(XDPExitCode.DROP)
         with self.packetSize > 24 as p, p.pH[12] == 0xA488, p.pB[16] == 0:
             self.r3 = p.pI[18]
             with self.counters.get_address(None, False, False) as (dst, _), \
