@@ -1,4 +1,6 @@
-"""Low-level access to EtherCAT
+"""\
+Low-level access to EtherCAT
+============================
 
 this modules contains the code to actually talk to EtherCAT terminals.
 """

@@ -94,6 +94,9 @@ The communication with the terminals can happen in three different ways:
   frequency exceeds 10 kHz.
 
 
+Reference Documentation
+-----------------------
+
 .. automodule:: ebpfcat.devices
    :members:
 

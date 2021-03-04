@@ -1,3 +1,6 @@
+"""\
+A module that wraps the `bpf` system call in Python, using `ctypes`.
+"""
 from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p, addressof, c_char
 from enum import Enum
 from struct import pack, unpack

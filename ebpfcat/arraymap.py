@@ -45,6 +45,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
 
 
 class ArrayMapAccess:
+    """This is the array map proper"""
     def __init__(self, fd, write_size, size):
         self.fd = fd
         self.write_size = write_size
@@ -52,12 +53,31 @@ class ArrayMapAccess:
         self.data = bytearray(size)
 
     def read(self):
+        """read all variables in the map from EBPF to user space"""
         self.data = lookup_elem(self.fd, b"\0\0\0\0", self.size)
 
     def write(self):
+        """write all variables in the map from user space to EBPF
+
+        *all* variables are written, even those not marked ``write=True``
+        """
         update_elem(self.fd, b"\0\0\0\0", self.data, 0)
 
     def readwrite(self):
+        """read variables from EBPF and write them out immediately
+
+        This reads all variables, swaps in the user-modified values for
+        the ``write=True`` variables, and writes the out again
+        immediately.
+
+        This means that even the read-only variables will be overwritten
+        with the values we have just read. If the EBPF program changed
+        the value in the meantime, that may be a problem.
+
+        Note that after this method returns, all *write* variables
+        will have the value from the EBPF program in user space, and
+        vice-versa.
+        """
         write = self.data[:self.write_size]
         data = lookup_elem(self.fd, b"\0\0\0\0", self.size)
         self.data[:] = data
@@ -66,6 +86,7 @@ class ArrayMapAccess:
 
 
 class ArrayMap(Map):
+    """A descriptor for an array map"""
     def globalVar(self, fmt="I", write=False):
         return ArrayGlobalVarDesc(self, fmt, write)
 

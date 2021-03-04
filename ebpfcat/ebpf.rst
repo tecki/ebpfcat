@@ -98,9 +98,9 @@ generate code that the static code checker understands, like so::
          self.some_variable = p.pH[22]  # read word at position 22
 
 in this code, the variable ``p`` returned by the ``with`` statement also
-allows to access the content of the packet. There are eight access modes
+allows to access the content of the packet. There are six access modes
 to access different sizes in the packet, whose naming follows the Python
-``struct`` module, indicated by the letters "BHIQbhiq".
+``struct`` module, indicated by the letters "BHIQiq".
 
 Knowing this, we can modify the above example code to only count IP
 packets::
@@ -112,3 +112,48 @@ packets::
             with p.pH[12] == 8:
                 self.count += 1
         self.exit(XDPExitCode.PASS)
+
+Maps
+----
+
+Maps are used to communicate to the outside world. They look like instance
+variables. They may be used from within the EBPF program, and once it is
+loaded also from everywhere else. There are two flavors: `hashmap.HashMap`
+and `arraymap.ArrayMap`. They have different use cases:
+
+Hash Maps
+~~~~~~~~~
+
+all hash map variables have a fixed size of 8 bytes. Accessing them is
+rather slow, but is done with proper locking: concurrent access is possible.
+When accessing them from user space, they are read from the kernel each time
+anew. They are declared as follows::
+
+   class MyProgram(EBPF):
+       hash_map = HashMap()
+       a_variable = hash_map.globalVar()
+
+They are used as normal variables, like in `self.a_variable = 5`, both
+in EBPF and from user space once loaded.
+
+Array Maps
+~~~~~~~~~~
+
+from an EBPF program's perspective, all EPBF programs are accessing the same
+variables at the same time. So concurrent access may lead to problems. An
+exception is the in-place addition operator `+=`, which works under a lock,
+but only if the variable is of 4 or 8 bytes size.
+
+Otherwise variables may be declared in all sizes. Additionally, one can mark
+which variables are supposed to be written from user space to the EBPF,
+as opposed to just being read. The declaration is like so::
+
+   class MyProgram(EBPF):
+       array_map = ArrayMap()
+       a_read_variable = array_map("B")  # one byte read-only variable
+       a_write_variable = array_map("i", write=True)  # a read-write integer
+
+the array map has methods to access the variables:
+
+.. autoclass:: ebpfcat.arraymap.ArrayMapAccess
+   :members:
