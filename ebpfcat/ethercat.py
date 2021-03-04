@@ -1,3 +1,25 @@
+# ebpfcat, A Python-based EBPF generator and EtherCAT master
+# Copyright (C) 2021 Martin Teichmann <martin.teichmann@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+# This program may contain technology patented by Beckhoff GmbH.
+# The author is not affiliated with this company, nor does he own a
+# license. As a private enthusiast he also does not need one, other
+# users may want to consult a lawyer before using this program.
+
 """\
 Low-level access to EtherCAT
 ============================
