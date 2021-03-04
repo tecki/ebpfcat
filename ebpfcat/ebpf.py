@@ -1,3 +1,21 @@
+# ebpfcat, A Python-based EBPF generator and EtherCAT master
+# Copyright (C) 2021 Martin Teichmann <martin.teichmann@gmail.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
+from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
 from struct import pack, unpack, calcsize
@@ -258,7 +276,9 @@ def comparison(uposop, unegop, sposop=None, snegop=None):
     return ret
 
 
-class Comparison:
+class Comparison(ABC):
+    """Base class for all logical operations"""
+
     def __init__(self, ebpf):
         self.ebpf = ebpf
         self.else_origin = None
@@ -279,9 +299,25 @@ class Comparison:
         self.ebpf.owners, self.owners = \
                 self.ebpf.owners & self.owners, self.ebpf.owners
 
-    def retarget_one(self):
-        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
-        self.ebpf.opcodes[self.origin] = Instruction(op, dst, src, off+1, imm)
+    @abstractmethod
+    def compare(self, negative):
+        """issue the actual comparison code
+
+        the issued code should either jump to a position later
+        determined by the `target` method, or just fall through.
+        If `negative` is true, the code should jump away if the
+        condition in question is false, and vice versa.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def target(self, retarget=False):
+        """modify the already issued jumps to jump here
+
+        you may re-set the target a second time, but then `retarget` needs
+        to be true.
+        """
+        raise NotImplementedError
 
     def Else(self):
         self.else_origin = len(self.ebpf.opcodes)
@@ -303,6 +339,8 @@ class Comparison:
 
 
 class SimpleComparison(Comparison):
+    """A simple numerical comparison, results in a jump instruction"""
+
     def __init__(self, ebpf, left, right, opcode):
         super().__init__(ebpf)
         self.left = left
@@ -385,6 +423,7 @@ def rbinary(opcode):
 
 
 class Expression:
+    """the base class for all numerical expressions"""
     __radd__ = __add__ = binary(Opcode.ADD)
     __sub__ = binary(Opcode.SUB)
     __rsub__ = rbinary(Opcode.SUB)
@@ -428,6 +467,32 @@ class Expression:
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
+        """issue the code that calculates the value of this expression
+
+        this method returns three values:
+
+        - the number of the register with the result
+        - a boolean indicating whether this is a 64 bit value
+        - and a booleand indicating whether the result is to be
+          considered signed.
+
+        this method is a contextmanager to be used in a `with`
+        statement. At the end of the `with` block the result is
+        freed again, i.e. the register will not be reserved for the
+        result anymore.
+
+        the default implementation calls `get_address` for values
+        which actually are in memory and moves that into a register.
+
+        :param dst: the number of the register to put the result in,
+           or `None` if that does not matter.
+        :param long: True if the result is supposed to be 64 bit. None
+           if it does not matter.
+        :param signed: True if the result should be considered signed.
+           None if it does not matter.
+        :param force: if true, `dst` must be respected, otherwise this
+           is optional.
+        """
         with self.ebpf.get_free_register(dst) as dst:
             with self.get_address(dst, long, signed) as (src, fmt):
                 self.ebpf.append(Opcode.LD + Memory.fmt_to_opcode[fmt],
@@ -436,16 +501,29 @@ class Expression:
 
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
+        """get the address of the value of this expression
+
+        this method returns the address of the result of this expression,
+        and its format letter. The default implementation uses
+        `calculate` to evaluate the expression and pushes the result onto
+        the stack.
+        """
         with self.ebpf.get_stack(4 + 4 * long) as stack:
             with self.calculate(dst, long, signed) as (src, _, _):
                 self.ebpf.append(Opcode.STX + Opcode.DW * long,
                                  10, src, stack, 0)
-                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG, dst, 10, 0, 0)
+                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG,
+                                 dst, 10, 0, 0)
                 self.ebpf.append(Opcode.ADD + Opcode.LONG, dst, 0, 0, stack)
-            yield
+            yield dst, "Q" if long else "I"
+
+    def contains(self, no):
+        """return whether this expression contains the register `no`"""
+        return False
 
 
 class Binary(Expression):
+    """represent all binary expressions"""
     def __init__(self, ebpf, left, right, operator):
         self.ebpf = ebpf
         self.left = left
@@ -532,6 +610,10 @@ class Negate(Expression):
 
 
 class Sum(Binary):
+    """represent the sum of one register and a constant value
+
+    this is used to optimize memory addressing code.
+    """
     def __init__(self, ebpf, left, right):
         super().__init__(ebpf, left, right, Opcode.ADD)
 
@@ -551,6 +633,7 @@ class Sum(Binary):
 
 
 class AndExpression(SimpleComparison, Binary):
+    """The & operator may also be used as a comparison"""
     def __init__(self, ebpf, left, right):
         Binary.__init__(self, ebpf, left, right, Opcode.AND)
         SimpleComparison.__init__(self, ebpf, left, right, Opcode.JSET)
@@ -580,15 +663,18 @@ class AndExpression(SimpleComparison, Binary):
                                 len(self.ebpf.opcodes) - self.else_origin + 1, imm)
 
     def Else(self):
-        if self.ebpf.opcodes[self.origin][0] == Opcode.JMP:
+        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
+        if op is Opcode.JMP:
             self.invert = self.origin
         else:
-            self.retarget_one()
+            self.ebpf.opcodes[self.origin] = \
+                Instruction(op, dst, src, off+1, imm)
         self.else_origin = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(None)
         return self
 
 class Register(Expression):
+    """represent one EBPF register"""
     offset = 0
 
     def __init__(self, no, ebpf, long, signed):
@@ -613,8 +699,6 @@ class Register(Expression):
 
     @contextmanager
     def calculate(self, dst, long, signed, force=False):
-        #if signed is not None and signed != self.signed:
-        #    raise AssembleError("cannot compile")
         if self.no not in self.ebpf.owners:
             raise AssembleError("register has no value")
         if dst != self.no and force:
@@ -629,6 +713,7 @@ class Register(Expression):
 
 
 class IAdd:
+    """represent an in-place addition"""
     def __init__(self, value):
         self.value = value
 
@@ -678,6 +763,12 @@ class Memory(Expression):
 
 
 class MemoryDesc:
+    """A base class used by descriptors for memory
+
+    All memory access is relative to a base register. This is
+    defined by the member variable `base_register` in deriving
+    classes.
+    """
     def __get__(self, instance, owner):
         if instance is None:
             return self
@@ -710,6 +801,7 @@ class MemoryDesc:
 
 
 class LocalVar(MemoryDesc):
+    """variables on the stack"""
     base_register = 10
 
     def __init__(self, fmt='I'):
@@ -771,15 +863,18 @@ class MemoryMap:
         return Memory(self.ebpf, self.fmt, addr, self.signed, self.long)
 
 
-class Map:
+class Map(ABC):
+    """The base class for all maps"""
+    @abstractmethod
     def init(self, ebpf):
-        pass
+        """create the map and initialize its values"""
 
     def load(self, ebpf):
-        pass
+        """called after the program has been loaded"""
 
 
 class PseudoFd(Expression):
+    """represent a file descriptor to a map"""
     def __init__(self, ebpf, fd):
         self.ebpf = ebpf
         self.fd = fd
@@ -793,6 +888,7 @@ class PseudoFd(Expression):
 
 
 class ktime(Expression):
+    """a function that returns the current ktime in ns"""
     def __init__(self, ebpf):
         self.ebpf = ebpf
 
@@ -880,6 +976,11 @@ class TemporaryDesc(RegisterDesc):
 
 
 class EBPF:
+    """The base class for all EBPF programs
+
+    This class may even be instantiated directly, in which case you
+    can just issue the program before the it is loaded.
+    """
     stack = 0
     name = None
     license = None
@@ -920,12 +1021,13 @@ class EBPF:
                 v.init(self)
 
     def program(self):
-        pass
+        """overwrite this method with your program while subclassing"""
 
     def append(self, opcode, dst, src, off, imm):
         self.opcodes.append(Instruction(opcode, dst, src, off, imm))
 
     def assemble(self):
+        """return the assembled program"""
         self.program()
         return b"".join(
             pack("<BBHI", i.opcode.value, i.dst | i.src << 4,
@@ -933,6 +1035,7 @@ class EBPF:
             for i in self.opcodes)
 
     def load(self, log_level=0, log_size=10 * 4096):
+        """load the program into the kernel"""
         ret = bpf.prog_load(self.prog_type, self.assemble(), self.license,
                             log_level, log_size, self.kern_version,
                             name=self.name)
@@ -945,10 +1048,12 @@ class EBPF:
         return ret
 
     def jumpIf(self, comp):
+        """jump if `comp` is true to a later defined `target`"""
         comp.compare(False)
         return comp
 
     def jump(self):
+        """unconditionally jump to a later defined `target`"""
         comp = SimpleComparison(self, None, 0, Opcode.JMP)
         comp.origin = len(self.opcodes)
         comp.dst = 0
@@ -958,15 +1063,18 @@ class EBPF:
         return comp
 
     def get_fd(self, fd):
+        """return the file descriptor `fd` of a map"""
         return PseudoFd(self, fd)
 
     def call(self, no):
+        """call the kernel function `no` from enum `FuncId`"""
         assert isinstance(no, FuncId)
         self.append(Opcode.CALL, 0, 0, 0, no.value)
         self.owners.add(0)
         self.owners -= set(range(1, 6))
 
     def exit(self, no=None):
+        """Exit the program with return value `no`"""
         if no is not None:
             self.r0 = no.value
         self.append(Opcode.EXIT, 0, 0, 0, 0)
