@@ -1,3 +1,4 @@
+"""support for XDP programs"""
 from asyncio import DatagramProtocol, Future, get_event_loop
 from enum import Enum
 from contextlib import contextmanager
@@ -18,6 +19,8 @@ class XDPExitCode(Enum):
 
 
 class XDRFD(DatagramProtocol):
+    """just implement enough of the NETLINK protocol to attach programs"""
+
     def __init__(self, ifindex, fd, future):
         self.ifindex = ifindex
         self.fd = fd
@@ -70,6 +73,7 @@ class XDRFD(DatagramProtocol):
 
 
 class PacketArray:
+    """access a packet like a Python array"""
     def __init__(self, ebpf, no, memory):
         self.ebpf = ebpf
         self.no = no
@@ -123,12 +127,14 @@ class PacketSize:
 
 
 class XDP(EBPF):
+    """the base class for XDP programs"""
     def __init__(self, **kwargs):
         super().__init__(prog_type=ProgType.XDP, **kwargs)
 
         self.packetSize = PacketSize(self)
 
     async def attach(self, network):
+        """attach this program to a `network`"""
         ifindex = if_nametoindex(network)
         fd, _ = self.load(log_level=1)
         future = Future()
