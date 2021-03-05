@@ -400,6 +400,8 @@ class Terminal:
             elif mode == 6:
                 self.mbx_out_off = offset
                 self.mbx_out_sz = size
+        s = await self.read(0x800, data=0x80)
+        print(absolute, " ".join(f"{c:02x} {'|' if i % 8 == 7 else ''}" for i, c in enumerate(s)))
 
     def parse_pdos(self):
         def parse_pdo(s):
@@ -602,7 +604,7 @@ class Terminal:
                         index, subindex, data)
                 type, data = await self.mbx_recv()
             if type is not MBXType.COE:
-                raise RuntimeError(f"expected CoE, got {type}")
+                raise RuntimeError(f"expected CoE, got {type}, {data} {odata} {index:x} {subindex}")
             coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
             if idx != index or subindex != subidx:
                 raise RuntimeError(f"requested index {index}, got {idx}")
@@ -679,9 +681,9 @@ class Terminal:
                 if dataType == 0:
                     continue
                 assert i == oe.valueInfo
-                try:
+                if dataType < 2048:
                     oe.dataType = ECDataType(dataType)
-                except:
+                else:
                     oe.dataType = dataType
                 oe.name = data[8:].decode("utf8")
                 od.entries[i] = oe
@@ -689,38 +691,51 @@ class Terminal:
 
 
 async def main():
-    from .ebpfcat import install_ebpf
     from .bpf import lookup_elem
 
-    ec = await EtherCat("eth0")
-    map_fd = await install_ebpf("eth0")
-    tin = Terminal(ec)
-    tout = Terminal(ec)
-    tdigi = Terminal(ec)
+    ec = EtherCat("eth0")
+    await ec.connect()
+    #map_fd = await install_ebpf2()
+    tin = Terminal()
+    tin.ec = ec
+    tout = Terminal()
+    tout.ec = ec
+    tdigi = Terminal()
+    tdigi.ec = ec
     await gather(
-        tin.initialize(-1, 5),
-        tout.initialize(-2, 6),
+        tin.initialize(-4, 19),
+        tout.initialize(-2, 55),
         tdigi.initialize(0, 22),
         )
     print("tin")
-    await tin.to_operational(),
+    #await tin.to_operational()
+    await tin.set_state(2)
     print("tout")
-    await tout.to_operational(),
-    odlist = await tin.read_ODlist()
-    for o in odlist:
+    await tout.to_operational()
+    print("reading odlist")
+    odlist2, odlist = await gather(tin.read_ODlist(), tout.read_ODlist())
+    #oe = odlist[0x7001][1]
+    #await oe.write(1)
+    for o in odlist.values():
         print(hex(o.index), o.name, o.maxSub)
         for i, p in o.entries.items():
             print("   ", i, p.name, "|", p.dataType, p.bitLength, p.objectAccess)
             #sdo = await tin.sdo_read(o.index, i)
-            sdo = await p.read()
-            print("   ", sdo)
-    print("tdigi")
-    print("bla", lookup_elem(map_fd, b"AAAA", 4))
-    await tdigi.to_operational(),
-
-    print(tout.eeprom[10])
-    print(await tout.write(0x1100, "HHHH", 10000, 20000, 30000, 40000))
-    print(await tin.read(0x1180, "HHHHHHHH"))
+            try:
+               sdo = await p.read()
+               if isinstance(sdo, int):
+                   t = hex(sdo)
+               else:
+                   t = ""
+               print("   ", sdo, t)
+            except RuntimeError as e:
+               print("   E", e)
+    print("set sdo")
+    oe = odlist[0x8010][7]
+    print("=", await oe.read())
+    await oe.write(1)
+    print("=", await oe.read())
+    print(tdigi.eeprom[10])
 
 if __name__ == "__main__":
     loop = get_event_loop()

@@ -18,7 +18,7 @@
 from asyncio import CancelledError, Future, get_event_loop, sleep, gather
 from unittest import TestCase, main
 
-from .devices import AnalogInput, AnalogOutput
+from .devices import AnalogInput, AnalogOutput, Motor
 from .terminals import EL4104, EL3164, EK1814
 from .ethercat import ECCmd
 from .ebpfcat import (
@@ -236,6 +236,85 @@ class Tests(TestCase):
 
             Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=3),
             Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0)])
+
+
+    def tet_two(self):
+        ti1 = EL3164()
+        ti2 = EL3164()
+        ti1.pdo_in_sz = ti2.pdo_in_sz = 4
+        ti1.pdo_in_off = ti2.pdo_in_off = 0xABCD
+        ti1.position = 0x77
+        ti2.position = 0x99
+        ti1.pdo_out_sz = ti2.pdo_out_sz = None
+        ti1.pdo_out_off = ti2.pdo_out_off = None
+        ec = MockEtherCat(self)
+        ti1.ec = ti2.ec = ec
+        ai1 = AnalogInput(ti1.ch1_value)
+        ai2 = AnalogInput(ti2.ch1_value)
+        ai3 = AnalogInput(ti1.ch1_attrs)
+        SyncGroup.packet_index = 1000
+        sg = SyncGroup(ec, [ai1, ai2, ai3])
+        self.task = sg.start()
+        ec.expected = [
+            (ECCmd.FPRD, 0x99, 304, "H2xH"),  # get state
+            (ECCmd.FPRD, 0x77, 304, "H2xH"),  # get state
+            bytes.fromhex("2d10"  # EtherCAT Header, length & type
+                          "0000e8030000008000000000"  # ID datagram
+                          "04007700cdab04800000000000000000" # in datagram
+                          "050077002143030000000000000000"), # out datagram
+            1000, # == 0x3e8, see ID datagram
+            bytes.fromhex("2d10"  # EtherCAT Header, length & type
+                          "0000e8030000008000000000"  # ID datagram
+                          "04007700cdab04800000123456780000" # in datagram
+                          "050077002143030000000000000000"), # out datagram
+            1000,
+            ]
+        ec.results = [
+            (8, 0),  # return state 8, no error
+            (8, 0),  # return state 8, no error
+            bytes.fromhex("2d10"  # EtherCAT Header, length & type
+                          "0000e8030000008000000000"  # ID datagram
+                          "04007700cdab04800000123456780000" # in datagram
+                          "050077002143030000000000000000"), # out datagram
+            ]
+        self.future = Future()
+        with self.assertRaises(CancelledError):
+            get_event_loop().run_until_complete(
+                    gather(self.future, self.task))
+        self.assertEqual(ai.value, 0x7856)
+        self.task.cancel()
+        with self.assertRaises(CancelledError):
+            get_event_loop().run_until_complete(self.task)
+
+    def test_motor(self):
+        class T(EBPFTerminal):
+            v = PacketDesc((0, 2), "H")
+            e = PacketDesc((1, 0), "H")
+            q = PacketDesc((0, 0), 0)
+        t = T()
+        t.pdo_in_sz = 2
+        t.pdo_in_off = 0x1234
+        t.pdo_out_sz = 4
+        t.pdo_out_off = 0x5678
+        t.position = 7
+        m = Motor()
+        m.velocity = t.v
+        m.encoder = t.e
+        m.low_switch = m.high_switch = t.q
+        me = MockEtherCat(self)
+        me.expected = [
+            bytes.fromhex("2c10"
+                          "000033000000008000000000"
+                          "0400070034120280000000000000"
+                          "05000700785604000000000000000000")]
+        sg = FastSyncGroup(me, [m])
+        sg.start()
+        #sg.program()
+        #sg.opcodes = sg.opcodes[:-1]
+        print(sg.load(log_level=1)[1])
+        self.maxDiff = None
+        self.assertEqual(sg.opcodes, [])
+
 
 if __name__ == "__main__":
     main()

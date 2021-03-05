@@ -152,10 +152,9 @@ def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
         ctx_in = create_string_buffer(ctx_in, len(ctx_in))
     data_out = create_string_buffer(data_out)
     ctx_out = create_string_buffer(ctx_out)
-    ret, (_, retval, _, _, _, _, _, duration, _, _, _, _) = bpf(
-            10, "IIIIQQIIIIQQ20x", fd, 0, len(data_in), len(data_out),
-            addrof(data_in), addrof(data_out), repeat, 0, 0, 0, 0, 0)
-            #len(ctx_in), len(ctx_out), addrof(ctx_in), addrof(ctx_out))
+    ret, (_, retval, _, _, _, _, _, duration) = bpf(
+            10, "IIIIQQII20x", fd, 0, len(data_in), len(data_out),
+            addrof(data_in), addrof(data_out), repeat, 0)
     return ret, retval, duration, data_out.value, ctx_out.value
 
 if __name__ == "__main__":

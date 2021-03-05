@@ -276,7 +276,10 @@ class EtherXDP(XDP):
                     with exceed.Else():
                         self.exit(XDPExitCode.TX)
             self.r2 = self.get_fd(self.programs)
+            for i, o in enumerate(self.opcodes):
+                print(i, o)
             self.call(FuncId.tail_call)
+
         self.exit(XDPExitCode.PASS)
 
 
@@ -319,6 +322,7 @@ class FastEtherCat(SimpleEtherCat):
                 if ((counts[i] ^ lastcounts[i]) & 0xffff == 0
                         or (counts[i] >> 24) > 3):
                     self.send_packet(sg.assembled)
+                    print("sent", i)
                 lastcounts[i] = counts[i]
             await sleep(0.001)
 
@@ -392,6 +396,11 @@ class FastSyncGroup(SyncGroupBase, XDP):
                 p.pB[pos + Packet.ETHERNET_HEADER] = cmd.value
             for dev in self.devices:
                 dev.program()
+        for o in self.opcodes:
+            if o is not None:
+                print(o, hex(o.opcode.value))
+            else:
+                print("JMP")
         self.exit(XDPExitCode.TX)
 
     def start(self):

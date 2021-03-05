@@ -372,7 +372,6 @@ class Tests(TestCase):
             e.r2 = 5
         with cond.Else():
             e.r3 = 7
-        self.maxDiff = None
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.JLE, dst=2, src=0, off=2, imm=3),
             Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
@@ -394,7 +393,6 @@ class Tests(TestCase):
         with cond.Else():
             e.r3 = 7
             e.r4 = 3
-        self.maxDiff = None
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=3),
             Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
@@ -588,7 +586,6 @@ class Tests(TestCase):
             e.r8 = e.r1
 
     def test_binary_alloc(self):
-        self.maxDiff = None
         e = EBPF()
         e.r3 = e.r1 - (2 * e.r10)
         e.mH[e.r10 - 10] = 2 * e.r3
@@ -696,7 +693,7 @@ class KernelTests(TestCase):
         e.a += 7
         e.exit()
 
-        fd = e.load()
+        fd, _ = e.load(log_level=1)
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
         e.a *= 2
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
@@ -757,12 +754,14 @@ class KernelTests(TestCase):
         self.assertEqual(s2.bw, 69)
 
     def test_minimal(self):
-        class Global(XDP):
-            map = HashMap()
-            a = map.globalVar()
+        class Local(EBPF):
+            a = LocalVar('I')
 
-        e = Global(license="GPL")
-        e.a += 1
+        e = Local(ProgType.XDP, "GPL")
+        e.a = 7
+        e.a += 3
+        e.mI[e.r1] += e.r1
+        e.a -= 3
         e.exit()
         print(e.opcodes)
         print(e.load(log_level=1)[1])
