@@ -19,7 +19,7 @@ async def main():
 
     for i in range(100):
         await sleep(0.1)
-        print(c.count)
+        print("packets arrived so far:", c.count)
 
 
 if __name__ == "__main__":
