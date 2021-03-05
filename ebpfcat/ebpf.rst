@@ -150,8 +150,8 @@ as opposed to just being read. The declaration is like so::
 
    class MyProgram(EBPF):
        array_map = ArrayMap()
-       a_read_variable = array_map("B")  # one byte read-only variable
-       a_write_variable = array_map("i", write=True)  # a read-write integer
+       a_read_var = array_map.globalVar("B")  # one byte read-only variable
+       a_write_var = array_map.globalVar("i", write=True)  # read-write integer
 
 the array map has methods to access the variables:
 

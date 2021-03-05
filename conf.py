@@ -5,7 +5,7 @@ extensions = [
 templates_path = ['_templates']
 numfig = True
 source_suffix = '.rst'
-master_doc = 'README'
+master_doc = 'index'
 
 project = 'EBPFCat'
 copyright = '2020, Martin Teichmann'
