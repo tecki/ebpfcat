@@ -222,7 +222,7 @@ class EBPFTerminal(Terminal):
         await super().initialize(relative, absolute)
         if (self.compatibility is not None and
                 (self.vendorId, self.productCode) not in self.compatibility):
-            raise RuntimeError("Incompatible Terminal")
+            raise RuntimeError(f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
 
     def allocate(self, packet, readonly):
         if self.pdo_in_sz:
