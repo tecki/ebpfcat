@@ -71,6 +71,10 @@ class EL3164(EBPFTerminal):
     channel4 = Channel(12)
 
 
+class EK1101(EBPFTerminal):
+    compatibility = {(2, 72166482)}
+
+
 class EK1814(EBPFTerminal):
     ch1 = PacketDesc((0, 0), 0)
     ch2 = PacketDesc((0, 0), 1)
