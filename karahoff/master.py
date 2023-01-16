@@ -4,9 +4,25 @@ from struct import pack, unpack
 from karabo.middlelayer import (
     Device, getDevice, String, AccessMode, VectorString, Slot, State,
     waitUntil, Float, background, Simple, isSet)
+from karabo import middlelayer as ml
 
 from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat, Struct
 from ebpfcat import terminals, devices
+
+
+formats = {
+    ml.UInt8: 'B',
+    ml.Int8: 'b',
+    ml.UInt16: 'H',
+    ml.Int16: 'h',
+    ml.UInt32: 'I',
+    ml.Int32: 'i',
+    ml.UInt64: 'Q',
+    ml.Int64: 'q',
+    ml.Float: 'f',
+    ml.Double: 'd',
+}
+
 
 
 class EtherCATMasterBase(Device):
@@ -133,10 +149,10 @@ class EtherCATDevice(Device):
                 state = await term.get_state()
                 if state < 2:
                     await term.set_state(2)
-                await term.sdo_write(pack(attr.format, value),
+                await term.sdo_write(pack(formats[type(attr)], value),
                                      idx, attr.subidx)
                 ret = await term.sdo_read(idx, attr.subidx)
-                setattr(self, attr.key, *unpack(attr.format, ret))
+                setattr(self, attr.key, *unpack(formats[type(attr)], ret))
         return setter
 
     async def sdo_set(self):
@@ -157,7 +173,7 @@ class EtherCATDevice(Device):
                     await term.set_state(2)
                 print("set state")
                 ret = await term.sdo_read(idx, attr.subidx)
-                setattr(self, attr.key, *unpack(attr.format, ret))
+                setattr(self, attr.key, *unpack(formats[type(attr)], ret))
 
     @classmethod
     def register(cls, name, dct):
