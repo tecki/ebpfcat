@@ -117,7 +117,7 @@ class EL6022(EBPFTerminal):
 
 
 class EL7041(EBPFTerminal):
-    compatibility = {(2, 461451346)}
+    compatibility = {(2, 461451346), (2, 461455442), (2, 460795986)}
     velocity = PacketDesc((1, 6), "h")
     enable = PacketDesc((1, 4), 0)
     status = PacketDesc((0, 6), "H")
