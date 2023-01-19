@@ -379,6 +379,9 @@ class Terminal:
         self.mbx_lock = Lock()
 
         self.eeprom = await self.read_eeprom()
+        if 41 not in self.eeprom:
+            print('no 41 in eeprom')
+            return
         await self.write(0x800, data=0x80)  # empty out sync manager
         await self.write(0x800, data=self.eeprom[41])
         self.mbx_out_off = self.mbx_out_sz = None
