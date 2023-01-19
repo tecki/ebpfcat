@@ -111,8 +111,8 @@ class MotorDevice(Device):
     max_velocity = DeviceVar('i', write=True)
     max_acceleration = DeviceVar('i', write=True)
     target = DeviceVar('q', write=True)
-    proportional = DeviceVar('i', write=True)
-    current_velocity = DeviceVar('i')
+    proportional = DeviceVar('q', write=True)
+    current_velocity = DeviceVar('q')
 
     def program(self):
         self.enable = self.set_enable
