@@ -128,8 +128,13 @@ class ObjectDescription:
     def __getitem__(self, idx):
         return self.entries[idx]
 
+    def __repr__(self):
+        return " ".join(f"[{k:X}: {v}]" for k, v in self.entries.items())
+
 
 class ObjectEntry:
+    name = None
+
     def __init__(self, desc):
         self.desc = desc
 
@@ -154,6 +159,13 @@ class ObjectEntry:
 
         return await self.desc.terminal.sdo_write(d, self.desc.index,
                                                   self.valueInfo)
+
+    def __repr__(self):
+        if self.name is None:
+            return "[unread ObjectEntry]"
+
+        return f'"{self.name}" {self.dataType}:{self.bitLength} ' \
+               f'{self.objectAccess:X}'
 
 
 def datasize(args, data):
@@ -221,11 +233,11 @@ class Packet:
         pos = 14 + self.DATAGRAM_HEADER
         ret = []
         for cmd, bits, *dgram in self.data:
-            ret.append((data[pos-self.DATAGRAM_HEADER],
-                        data[pos:pos+len(bits)],
+            ret.append(unpack("<Bxh6x", data[pos-self.DATAGRAM_HEADER:pos])
+                       + (data[pos:pos+len(bits)],
                         unpack("<H", data[pos+len(bits):pos+len(bits)+2])[0]))
             pos += self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
-        return ''.join(f"{i}: {c} {f} {d}\n" for i, (c, d, f) in enumerate(ret))
+        return ''.join(f"{i}: {c} {a} {f} {d}\n" for i, (c, a, d, f) in enumerate(ret))
 
     def full(self):
         """Is the data limit reached?"""
@@ -322,6 +334,7 @@ class EtherCat(Protocol):
             out += b"\0" * data
         elif data is not None:
             out += data
+        assert isinstance(pos, int) and isinstance(offset, int)
         self.send_queue.put_nowait((cmd, out, idx, pos, offset, future))
         ret = await future
         if data is None:
@@ -332,6 +345,14 @@ class EtherCat(Protocol):
             return unpack(fmt, ret[:-data]) + (ret[-data:],)
         else:
             return ret
+
+    async def count(self):
+        """Count the number of terminals on the bus"""
+        p = Packet()
+        p.append(ECCmd.APRD, b"\0\0", 0, 0, 0x10)
+        ret = await self.roundtrip_packet(p)
+        no, = unpack("<h", ret[16:18])  # number of terminals
+        return no
 
     def connection_made(self, transport):
         """start the send loop once the connection is made"""
@@ -473,7 +494,7 @@ class Terminal:
                                         start, *args, **kwargs))
 
     async def write(self, start, *args, **kwargs):
-        """write data from the terminal at offset `start`
+        """write data to the terminal at offset `start`
 
         see `EtherCat.roundtrip` for details on more parameters"""
         return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
@@ -691,55 +712,3 @@ class Terminal:
                 oe.name = data[8:].decode("utf8")
                 od.entries[i] = oe
         return ret
-
-
-async def main():
-    from .bpf import lookup_elem
-
-    ec = EtherCat("eth0")
-    await ec.connect()
-    #map_fd = await install_ebpf2()
-    tin = Terminal()
-    tin.ec = ec
-    tout = Terminal()
-    tout.ec = ec
-    tdigi = Terminal()
-    tdigi.ec = ec
-    await gather(
-        tin.initialize(-4, 19),
-        tout.initialize(-2, 55),
-        tdigi.initialize(0, 22),
-        )
-    print("tin")
-    #await tin.to_operational()
-    await tin.set_state(2)
-    print("tout")
-    await tout.to_operational()
-    print("reading odlist")
-    odlist2, odlist = await gather(tin.read_ODlist(), tout.read_ODlist())
-    #oe = odlist[0x7001][1]
-    #await oe.write(1)
-    for o in odlist.values():
-        print(hex(o.index), o.name, o.maxSub)
-        for i, p in o.entries.items():
-            print("   ", i, p.name, "|", p.dataType, p.bitLength, p.objectAccess)
-            #sdo = await tin.sdo_read(o.index, i)
-            try:
-               sdo = await p.read()
-               if isinstance(sdo, int):
-                   t = hex(sdo)
-               else:
-                   t = ""
-               print("   ", sdo, t)
-            except RuntimeError as e:
-               print("   E", e)
-    print("set sdo")
-    oe = odlist[0x8010][7]
-    print("=", await oe.read())
-    await oe.write(1)
-    print("=", await oe.read())
-    print(tdigi.eeprom[10])
-
-if __name__ == "__main__":
-    loop = get_event_loop()
-    loop.run_until_complete(main())
