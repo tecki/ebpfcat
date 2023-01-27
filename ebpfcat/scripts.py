@@ -34,6 +34,7 @@ async def info():
     parser.add_argument("-n", "--names", action="store_true")
     parser.add_argument("-s", "--sdo", action="store_true")
     parser.add_argument("-v", "--values", action="store_true")
+    parser.add_argument("-p", "--pdo", action="store_true")
     args = parser.parse_args()
 
     ec = EtherCat(args.interface)
@@ -42,7 +43,9 @@ async def info():
     if args.terminal is None:
         terminals = range(await ec.count())
     else:
-#        print(await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0))
+        # former terminal: don't listen!
+        # this does not work with all terminals, dunno why
+        await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
         terminals = [args.terminal]
 
     terms = [Terminal() for t in terminals]
@@ -76,3 +79,5 @@ async def info():
                              print(f"        {r:10} {r:8X}")
                          else:
                              print(f"        {r}")
+        if args.pdo:
+            t.parse_pdos()

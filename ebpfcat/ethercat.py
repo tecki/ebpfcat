@@ -401,7 +401,7 @@ class Terminal:
 
         self.eeprom = await self.read_eeprom()
         if 41 not in self.eeprom:
-            print('no 41 in eeprom')
+            # no sync managers defined in eeprom
             return
         await self.write(0x800, data=0x80)  # empty out sync manager
         await self.write(0x800, data=self.eeprom[41])
