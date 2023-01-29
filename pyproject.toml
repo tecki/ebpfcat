@@ -1,0 +1,8 @@
+[project]
+name = "ebpfcat"
+version = "0.0.1"
+dependencies = []
+
+[project.scripts]
+ec-scanbus = "ebpfcat.scripts:scanbus"
+ec-info = "ebpfcat.scripts:info"
