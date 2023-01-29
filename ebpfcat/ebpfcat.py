@@ -175,7 +175,8 @@ class TerminalVar:
 
 class DeviceVar(ArrayGlobalVarDesc):
     def __init__(self, size="I", write=False):
-        super().__init__(FastSyncGroup.properties, size, write)
+        super().__init__(FastSyncGroup.properties, size)
+        self.write = write
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -316,7 +317,6 @@ class FastEtherCat(SimpleEtherCat):
         lastcounts = [0] * 64
         while True:
             t0 = time()
-            self.ebpf.variables.read()
             counts = self.ebpf.counters
             for i, sg in self.sync_groups.items():
                 if ((counts[i] ^ lastcounts[i]) & 0xffff == 0
