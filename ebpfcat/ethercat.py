@@ -334,7 +334,8 @@ class EtherCat(Protocol):
             out += b"\0" * data
         elif data is not None:
             out += data
-        assert isinstance(pos, int) and isinstance(offset, int)
+        assert isinstance(pos, int) and isinstance(offset, int), \
+            f"pos: {pos} offset: {offset}"
         self.send_queue.put_nowait((cmd, out, idx, pos, offset, future))
         ret = await future
         if data is None:
@@ -531,11 +532,15 @@ class Terminal:
                 return eeprom
             eeprom[hd] = await get_data(ws * 2)
 
+    def has_mailbox(self):
+        return self.mbx_out_off is not None and self.mbx_in_off is not None
+
     async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
         """send data to the mailbox"""
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
             raise RuntimeError("mailbox full, read first")
+        assert self.mbx_out_off is not None, "not send mailbox defined"
         await self.write(self.mbx_out_off, "HHBB",
                                 datasize(args, data),
                                 address, channel | priority << 6,
@@ -551,6 +556,7 @@ class Terminal:
         while status & 8 == 0:
             # always using mailbox 1, OK?
             status, = await self.read(0x80D, "B")
+        assert self.mbx_in_off is not None, "not receive mailbox defined"
         dlen, address, prio, type, data = await self.read(
                 self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
         return MBXType(type & 0xf), data[:dlen]
@@ -586,7 +592,9 @@ class Terminal:
                 raise RuntimeError(f"expected CoE, got {type}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
-                raise RuntimeError(f"expected CoE SDORES (3), got {coecmd>>12:x}")
+                raise RuntimeError(
+                    f"expected CoE SDORES (3), got {coecmd>>12:x} "
+                    f"for {index:X}:{9 if subindex is None else subindex:02X}")
             if idx != index:
                 raise RuntimeError(f"requested index {index}, got {idx}")
             if sdocmd & 2:
@@ -605,7 +613,8 @@ class Terminal:
                     raise RuntimeError(f"expected CoE, got {type}")
                 coecmd, sdocmd = unpack("<HB", data[:3])
                 if coecmd >> 12 != CoECmd.SDORES.value:
-                    raise RuntimeError(f"expected CoE cmd SDORES, got {coecmd}")
+                    raise RuntimeError(
+                        f"expected CoE cmd SDORES, got {coecmd}")
                 if sdocmd & 0xe0 != 0:
                     raise RuntimeError(f"requested index {index}, got {idx}")
                 if sdocmd & 1 and len(data) == 7:

@@ -211,18 +211,13 @@ class EBPFTerminal(Terminal):
     compatibility = None
     position_offset = 0, 0
 
-    def __init_subclass__(cls):
-        cls.pdo = {}
-        for c in cls.__mro__[::-1]:
-            for k, v in c.__dict__.items():
-                if isinstance(v, PacketDesc):
-                    cls.pdo[k] = v
-
     async def initialize(self, relative, absolute):
         await super().initialize(relative, absolute)
         if (self.compatibility is not None and
                 (self.vendorId, self.productCode) not in self.compatibility):
-            raise RuntimeError(f"Incompatible Terminal: {self.vendorId}:{self.productCode} ({relative}, {absolute})")
+            raise RuntimeError(
+                f"Incompatible Terminal: {self.vendorId}:{self.productCode} "
+                f"({relative}, {absolute})")
 
     def allocate(self, packet, readonly):
         if self.pdo_in_sz:
