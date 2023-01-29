@@ -15,7 +15,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .ebpfcat import EBPFTerminal, PacketDesc, Struct
+from .ebpfcat import EBPFTerminal, PacketDesc, ProcessDesc, Struct
 
 
 class Generic(EBPFTerminal):
@@ -54,21 +54,21 @@ class EL2808(EBPFTerminal):
 
 
 class EL4104(EBPFTerminal):
-    ch1_value = PacketDesc(2, 0, 'H')
-    ch2_value = PacketDesc(2, 2, 'H')
-    ch3_value = PacketDesc(2, 4, 'H')
-    ch4_value = PacketDesc(2, 6, 'H')
+    ch1_value = ProcessDesc(0x7000, 1)
+    ch2_value = ProcessDesc(0x7010, 1)
+    ch3_value = ProcessDesc(0x7020, 1)
+    ch4_value = ProcessDesc(0x7030, 1)
 
 
 class EL3164(EBPFTerminal):
     class Channel(Struct):
-        attrs = PacketDesc(3, 0, 'H')
-        value = PacketDesc(3, 2, 'H')
+        attrs = ProcessDesc(0x6000, 1, 'H')
+        value = ProcessDesc(0x6000, 0x11)
 
     channel1 = Channel(0)
-    channel2 = Channel(4)
-    channel3 = Channel(8)
-    channel4 = Channel(12)
+    channel2 = Channel(0x10)
+    channel3 = Channel(0x20)
+    channel4 = Channel(0x30)
 
 
 class EK1101(EBPFTerminal):

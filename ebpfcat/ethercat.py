@@ -30,7 +30,7 @@ from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protoc
 from enum import Enum
 from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
-from struct import pack, unpack, calcsize
+from struct import pack, unpack, unpack_from, calcsize
 
 class ECCmd(Enum):
    NOP = 0  # No Operation
@@ -428,22 +428,76 @@ class Terminal:
         s = await self.read(0x800, data=0x80)
         print(absolute, " ".join(f"{c:02x} {'|' if i % 8 == 7 else ''}" for i, c in enumerate(s)))
 
-    def parse_pdos(self):
-        def parse_pdo(s):
+    async def parse_pdos(self):
+        async def parse_eeprom(s):
             i = 0
+            bitpos = 0
             while i < len(s):
-                idx, e, sm, u1, u2, u3 = unpack("<HBBBBH", s[i:i+8])
-                print(f"idx {idx:x} sm {sm} {u1:x} {u2:x} {u3:x}")
+                idx, e, sm, u1, u2, u3 = unpack_from("<HBbBBH", s, i)
                 i += 8
                 for er in range(e):
-                    bitsize, = unpack("<5xB2x", s[i:i+8])
-                    print("  bs", bitsize, s[i:i+8])
+                    idx, subidx, k1, k2, bits, = unpack("<HBBBB2x", s[i:i+8])
+                    if sm > 0:
+                        yield idx, subidx, sm, bits
                     i += 8
 
-        if 50 in self.eeprom:
-            parse_pdo(self.eeprom[50])
-        if 51 in self.eeprom:
-            parse_pdo(self.eeprom[51])
+        async def parse_sdo(index, sm):
+            assignment = await self.sdo_read(index)
+            bitpos = 0
+            for i in range(0, len(assignment), 2):
+                pdo, = unpack_from("<H", assignment, i)
+                if pdo == 0:
+                    continue
+                count, = unpack("B", await self.sdo_read(pdo, 0))
+                for j in range(1, count + 1):
+                    bits, subidx, idx = unpack("<BBH", await self.sdo_read(pdo, j))
+                    yield idx, subidx, sm, bits
+
+        async def parse(func):
+            bitpos = 0
+            async for idx, subidx, sm, bits in func:
+                #print("k", idx, subidx, sm, bits)
+                if idx == 0:
+                    pass
+                elif bits < 8:
+                    self.pdos[idx, subidx] = (sm, bitpos // 8, bitpos % 8)
+                elif (bits % 8) or (bitpos % 8):
+                    raise RuntimeError("PDOs must be byte-aligned")
+                else:
+                    self.pdos[idx, subidx] = \
+                        (sm, bitpos // 8,
+                         {8: "B", 16: "H", 32: "I", 64: "Q"}[bits])
+                bitpos += bits
+
+        self.pdos = {}
+        if self.has_mailbox():
+            await parse(parse_sdo(0x1c12, 2))
+            await parse(parse_sdo(0x1c13, 3))
+        else:
+            if 50 in self.eeprom:
+                await parse(parse_eeprom(self.eeprom[50]))
+            if 51 in self.eeprom:
+                await parse(parse_eeprom(self.eeprom[51]))
+
+    async def parse_pdo(self, index, sm):
+        assignment = await self.sdo_read(index)
+        bitpos = 0
+        for i in range(0, len(assignment), 2):
+            pdo, = unpack_from("<H", assignment, i)
+            count, = unpack("B", await self.sdo_read(pdo, 0))
+            for j in range(1, count + 1):
+                bits, subidx, idx = unpack("<BBH", await self.sdo_read(pdo, j))
+                if idx == 0:
+                    pass
+                elif bits < 8:
+                    self.pdos[idx, subidx] = (sm, bitpos // 8, bitpos % 8)
+                elif (bits % 8) or (bitpos % 8):
+                    raise RuntimeError("PDOs must be byte-aligned")
+                else:
+                    self.pdos[idx, subidx] = \
+                        (sm, bitpos // 8,
+                         {8: "B", 16: "H", 32: "I", 64: "Q"}[bits])
+                bitpos += bits
 
     async def set_state(self, state):
         """try to set the state, and return the new state"""
@@ -592,6 +646,8 @@ class Terminal:
                 raise RuntimeError(f"expected CoE, got {type}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
+                if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
+                    return b""  # if there is no data, the terminal fails
                 raise RuntimeError(
                     f"expected CoE SDORES (3), got {coecmd>>12:x} "
                     f"for {index:X}:{9 if subindex is None else subindex:02X}")

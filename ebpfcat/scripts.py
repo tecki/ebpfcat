@@ -80,4 +80,7 @@ async def info():
                          else:
                              print(f"        {r}")
         if args.pdo:
-            t.parse_pdos()
+            await t.to_operational()
+            await t.parse_pdos()
+            for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
+                print(f"{idx:4X}:{subidx:02X} {sm} {pos} {fmt}")

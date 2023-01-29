@@ -49,11 +49,31 @@ class PacketDesc:
         else:
             return ret.get(device)
 
-    def __set__(self, instance, value):
-        offset = instance.position_offset[self.sm]
-        ret = PacketVar(instance.terminal, self.sm, self.position + offset,
-                        self.size)
-        return ret.set(instance.device, value)
+
+class ProcessDesc:
+    def __init__(self, index, subindex, size=None):
+        self.index = index
+        self.subindex = subindex
+        self.size = size
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        index = self.index + instance.position_offset[3]
+        if isinstance(instance, Struct):
+            terminal = instance.terminal
+            device = instance.device
+        else:
+            terminal = instance
+            device = None
+        sm, offset, size = terminal.pdos[index, self.subindex]
+        if self.size is not None:
+            size = self.size
+        ret = PacketVar(terminal, sm, offset, size)
+        if device is None:
+            return ret
+        else:
+            return ret.get(device)
 
 
 class PacketVar(MemoryDesc):
@@ -218,6 +238,10 @@ class EBPFTerminal(Terminal):
             raise RuntimeError(
                 f"Incompatible Terminal: {self.vendorId}:{self.productCode} "
                 f"({relative}, {absolute})")
+        await self.to_operational()
+        self.pdos = {}
+        if self.has_mailbox():
+            await self.parse_pdos()
 
     def allocate(self, packet, readonly):
         """allocate space in packet for the pdos of this terminal
@@ -355,7 +379,6 @@ class SyncGroup(SyncGroupBase):
     current_data = False  # None is used to indicate FastSyncGroup
 
     async def run(self):
-        await gather(*[t.to_operational() for t in self.terminals])
         self.current_data = self.asm_packet
         while True:
             self.ec.send_packet(self.current_data)
@@ -404,9 +427,6 @@ class FastSyncGroup(SyncGroupBase, XDP):
     def start(self):
         self.allocate()
         self.ec.register_sync_group(self, self.packet)
-        self.monitor = ensure_future(gather(*[t.to_operational()
-                                              for t in self.terminals]))
-        return self.monitor
 
     def allocate(self):
         self.packet = Packet()
