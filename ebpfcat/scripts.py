@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 import asyncio
 from functools import wraps
+from hashlib import sha1
 from struct import unpack
 import sys
 
@@ -84,3 +85,56 @@ async def info():
             await t.parse_pdos()
             for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
                 print(f"{idx:4X}:{subidx:02X} {sm} {pos} {fmt}")
+
+
+def encode(name):
+    r = int.from_bytes(sha1(name.encode("ascii")).digest(), "little")
+    return r % 0xffffffff + 1
+
+@entrypoint
+async def eeprom():
+    parser = ArgumentParser(
+        prog = "ec-eeprom",
+        description = "Read and write the eeprom")
+
+    parser.add_argument("interface")
+    parser.add_argument("-t", "--terminal", type=int)
+    parser.add_argument("-r", "--read", action="store_true")
+    parser.add_argument("-w", "--write", type=int)
+    parser.add_argument("-n", "--name", type=str)
+    parser.add_argument("-c", "--check", type=str)
+    args = parser.parse_args()
+
+    ec = EtherCat(args.interface)
+    await ec.connect()
+
+    if args.terminal is None:
+        return
+        terminals = range(await ec.count())
+    else:
+        # former terminal: don't listen!
+        # this does not work with all terminals, dunno why
+        await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
+        terminals = [args.terminal]
+
+    t = Terminal()
+    t.ec = ec
+    await t.initialize(-args.terminal, 7)
+
+    if args.read or args.check is not None:
+        r, = unpack("<4xI", await t.eeprom_read_one(0xc))
+        if args.check is not None:
+            c = encode(args.check)
+            print(f"{r:8X} {c:8X} {r == c}")
+        else:
+            print(f"{r:8X} {r}")
+
+    w = None
+    if args.write is not None:
+        w = args.write
+    elif args.name is not None:
+        w = encode(args.name)
+        print(f"{w:8X} {w}")
+    if w is not None:
+        await t.eeprom_write_one(0xe, w & 0xffff)
+        await t.eeprom_write_one(0xf, w >> 16)
