@@ -19,7 +19,7 @@
 A module that wraps the `bpf` system call in Python, using `ctypes`.
 """
 from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p, addressof, c_char
-from enum import Enum
+from enum import Enum, Flag
 from struct import pack, unpack
 from platform import machine
 
@@ -60,6 +60,10 @@ class MapType(Enum):
     SOCKHASH = 18
 
 
+class MapFlags(Flag):
+    MMAPABLE = 1 << 10
+
+
 class ProgType(Enum):
     UNSPEC = 0
     SOCKET_FILTER = 1
@@ -96,9 +100,12 @@ def bpf(cmd, fmt, *args):
         raise OSError(get_errno(), strerror(get_errno()))
     return ret, unpack(fmt, attr.raw)
 
-def create_map(map_type, key_size, value_size, max_entries):
+def create_map(map_type, key_size, value_size, max_entries,
+               attributes=MapFlags(0)):
     assert isinstance(map_type, MapType)
-    return bpf(0, "IIII", map_type.value, key_size, value_size, max_entries)[0]
+    assert isinstance(attributes, MapFlags)
+    return bpf(0, "IIIII", map_type.value, key_size, value_size, max_entries,
+               attributes.value)[0]
 
 def lookup_elem(fd, key, size):
     value = bytearray(size)

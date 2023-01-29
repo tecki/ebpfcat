@@ -16,19 +16,19 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 from itertools import chain
+from mmap import mmap
 from struct import pack_into, unpack_from, calcsize
 
-from .ebpf import FuncId, Map, MemoryDesc
-from .bpf import create_map, lookup_elem, MapType, update_elem
+from .ebpf import FuncId, Map, Memory, MemoryDesc, Opcode, SubProgram
+from .bpf import create_map, lookup_elem, MapType, MapFlags, update_elem
 
 
 class ArrayGlobalVarDesc(MemoryDesc):
     base_register = 0
 
-    def __init__(self, map, fmt, write=False):
+    def __init__(self, map, fmt):
         self.map = map
         self.fmt = fmt
-        self.write = write
 
     def fmt_addr(self, ebpf):
         return self.fmt, ebpf.__dict__[self.name]
@@ -63,49 +63,16 @@ class ArrayGlobalVarDesc(MemoryDesc):
 
 class ArrayMapAccess:
     """This is the array map proper"""
-    def __init__(self, fd, write_size, size):
-        self.fd = fd
-        self.write_size = write_size
+    def __init__(self, data, size):
+        self.data = data
         self.size = size
-        self.data = bytearray(size)
-
-    def read(self):
-        """read all variables in the map from EBPF to user space"""
-        self.data = lookup_elem(self.fd, b"\0\0\0\0", self.size)
-
-    def write(self):
-        """write all variables in the map from user space to EBPF
-
-        *all* variables are written, even those not marked ``write=True``
-        """
-        update_elem(self.fd, b"\0\0\0\0", self.data, 0)
-
-    def readwrite(self):
-        """read variables from EBPF and write them out immediately
-
-        This reads all variables, swaps in the user-modified values for
-        the ``write=True`` variables, and writes the out again
-        immediately.
-
-        This means that even the read-only variables will be overwritten
-        with the values we have just read. If the EBPF program changed
-        the value in the meantime, that may be a problem.
-
-        Note that after this method returns, all *write* variables
-        will have the value from the EBPF program in user space, and
-        vice-versa.
-        """
-        write = self.data[:self.write_size]
-        data = lookup_elem(self.fd, b"\0\0\0\0", self.size)
-        self.data[:] = data
-        data[:self.write_size] = write
-        update_elem(self.fd, b"\0\0\0\0", data, 0)
 
 
 class ArrayMap(Map):
     """A descriptor for an array map"""
-    def globalVar(self, fmt="I", write=False):
-        return ArrayGlobalVarDesc(self, fmt, write)
+
+    def globalVar(self, fmt="I"):
+        return ArrayGlobalVarDesc(self, fmt)
 
     def collect(self, ebpf):
         collection = []
@@ -113,32 +80,25 @@ class ArrayMap(Map):
         for prog in chain([ebpf], ebpf.subprograms):
             for k, v in prog.__class__.__dict__.items():
                 if isinstance(v, ArrayGlobalVarDesc):
-                    collection.append((v.write, calcsize(v.fmt), prog, k))
-        collection.sort(key=lambda t: t[:2], reverse=True)
+                    collection.append((calcsize(v.fmt), prog, k))
+        collection.sort(key=lambda t: t[0], reverse=True)
         position = 0
-        last_write = write = True
-        for write, size, prog, name in collection:
-            if last_write != write:
-                position = (position + 7) & -8
-                write_size = position
+        for size, prog, name in collection:
             prog.__dict__[name] = position
             position += size
-            last_write = write
-        if write:  # there are read variables
-            return position, position
-        else:
-            return write_size, position
+        return position
 
     def __set_name__(self, owner, name):
         self.name = name
 
     def init(self, ebpf):
         setattr(ebpf, self.name, 0)
-        write_size, size = self.collect(ebpf)
+        size = self.collect(ebpf)
         if not size:  # nobody is actually using the map
             return
-        fd = create_map(MapType.ARRAY, 4, size, 1)
-        setattr(ebpf, self.name, ArrayMapAccess(fd, write_size, size))
+        fd = create_map(MapType.ARRAY, 4, size, 1, MapFlags.MMAPABLE)
+        data = mmap(fd, size)
+        setattr(ebpf, self.name, ArrayMapAccess(data, size))
         with ebpf.save_registers(list(range(6))), ebpf.get_stack(4) as stack:
             ebpf.mI[ebpf.r10 + stack] = 0
             ebpf.r1 = ebpf.get_fd(fd)
