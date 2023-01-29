@@ -28,31 +28,30 @@ from .bpf import (
 
 
 class PacketDesc:
-    def __init__(self, position, size):
+    def __init__(self, sm, position, size):
+        self.sm = sm
         self.position = position
         self.size = size
 
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        offset = instance.position_offset[self.position[0]]
+        offset = instance.position_offset[self.sm]
         if isinstance(instance, Struct):
             terminal = instance.terminal
             device = instance.device
         else:
             terminal = instance
             device = None
-        ret = PacketVar(terminal, (self.position[0],
-                                   self.position[1] + offset), self.size)
+        ret = PacketVar(terminal, self.sm, self.position + offset, self.size)
         if device is None:
             return ret
         else:
             return ret.get(device)
 
     def __set__(self, instance, value):
-        offset = instance.position_offset[self.position[0]]
-        ret = PacketVar(instance.terminal,
-                        (self.position[0], self.position[1] + offset),
+        offset = instance.position_offset[self.sm]
+        ret = PacketVar(instance.terminal, self.sm, self.position + offset,
                         self.size)
         return ret.set(instance.device, value)
 
@@ -66,8 +65,9 @@ class PacketVar(MemoryDesc):
         else:
             return self.size
 
-    def __init__(self, terminal, position, size):
+    def __init__(self, terminal, sm, position, size):
         self.terminal = terminal
+        self.sm = sm
         self.position = position
         self.size = size
 
@@ -119,8 +119,8 @@ class PacketVar(MemoryDesc):
                 return unpack_from("<" + self.size, data, start)[0]
 
     def _start(self, device):
-        base, offset = self.position
-        return device.sync_group.terminals[self.terminal][base] + offset
+        return device.sync_group.terminals[self.terminal][self.sm] \
+               + self.position
 
     def fmt_addr(self, device):
         return ("B" if isinstance(self.size, int) else self.size,
@@ -135,9 +135,9 @@ class Struct:
 
 
 class StructDesc:
-    def __init__(self, struct, *position_offset):
+    def __init__(self, struct, sm3=0, sm2=0):
         self.struct = struct
-        self.position_offset = position_offset
+        self.position_offset = {2: sm2, 3: sm3}
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -209,7 +209,7 @@ class Device(SubProgram):
 
 class EBPFTerminal(Terminal):
     compatibility = None
-    position_offset = 0, 0
+    position_offset = {2: 0, 3: 0}
 
     async def initialize(self, relative, absolute):
         await super().initialize(relative, absolute)
@@ -220,14 +220,17 @@ class EBPFTerminal(Terminal):
                 f"({relative}, {absolute})")
 
     def allocate(self, packet, readonly):
+        """allocate space in packet for the pdos of this terminal
+
+        return a dict that contains the starting offset for each
+        sync manager"""
+        bases = {}
         if self.pdo_in_sz:
-            bases = [packet.size + packet.DATAGRAM_HEADER]
+            bases[3] = packet.size + packet.DATAGRAM_HEADER
             packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
                           self.position, self.pdo_in_off)
-        else:
-            bases = [None]
         if self.pdo_out_sz:
-            bases.append(packet.size + packet.DATAGRAM_HEADER)
+            bases[2] = packet.size + packet.DATAGRAM_HEADER
             if readonly:
                 packet.on_the_fly.append((packet.size, ECCmd.FPWR))
                 packet.append(ECCmd.NOP, b"\0" * self.pdo_out_sz, 0,
