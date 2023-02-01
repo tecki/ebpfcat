@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 import asyncio
 from functools import wraps
 from hashlib import sha1
+from pprint import PrettyPrinter
 from struct import unpack
 import sys
 
@@ -138,3 +139,33 @@ async def eeprom():
     if w is not None:
         await t.eeprom_write_one(0xe, w & 0xffff)
         await t.eeprom_write_one(0xf, w >> 16)
+
+
+@entrypoint
+async def create_test():
+    ec = EtherCat(sys.argv[1])
+    await ec.connect()
+    no = await ec.count()
+
+    terminals = []
+
+    for i in range(no):
+        t = Terminal()
+        t.ec = ec
+        await t.initialize(-i, await ec.find_free_address())
+        sdo = {}
+        if t.has_mailbox():
+            await t.to_operational()
+            odlist = await t.read_ODlist()
+
+            for k, v in odlist.items():
+                for kk, vv in v.entries.items():
+                    try:
+                        ret = await t.sdo_read(v.index, vv.valueInfo)
+                    except RuntimeError:
+                        pass
+                    sdo[v.index, vv.valueInfo] = ret
+
+        terminals.append(dict(eeprom=t.eeprom, sdo=sdo))
+    pp = PrettyPrinter(indent=4)
+    pp.pprint(terminals)
