@@ -406,8 +406,14 @@ class Terminal:
         await self.set_state(0x11)
         await self.set_state(1)
 
+        self.mbx_cnt = 1
+        self.mbx_lock = Lock()
+
+        await self.apply_eeprom()
+
+    async def apply_eeprom(self):
         async def read_eeprom(no, fmt):
-            return unpack(fmt, await self.eeprom_read_one(no))
+            return unpack(fmt, await self._eeprom_read_one(no))
 
         self.vendorId, self.productCode = await read_eeprom(8, "<II")
         self.revisionNo, self.serialNo = await read_eeprom(0xc, "<II")
@@ -415,9 +421,6 @@ class Terminal:
         # weirdly this does not match with the later EEPROM SM configuration
         # self.mbx_in_off, self.mbx_in_sz, self.mbx_out_off, self.mbx_out_sz = \
         #     await read_eeprom(0x18, "<HHHH")
-
-        self.mbx_cnt = 1
-        self.mbx_lock = Lock()
 
         self.eeprom = await self.read_eeprom()
         if 41 not in self.eeprom:
@@ -573,7 +576,7 @@ class Terminal:
         return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                         start, *args, **kwargs))
 
-    async def eeprom_read_one(self, start):
+    async def _eeprom_read_one(self, start):
         """read 8 bytes from the eeprom at `start`"""
         while (await self.read(0x502, "H"))[0] & 0x8000:
             pass
@@ -602,7 +605,7 @@ class Terminal:
             nonlocal data, pos
 
             while len(data) < size:
-                data += await self.eeprom_read_one(pos)
+                data += await self._eeprom_read_one(pos)
                 pos += 4
             ret, data = data[:size], data[size:]
             return ret

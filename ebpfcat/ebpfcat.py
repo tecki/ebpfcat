@@ -231,8 +231,8 @@ class EBPFTerminal(Terminal):
     compatibility = None
     position_offset = {2: 0, 3: 0}
 
-    async def initialize(self, relative, absolute):
-        await super().initialize(relative, absolute)
+    async def apply_eeprom(self):
+        await super().apply_eeprom()
         if (self.compatibility is not None and
                 (self.vendorId, self.productCode) not in self.compatibility):
             raise RuntimeError(
