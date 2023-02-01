@@ -28,6 +28,7 @@ this modules contains the code to actually talk to EtherCAT terminals.
 """
 from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue, Lock
 from enum import Enum
+from itertools import count
 from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, unpack_from, calcsize
@@ -281,7 +282,12 @@ class EtherCat(Protocol):
             if packet.full() or self.send_queue.empty():
                 data = await self.roundtrip_packet(packet)
                 for start, stop, future in dgrams:
-                    future.set_result(data[start:stop])
+                    wkc, = unpack("<H", data[stop:stop+2])
+                    if wkc == 0:
+                        future.set_exception(
+                            RuntimeError("datagram was not processed"))
+                    else:
+                        future.set_result(data[start:stop])
                 dgrams = []
                 packet = Packet()
 
@@ -354,6 +360,15 @@ class EtherCat(Protocol):
         ret = await self.roundtrip_packet(p)
         no, = unpack("<h", ret[16:18])  # number of terminals
         return no
+
+    async def find_free_address(self):
+        """Find an absolute address currently not in use"""
+        no = await self.count()
+        for i in count(no):
+            try:
+                await self.roundtrip(ECCmd.FPRD, i, 0x10, "H", 0)
+            except RuntimeError:
+                return i  # this address is not in use
 
     def connection_made(self, transport):
         """start the send loop once the connection is made"""
@@ -456,7 +471,6 @@ class Terminal:
         async def parse(func):
             bitpos = 0
             async for idx, subidx, sm, bits in func:
-                #print("k", idx, subidx, sm, bits)
                 if idx == 0:
                     pass
                 elif bits < 8:

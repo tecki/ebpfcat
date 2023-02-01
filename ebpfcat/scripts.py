@@ -43,17 +43,17 @@ async def info():
 
     if args.terminal is None:
         terminals = range(await ec.count())
+        terms = [Terminal() for t in terminals]
+        for t in terms:
+            t.ec = ec
+        await asyncio.gather(*(t.initialize(-i, i + 7)
+                               for i, t in zip(terminals, terms)))
     else:
-        # former terminal: don't listen!
-        # this does not work with all terminals, dunno why
-        await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
-        terminals = [args.terminal]
-
-    terms = [Terminal() for t in terminals]
-    for t in terms:
-        t.ec = ec
-    await asyncio.gather(*(t.initialize(-i, i + 7)
-                           for i, t in zip(terminals, terms)))
+        free = await ec.find_free_address()
+        term = Terminal()
+        term.ec = ec
+        await term.initialize(-args.terminal, free)
+        terms = [term]
 
     for i, t in enumerate(terms):
         print(f"terminal no {i}")
