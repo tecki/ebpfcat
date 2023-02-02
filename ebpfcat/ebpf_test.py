@@ -704,11 +704,11 @@ class KernelTests(TestCase):
         class Global(EBPF):
             map = ArrayMap()
             ar = map.globalVar()
-            aw = map.globalVar(write=True)
+            aw = map.globalVar()
 
         class Sub(SubProgram):
             br = Global.map.globalVar()
-            bw = Global.map.globalVar(write=True)
+            bw = Global.map.globalVar()
 
             def program(self):
                 self.br -= -33
@@ -726,32 +726,26 @@ class KernelTests(TestCase):
 
         fd, _ = e.load(log_level=1)
         prog_test_run(fd, 1000, 1000, 100, 100, 1)
-        e.map.readwrite()
         self.assertEqual(e.ar, 7)
         self.assertEqual(e.aw, 11)
         self.assertEqual(s1.br, 33)
         self.assertEqual(s1.bw, 36)
-        self.assertEqual(s2.br, 33)
-        self.assertEqual(s2.bw, 36)
-        e.aw = e.ar * 2
         s1.br = 3
         s2.br *= 5
         e.ar = 1111
         self.assertEqual(e.ar, 1111)
-        self.assertEqual(e.aw, 14)
+        self.assertEqual(e.aw, 11)
         self.assertEqual(s1.br, 3)
         self.assertEqual(s1.bw, 36)
         self.assertEqual(s2.br, 165)
         self.assertEqual(s2.bw, 36)
-        e.map.readwrite()
         prog_test_run(fd, 1000, 1000, 0, 0, 1)
-        e.map.readwrite()
-        self.assertEqual(e.ar, 21)
-        self.assertEqual(e.aw, 25)
-        self.assertEqual(s1.br, 66)
-        self.assertEqual(s1.bw, 69)
-        self.assertEqual(s2.br, 66)
-        self.assertEqual(s2.bw, 69)
+        self.assertEqual(e.ar, 18)
+        self.assertEqual(e.aw, 22)
+        self.assertEqual(s1.br, 36)
+        self.assertEqual(s1.bw, 39)
+        self.assertEqual(s2.br, 198)
+        self.assertEqual(s2.bw, 201)
 
     def test_minimal(self):
         class Local(EBPF):
@@ -760,12 +754,11 @@ class KernelTests(TestCase):
         e = Local(ProgType.XDP, "GPL")
         e.a = 7
         e.a += 3
-        e.mI[e.r1] += e.r1
+        e.mI[e.r10 - 4] += e.r1
         e.a -= 3
         e.exit()
         print(e.opcodes)
         print(e.load(log_level=1)[1])
-        self.fail()
 
 
 if __name__ == "__main__":
