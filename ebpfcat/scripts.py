@@ -166,6 +166,10 @@ async def create_test():
                         pass
                     sdo[v.index, vv.valueInfo] = ret
 
-        terminals.append(dict(eeprom=t.eeprom, sdo=sdo))
+        ret = []
+        for i in range(0, 0x400, 4):
+            ret.append(await t._eeprom_read_one(i))
+        eeprom = b"".join(ret).rstrip(b"\xff")
+        terminals.append(dict(eeprom=eeprom, sdo=sdo))
     pp = PrettyPrinter(indent=4)
     pp.pprint(terminals)
