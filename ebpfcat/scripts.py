@@ -6,7 +6,7 @@ from pprint import PrettyPrinter
 from struct import unpack
 import sys
 
-from .ethercat import EtherCat, Terminal, ECCmd
+from .ethercat import EtherCat, Terminal, ECCmd, EtherCatError
 
 def entrypoint(func):
     @wraps(func)
@@ -74,13 +74,17 @@ async def info():
             for k, v in ret.items():
                 print(f"{k:X}:")
                 for kk, vv in v.entries.items():
-                     print(f"    {kk:X}: {vv}")
-                     if args.values:
-                         r = await vv.read()
-                         if isinstance(r, int):
-                             print(f"        {r:10} {r:8X}")
-                         else:
-                             print(f"        {r}")
+                    print(f"    {kk:X}: {vv}")
+                    if args.values:
+                        try:
+                            r = await vv.read()
+                        except EtherCatError as e:
+                            print(f"        Error {e.args[0]}")
+                        else:
+                            if isinstance(r, int):
+                                print(f"        {r:10} {r:8X}")
+                            else:
+                                print(f"        {r}")
         if args.pdo:
             await t.to_operational()
             await t.parse_pdos()
@@ -162,7 +166,7 @@ async def create_test():
                 for kk, vv in v.entries.items():
                     try:
                         ret = await t.sdo_read(v.index, vv.valueInfo)
-                    except RuntimeError:
+                    except EtherCatError:
                         pass
                     sdo[v.index, vv.valueInfo] = ret
 

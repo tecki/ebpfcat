@@ -33,6 +33,10 @@ from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, unpack_from, calcsize
 
+class EtherCatError(Exception):
+    pass
+
+
 class ECCmd(Enum):
    NOP = 0  # No Operation
    APRD = 1  # Auto Increment Read
@@ -285,7 +289,7 @@ class EtherCat(Protocol):
                     wkc, = unpack("<H", data[stop:stop+2])
                     if wkc == 0:
                         future.set_exception(
-                            RuntimeError("datagram was not processed"))
+                            EtherCatError("datagram was not processed"))
                     else:
                         future.set_result(data[start:stop])
                 dgrams = []
@@ -367,7 +371,7 @@ class EtherCat(Protocol):
         for i in count(no):
             try:
                 await self.roundtrip(ECCmd.FPRD, i, 0x10, "H", 0)
-            except RuntimeError:
+            except EtherCatError:
                 return i  # this address is not in use
 
     def connection_made(self, transport):
@@ -548,7 +552,7 @@ class Terminal:
                 s, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                                    0x0130, "H2xH")
                 if error != 0:
-                    raise RuntimeError(f"AL register {error}")
+                    raise EtherCatError(f"AL register {error}")
 
     async def get_error(self):
         """read the error register"""
@@ -620,7 +624,7 @@ class Terminal:
         """send data to the mailbox"""
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
-            raise RuntimeError("mailbox full, read first")
+            raise EtherCatError("mailbox full, read first")
         assert self.mbx_out_off is not None, "not send mailbox defined"
         await self.write(self.mbx_out_off, "HHBB",
                                 datasize(args, data),
@@ -653,10 +657,10 @@ class Terminal:
             while fragments:
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    raise RuntimeError(f"expected CoE package, got {type}")
+                    raise EtherCatError(f"expected CoE package, got {type}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
-                    raise RuntimeError(f"expected {odcmd.value}, got {odcmd}")
+                    raise EtherCatError(f"expected {odcmd.value}, got {odcmd}")
                 ret.append(data[offset:])
                 offset = 6
             return b"".join(ret)
@@ -670,16 +674,16 @@ class Terminal:
                     index, 1 if subindex is None else subindex)
             type, data = await self.mbx_recv()
             if type is not MBXType.COE:
-                raise RuntimeError(f"expected CoE, got {type}")
+                raise EtherCatError(f"expected CoE, got {type}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
                     return b""  # if there is no data, the terminal fails
-                raise RuntimeError(
+                raise EtherCatError(
                     f"expected CoE SDORES (3), got {coecmd>>12:x} "
                     f"for {index:X}:{9 if subindex is None else subindex:02X}")
             if idx != index:
-                raise RuntimeError(f"requested index {index}, got {idx}")
+                raise EtherCatError(f"requested index {index}, got {idx}")
             if sdocmd & 2:
                 return data[6 : 10 - ((sdocmd>>2) & 3)]
             ret = [data[10:]]
@@ -693,13 +697,13 @@ class Terminal:
                         1 if subindex is None else subindex)
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    raise RuntimeError(f"expected CoE, got {type}")
+                    raise EtherCatError(f"expected CoE, got {type}")
                 coecmd, sdocmd = unpack("<HB", data[:3])
                 if coecmd >> 12 != CoECmd.SDORES.value:
-                    raise RuntimeError(
+                    raise EtherCatError(
                         f"expected CoE cmd SDORES, got {coecmd}")
                 if sdocmd & 0xe0 != 0:
-                    raise RuntimeError(f"requested index {index}, got {idx}")
+                    raise EtherCatError(f"requested index {index}, got {idx}")
                 if sdocmd & 1 and len(data) == 7:
                     data = data[:3 + (sdocmd >> 1) & 7]
                 ret += data[3:]
@@ -708,7 +712,7 @@ class Terminal:
                     break
                 toggle ^= 0x10
             if retsize != size:
-                raise RuntimeError(f"expected {size} bytes, got {retsize}")
+                raise EtherCatError(f"expected {size} bytes, got {retsize}")
             return b"".join(ret)
 
     async def sdo_write(self, data, index, subindex=None):
@@ -720,12 +724,12 @@ class Terminal:
                         index, subindex, data)
                 type, data = await self.mbx_recv()
             if type is not MBXType.COE:
-                raise RuntimeError(f"expected CoE, got {type}, {data} {odata} {index:x} {subindex}")
+                raise EtherCatError(f"expected CoE, got {type}, {data} {odata} {index:x} {subindex}")
             coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
             if idx != index or subindex != subidx:
-                raise RuntimeError(f"requested index {index}, got {idx}")
+                raise EtherCatError(f"requested index {index}, got {idx}")
             if coecmd >> 12 != CoECmd.SDORES.value:
-                raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
+                raise EtherCatError(f"expected CoE SDORES, got {coecmd>>12:x}")
         else:
             async with self.mbx_lock:
                 stop = min(len(data), self.mbx_out_sz - 16)
@@ -737,12 +741,12 @@ class Terminal:
                         data=data[:stop])
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    raise RuntimeError(f"expected CoE, got {type}")
+                    raise EtherCatError(f"expected CoE, got {type}")
                 coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
                 if coecmd >> 12 != CoECmd.SDORES.value:
-                    raise RuntimeError(f"expected CoE SDORES, got {coecmd>>12:x}")
+                    raise EtherCatError(f"expected CoE SDORES, got {coecmd>>12:x}")
                 if idx != index or subindex != subidx:
-                    raise RuntimeError(f"requested index {index}, got {idx}")
+                    raise EtherCatError(f"requested index {index}, got {idx}")
                 toggle = 0
                 while stop < len(data):
                     start = stop
@@ -760,12 +764,12 @@ class Terminal:
                                 1 if subindex is None else subindex, data=d)
                         type, data = await self.mbx_recv()
                         if type is not MBXType.COE:
-                            raise RuntimeError(f"expected CoE, got {type}")
+                            raise EtherCatError(f"expected CoE, got {type}")
                         coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
                         if coecmd >> 12 != CoECmd.SDORES.value:
-                            raise RuntimeError(f"expected CoE SDORES")
+                            raise EtherCatError(f"expected CoE SDORES")
                         if idx != index or subindex != subidx:
-                            raise RuntimeError(f"requested index {index}")
+                            raise EtherCatError(f"requested index {index}")
                     toggle ^= 0x10
 
     async def read_ODlist(self):
