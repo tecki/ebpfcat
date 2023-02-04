@@ -16,7 +16,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """The high-level API for EtherCAT loops"""
-from asyncio import ensure_future, gather, sleep, wait_for, TimeoutError
+from asyncio import ensure_future, gather, wait_for, TimeoutError
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
@@ -377,7 +377,6 @@ class SyncGroupBase:
                 print("didn't receive in time", self.missed_counter)
                 continue
             data = self.update_devices(data)
-            await sleep(0)
 
 
 class SyncGroup(SyncGroupBase):
