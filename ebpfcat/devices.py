@@ -40,9 +40,14 @@ class AnalogInput(Device):
         self.data = data
 
     def program(self):
-        self.value = self.data
+        # it does not make much sense to copy data faster than
+        # we can process
+        return
 
     def update(self):
+        self.value = self.data
+
+    def fast_update(self):
         self.value = self.data
 
 
