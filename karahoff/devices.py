@@ -3,7 +3,7 @@ from time import time
 
 from karabo.middlelayer import (
     AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32,
-    Int16, UInt64, UInt8, Double, Unit, MetricPrefix)
+    Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, MetricPrefix, Bool)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 
@@ -106,6 +106,8 @@ class MotorDevice(Device):
     high_switch = TerminalVar()
     enable = TerminalVar()
 
+    tstatus = TerminalVar()
+
     current_position = DeviceVar('q')
     set_enable = DeviceVar('B', write=True)
     max_velocity = DeviceVar('i', write=True)
@@ -113,10 +115,12 @@ class MotorDevice(Device):
     target = DeviceVar('q', write=True)
     proportional = DeviceVar('q', write=True)
     current_velocity = DeviceVar('q')
+    qstatus = DeviceVar('H')
 
     def program(self):
         self.enable = self.set_enable
         self.current_position = self.encoder
+        self.qstatus = self.tstatus
         with self.ebpf.stmp:
             self.ebpf.stmp = (self.proportional * (self.target - self.encoder)) >> 16
             #with self.ebpf.tmp > self.velocity + self.max_acceleration:
@@ -127,8 +131,15 @@ class MotorDevice(Device):
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
+            with self.low_switch | (self.ebpf.stmp < 0) as cond:
+                pass
+            with cond.Else():
+                self.ebpf.stmp = 0
+            with self.high_switch | (self.ebpf.stmp > 0) as cond:
+                pass
+            with cond.Else():
+                self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
-            self.current_velocity = self.ebpf.stmp
 
     def whatever(self):
         with self.low_switch, self.velocity < 0:
@@ -157,9 +168,16 @@ class Motor(EtherCATDevice):
     crc_invert = UInt8(alias="E:8008:3", defaultValue=1)
     multiturn = UInt8(alias="E:8008:15", defaultValue=0)
     singleturn = UInt8(alias="E:8008:16", defaultValue=26)
+    frequency = UInt8(alias="E:8008:13", defaultValue=0)
+    polynomial = UInt32(alias="E:8008:11", defaultValue=67)
+
+    high_switch = Bool(accessMode=AccessMode.READONLY)
+    low_switch = Bool(accessMode=AccessMode.READONLY)
 
     max_current = Int16(alias="M:8010:1")
     max_voltage = Int16(alias="M:8010:3")
+
+    qstatus = UInt16(accessMode=AccessMode.READONLY)
 
     target = Double(unitSymbol=Unit.METER,
                     metricPrefixSymbol=MetricPrefix.MILLI)
@@ -170,6 +188,9 @@ class Motor(EtherCATDevice):
         self.motor_term = self.find_channel(self.motor)
         self.encoder_term = self.find_channel(self.encoder)
         self.device.velocity = self.motor_term.velocity
+        self.device.low_switch = self.motor_term.low_switch
+        self.device.high_switch = self.motor_term.high_switch
+        self.device.tstatus = self.motor_term.status
         self.device.encoder = self.encoder_term.position
         self.device.enable = self.motor_term.enable
         self.terminals = dict(M=self.motor_term, E=self.encoder_term)
@@ -186,7 +207,10 @@ class Motor(EtherCATDevice):
 
     def update_properties(self):
         self.current_position = self.device.current_position * self.stepSize.value
-        self.current_velocity = self.device.current_velocity
+        self.current_velocity = self.device.velocity
+        self.qstatus = self.device.qstatus
+        self.low_switch = self.device.low_switch
+        self.high_switch = self.device.high_switch
 
         self.device.set_enable = bool(self.state == State.ON)
         if self.state != State.ON:

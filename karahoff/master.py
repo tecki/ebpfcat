@@ -113,9 +113,9 @@ class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
             self.state = State.RUNNING
 
             while True:
-                self.syncGroup.properties.readwrite()
-                for d in self.devs:
-                    d.update_properties()
+                if self.syncGroup.current_data is not None:
+                    for d in self.devs:
+                        d.update_properties()
                 await sleep(self.interval)
         finally:
             self.state = State.ERROR
