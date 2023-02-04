@@ -432,7 +432,8 @@ class FastSyncGroup(SyncGroupBase, XDP):
         await super().run()
 
     def update_devices(self, data):
-        self.current_data = data
+        if data[3] & 1:
+            self.current_data = data
         for dev in self.devices:
             dev.fast_update()
         return self.asm_packet
