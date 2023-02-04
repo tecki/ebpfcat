@@ -902,6 +902,21 @@ class ktime(Expression):
             yield dst, True, False
 
 
+class prandom(Expression):
+    """a function that returns the current ktime in ns"""
+    def __init__(self, ebpf):
+        self.ebpf = ebpf
+
+    @contextmanager
+    def calculate(self, dst, long, signed, force=False):
+        with self.ebpf.get_free_register(dst) as dst:
+            with self.ebpf.save_registers([i for i in range(6) if i != dst]):
+                self.ebpf.call(FuncId.get_prandom_u32)
+                if dst != 0:
+                    self.ebpf.r[dst] = self.ebpf.r0
+            yield dst, True, False
+
+
 class RegisterDesc:
     def __init__(self, no, array):
         self.no = no
