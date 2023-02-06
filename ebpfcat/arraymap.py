@@ -19,7 +19,7 @@ from itertools import chain
 from mmap import mmap
 from struct import pack_into, unpack_from, calcsize
 
-from .ebpf import FuncId, Map, Memory, MemoryDesc, Opcode, SubProgram
+from .ebpf import FuncId, Map, MemoryDesc, Opcode, SubProgram
 from .bpf import create_map, lookup_elem, MapType, MapFlags, update_elem
 
 

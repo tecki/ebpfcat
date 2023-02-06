@@ -721,14 +721,13 @@ class IAdd:
 class Memory(Expression):
     bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
     fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
-                     'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW}
+                     'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW,
+                     'A': Opcode.W}
 
-    def __init__(self, ebpf, fmt, address, signed=False, long=False):
+    def __init__(self, ebpf, fmt, address):
         self.ebpf = ebpf
         self.fmt = fmt
         self.address = address
-        self.signed = signed
-        self.long = long
 
     def __iadd__(self, value):
         if self.fmt in "qQiI":
@@ -748,10 +747,10 @@ class Memory(Expression):
             with self.ebpf.get_free_register(dst) as dst:
                 self.ebpf.append(Opcode.LD + self.fmt_to_opcode[self.fmt], dst,
                                  self.address.left.no, self.address.right, 0)
-                yield dst, self.long, self.signed
+                yield dst, self.fmt in "QqA", self.fmt.islower()
         else:
             with super().calculate(dst, long, signed, force) as (dst, _, _):
-                yield dst, self.long, self.signed
+                yield dst, self.fmt in "QqA", self.fmt.islower()
 
     @contextmanager
     def get_address(self, dst, long, signed, force=False):
@@ -760,6 +759,10 @@ class Memory(Expression):
 
     def contains(self, no):
         return self.address.contains(no)
+
+    @property
+    def signed(self):
+        return isinstance(self.fmt, str) and self.fmt.islower()
 
 
 class MemoryDesc:
@@ -774,8 +777,7 @@ class MemoryDesc:
             return self
         fmt, addr = self.fmt_addr(instance)
         return Memory(instance.ebpf, fmt,
-                      instance.ebpf.r[self.base_register] + addr,
-                      fmt.islower())
+                      instance.ebpf.r[self.base_register] + addr)
 
     def __set__(self, instance, value):
         ebpf = instance.ebpf
@@ -822,11 +824,9 @@ class LocalVar(MemoryDesc):
 
 
 class MemoryMap:
-    def __init__(self, ebpf, fmt, signed=False, long=False):
+    def __init__(self, ebpf, fmt):
         self.ebpf = ebpf
         self.fmt = fmt
-        self.long = long
-        self.signed = signed
 
     def __setitem__(self, addr, value):
         with ExitStack() as exitStack:
@@ -860,7 +860,7 @@ class MemoryMap:
     def __getitem__(self, addr):
         if isinstance(addr, Register):
             addr = addr + 0
-        return Memory(self.ebpf, self.fmt, addr, self.signed, self.long)
+        return Memory(self.ebpf, self.fmt, addr)
 
 
 class Map(ABC):
@@ -1017,8 +1017,8 @@ class EBPF:
         self.mB = MemoryMap(self, "B")
         self.mH = MemoryMap(self, "H")
         self.mI = MemoryMap(self, "I")
-        self.mA = MemoryMap(self, "I", False, True)
-        self.mQ = MemoryMap(self, "Q", False, True)
+        self.mA = MemoryMap(self, "A")  # actually I, but treat as Q
+        self.mQ = MemoryMap(self, "Q")
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)

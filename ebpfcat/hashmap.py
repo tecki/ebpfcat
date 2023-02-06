@@ -18,7 +18,7 @@
 from contextlib import contextmanager
 from struct import pack, unpack, unpack
 
-from .ebpf import AssembleError, Expression, Opcode, Map, FuncId, Memory
+from .ebpf import AssembleError, Expression, Opcode, Map, FuncId
 from .bpf import create_map, lookup_elem, MapType, update_elem
 
 
