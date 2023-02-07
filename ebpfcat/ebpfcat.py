@@ -93,25 +93,6 @@ class PacketVar(MemoryDesc):
 
     def set(self, device, value):
         if device.sync_group.current_data is None:
-            if isinstance(self.size, int):
-                try:
-                    bool(value)
-                except RuntimeError:
-                    e = device.sync_group
-                    with e.wtmp:
-                        e.wtmp = super().__get__(device, None)
-                        with value as cond:
-                            e.wtmp |= 1 << self.size
-                        with cond.Else():
-                            e.wtmp &= ~(1 << self.size)
-                        super().__set__(device, e.wtmp)
-                    return
-                else:
-                    old = super().__get__(device, None)
-                    if value:
-                        value = old | (1 << self.size)
-                    else:
-                        value = old & ~(1 << self.size)
             super().__set__(device, value)
         else:
             data = device.sync_group.current_data
@@ -126,10 +107,7 @@ class PacketVar(MemoryDesc):
 
     def get(self, device):
         if device.sync_group.current_data is None:
-            if isinstance(self.size, int):
-                return super().__get__(device, None) & (1 << self.size)
-            else:
-                return super().__get__(device, None)
+            return super().__get__(device, None)
         else:
             data = device.sync_group.current_data
             start = self._start(device)
@@ -143,7 +121,7 @@ class PacketVar(MemoryDesc):
                + self.position
 
     def fmt_addr(self, device):
-        return ("B" if isinstance(self.size, int) else self.size,
+        return ((self.size, 1) if isinstance(self.size, int) else self.size,
                 self._start(device) + Packet.ETHERNET_HEADER)
 
 
