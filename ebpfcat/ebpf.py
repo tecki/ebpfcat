@@ -335,7 +335,7 @@ class Comparison(ABC):
         return InvertComparison(self.ebpf, self)
 
     def __bool__(self):
-        raise RuntimeError("Use with statement for comparisons")
+        raise AssembleError("Use with statement for comparisons")
 
 
 class SimpleComparison(Comparison):
@@ -455,7 +455,7 @@ class Expression:
         return Negate(self.ebpf, self)
 
     def __bool__(self):
-        raise RuntimeError("Expression only has a value at execution time")
+        raise AssembleError("Expression only has a value at execution time")
 
     def __enter__(self):
         ret = self != 0
