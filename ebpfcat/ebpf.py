@@ -460,6 +460,9 @@ class Expression:
     def __neg__(self):
         return Negate(self.ebpf, self)
 
+    def __abs__(self):
+        return Absolute(self.ebpf, self)
+
     def __bool__(self):
         raise AssembleError("Expression only has a value at execution time")
 
@@ -610,6 +613,23 @@ class Negate(Expression):
                 (dst, long, signed):
             self.ebpf.append(Opcode.NEG + Opcode.LONG * long, dst, 0, 0, 0)
             yield dst, long, signed
+
+    def contains(self, no):
+        return self.arg.contains(no)
+
+
+class Absolute(Expression):
+    def __init__(self, ebpf, arg):
+        self.ebpf = ebpf
+        self.arg = arg
+
+    @contextmanager
+    def calculate(self, dst, long, signed, force=False):
+        with self.arg.calculate(dst, long, True, force) as \
+                (dst, long, signed):
+            with self.ebpf.r[dst] < 0:
+                self.ebpf.r[dst] = -self.ebpf.r[dst]
+            yield dst, long, True
 
     def contains(self, no):
         return self.arg.contains(no)

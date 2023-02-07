@@ -583,6 +583,14 @@ class Tests(TestCase):
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0)])
 
+    def test_absolute(self):
+        e = EBPF()
+        e.r7 = abs(e.r1)
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
+            Instruction(opcode=O.JGE, dst=7, src=0, off=1, imm=0),
+            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0)])
+
     def test_jump_data(self):
         e = EBPF()
         t1 = e.jumpIf(e.r1 > 0)
