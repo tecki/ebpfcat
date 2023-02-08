@@ -283,9 +283,6 @@ class Elser:
     def __exit__(self, exc_type, exc, tb):
         self.comp.__exit__(exc_type, exc, tb)
 
-    def Else(self):
-        return self.comp.Else()
-
 
 class Comparison(ABC):
     """Base class for all logical operations"""
@@ -865,9 +862,9 @@ class MemoryDesc:
                         value = before & ~(1 << fmt[0])
                 except AssembleError:
                     with ebpf.wtmp:
-                        with value as cond:
+                        with value as Else:
                             ebpf.wtmp = before | (1 << fmt[0])
-                        with cond.Else():
+                        with Else:
                             ebpf.wtmp = before & ~(1 << fmt[0])
             else:
                 mask = ((1 << fmt[1]) - 1) << fmt[0]

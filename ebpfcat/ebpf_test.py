@@ -369,31 +369,6 @@ class Tests(TestCase):
     def test_with(self):
         e = EBPF()
         e.owners = set(range(11))
-        with e.r2 > 3 as cond:
-            e.r2 = 5
-        with cond.Else():
-            e.r6 = 7
-        with e.r2:
-            e.r3 = 2
-        with e.r4 > 3 as cond:
-            e.r5 = 7
-        with cond.Else():
-            e.r7 = 8
-        self.assertEqual(e.opcodes,
-            [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
-             Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
-             Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=6, src=0, off=0, imm=7),
-             Instruction(opcode=O.JEQ, dst=2, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2),
-             Instruction(opcode=O.JLE, dst=4, src=0, off=2, imm=3),
-             Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=7),
-             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=7, src=0, off=0, imm=8)])
-
-    def test_with_new(self):
-        e = EBPF()
-        e.owners = set(range(11))
         with e.r2 > 3 as Else:
             e.r2 = 5
         with Else:
@@ -420,10 +395,10 @@ class Tests(TestCase):
         e = EBPF()
         with e.r1 & 1 as cond:
             e.r0 = 2
-        with e.r1 & 7 as cond:
+        with e.r1 & 7 as Else:
             e.r0 = 2
             e.r1 = 4
-        with cond.Else():
+        with Else:
             e.r0 = 3
         self.assertEqual(e.opcodes, [
             Instruction(opcode=69, dst=1, src=0, off=1, imm=1),
@@ -438,11 +413,11 @@ class Tests(TestCase):
     def test_with_and(self):
         e = EBPF()
         e.owners = set(range(11))
-        with (e.r2 > 3) & (e.r3 > 2) as cond:
+        with (e.r2 > 3) & (e.r3 > 2) as Else:
             e.r1 = 5
-        with (e.r2 > 2) & (e.r1 < 2) as cond:
+        with (e.r2 > 2) & (e.r1 < 2) as Else:
             e.r2 = 5
-        with cond.Else():
+        with Else:
             e.r3 = 7
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.JLE, dst=2, src=0, off=2, imm=3),
@@ -457,12 +432,12 @@ class Tests(TestCase):
     def test_with_or(self):
         e = EBPF()
         e.owners = set(range(11))
-        with (e.r2 > 3) | (e.r3 > 2) as cond:
+        with (e.r2 > 3) | (e.r3 > 2) as Else:
             e.r1 = 5
-        with (e.r2 > 2) | (e.r1 > 2) as cond:
+        with (e.r2 > 2) | (e.r1 > 2) as Else:
             e.r2 = 5
             e.r5 = 4
-        with cond.Else():
+        with Else:
             e.r3 = 7
             e.r4 = 3
         self.assertEqual(e.opcodes, [
@@ -480,9 +455,9 @@ class Tests(TestCase):
     def test_comp_binary(self):
         e = EBPF()
         e.owners = {1, 2, 3, 5}
-        with e.r1 + e.r3 > 3 as cond:
+        with e.r1 + e.r3 > 3 as Else:
             e.r0 = 5
-        with cond.Else():
+        with Else:
             e.r0 = 7
 
         tgt = e.jumpIf(e.r0 < e.r2 + e.r5)
@@ -637,10 +612,10 @@ class Tests(TestCase):
 
     def test_with_data(self):
         e = EBPF()
-        with e.r1 > 0 as cond:
+        with e.r1 > 0 as Else:
             e.r2 = 3
             e.r3 = 5
-        with cond.Else():
+        with Else:
             with self.assertRaises(AssembleError):
                 e.r0 = e.r2
             e.r3 = 5
@@ -749,7 +724,7 @@ class Tests(TestCase):
         e = XDP(license="GPL")
         with e.packetSize > 100 as p:
             e.r3 = p.pH[22]
-        with p.Else():
+        with p.Else:
             e.r3 = 77
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),

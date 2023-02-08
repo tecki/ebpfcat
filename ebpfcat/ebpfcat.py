@@ -275,16 +275,16 @@ class EtherXDP(XDP):
                 self.r[dst] += 4 * self.r3
                 self.r4 = self.mB[self.r[dst]]
                 # we lost a packet
-                with p.pB[IDX0] == self.r4 as cond:
+                with p.pB[IDX0] == self.r4 as Else:
                     self.mI[self.r[dst]] += 1 + (self.r4 & 1)
                 # normal case: two packets on the wire
-                with cond.Else(), ((p.pB[IDX0] + 1 & 0xff) == self.r4) \
-                                  | (p.pB[IDX0] == 0) as c2:
+                with Else, ((p.pB[IDX0] + 1 & 0xff) == self.r4) \
+                           | (p.pB[IDX0] == 0) as Else:
                     self.mI[self.r[dst]] += 1
                     with self.r4 & 1:  # last one was active
                         p.pB[IDX0] = self.mB[self.r[dst]]
                         self.exit(XDPExitCode.TX)
-                with c2.Else():
+                with Else:
                     self.exit(XDPExitCode.PASS)
                 p.pB[IDX0] = self.mB[self.r[dst]]
                 self.r2 = self.get_fd(self.programs)

@@ -104,18 +104,15 @@ class PacketArray:
 
 
 class Packet:
-    def __init__(self, ebpf, comp, no):
+    def __init__(self, ebpf, Else, no):
         self.ebpf = ebpf
-        self.comp = comp
+        self.Else = Else
         self.no = no
 
         self.pB = PacketArray(self.ebpf, self.no, self.ebpf.mB)
         self.pH = PacketArray(self.ebpf, self.no, self.ebpf.mH)
         self.pI = PacketArray(self.ebpf, self.no, self.ebpf.mI)
         self.pQ = PacketArray(self.ebpf, self.no, self.ebpf.mQ)
-
-    def Else(self):
-        return self.comp.Else()
 
 
 class PacketSize:
@@ -126,15 +123,15 @@ class PacketSize:
     def __lt__(self, value):
         e = self.ebpf
         e.r9 = e.mA[e.r1]
-        with e.mA[e.r1 + 4] < e.mA[e.r1] + value as comp:
-            yield Packet(e, comp, 9)
+        with e.mA[e.r1 + 4] < e.mA[e.r1] + value as Else:
+            yield Packet(e, Else, 9)
 
     @contextmanager
     def __gt__(self, value):
         e = self.ebpf
         e.r9 = e.mA[e.r1]
-        with e.mA[e.r1 + 4] > e.mA[e.r1] + value as comp:
-            yield Packet(e, comp, 9)
+        with e.mA[e.r1 + 4] > e.mA[e.r1] + value as Else:
+            yield Packet(e, Else, 9)
 
     def __le__(self, value):
         return self < value + 1
