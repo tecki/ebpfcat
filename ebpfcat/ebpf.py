@@ -273,6 +273,20 @@ def comparison(uposop, unegop, sposop, snegop):
     return ret
 
 
+class Elser:
+    def __init__(self, comp):
+        self.comp = comp
+
+    def __enter__(self):
+        return self.comp.Else()
+
+    def __exit__(self, exc_type, exc, tb):
+        self.comp.__exit__(exc_type, exc, tb)
+
+    def Else(self):
+        return self.comp.Else()
+
+
 class Comparison(ABC):
     """Base class for all logical operations"""
 
@@ -283,7 +297,7 @@ class Comparison(ABC):
     def __enter__(self):
         if self.else_origin is None:
             self.compare(True)
-        return self
+        return Elser(self)
 
     def __exit__(self, exc_type, exc, tb):
         if self.else_origin is None:
