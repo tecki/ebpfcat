@@ -584,7 +584,13 @@ class Terminal:
         busy = 0x8000
         while busy & 0x8000:
             busy, data = await self.read(0x502, "H4x8s")
-        return data
+        if busy & 0x40:  # otherwise we actually only read 4 bytes
+            return data
+        await self.write(0x502, "HI", 0x100, start + 2)
+        busy = 0x8000
+        while busy & 0x8000:
+            busy, data2 = await self.read(0x502, "H4x4s")
+        return data[:4] + data2
 
     async def eeprom_write_one(self, start, data):
         """read 2 bytes from the eeprom at `start`"""
