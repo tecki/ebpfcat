@@ -17,6 +17,8 @@
 
 """The high-level API for EtherCAT loops"""
 from asyncio import ensure_future, gather, wait_for, TimeoutError
+from contextlib import asynccontextmanager, contextmanager
+import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
@@ -24,7 +26,8 @@ from .ethercat import ECCmd, EtherCat, Packet, Terminal
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
 from .xdp import XDP, XDPExitCode
 from .bpf import (
-    ProgType, MapType, create_map, update_elem, prog_test_run, lookup_elem)
+    ProgType, MapType, create_map, delete_elem, update_elem, prog_test_run,
+    lookup_elem)
 
 
 class PacketDesc:
@@ -311,20 +314,37 @@ class FastEtherCat(SimpleEtherCat):
         self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 
-    def register_sync_group(self, sg, packet):
+    @contextmanager
+    def register_sync_group(self, sg):
         index = len(self.sync_groups)
         while index in self.sync_groups:
             index = (index + 1) % self.MAX_PROGS
         fd, _ = sg.load(log_level=1)
         update_elem(self.programs, pack("<I", index), pack("<I", fd), 0)
+        os.close(fd)
         self.sync_groups[index] = sg
-        return index
+        try:
+            yield index
+        finally:
+            delete_elem(self.programs, pack("<I", index))
 
     async def connect(self):
         await super().connect()
         self.ebpf = EtherXDP()
         self.ebpf.programs = self.programs
         self.fd = await self.ebpf.attach(self.addr[0])
+
+    @asynccontextmanager
+    async def run(self):
+        await super().connect()
+        self.ebpf = EtherXDP()
+        self.ebpf.programs = self.programs
+        async with self.ebpf.run(self.addr[0]):
+            try:
+                yield
+            finally:
+                for v in self.sync_groups.values():
+                    v.cancel()
 
 
 class SyncGroupBase:
@@ -405,22 +425,28 @@ class FastSyncGroup(SyncGroupBase, XDP):
         self.exit(XDPExitCode.TX)
 
     async def run(self):
-        self.ec.send_packet(self.asm_packet)
-        self.ec.send_packet(self.asm_packet)
-        await super().run()
+        with self.ec.register_sync_group(self) as self.packet_index:
+            self.asm_packet = self.packet.assemble(self.packet_index)
+            self.ec.send_packet(self.asm_packet)
+            self.ec.send_packet(self.asm_packet)
+            await super().run()
 
     def update_devices(self, data):
         if data[3] & 1:
             self.current_data = data
+        elif self.current_data is None:
+            return self.asm_packet
         for dev in self.devices:
             dev.fast_update()
         return self.asm_packet
 
     def start(self):
         self.allocate()
-        self.packet_index = self.ec.register_sync_group(self, self.packet)
-        self.asm_packet = self.packet.assemble(self.packet_index)
-        ensure_future(self.run())
+        self.task = ensure_future(self.run())
+        return self.task
+
+    def cancel(self):
+        self.task.cancel()
 
     def allocate(self):
         self.packet = Packet()

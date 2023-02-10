@@ -18,7 +18,8 @@
 """support for XDP programs"""
 from asyncio import DatagramProtocol, Future, get_event_loop
 from enum import Enum
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
+import os
 from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
@@ -49,6 +50,7 @@ class XDRFD(DatagramProtocol):
         sock.setsockopt(270, 11, 1)
         sock.bind((0, 0))
         self.transport = transport
+        # this was adopted from xdp1_user.c
         p = pack("IHHIIBxHiIiHHHHiHHI",
                 # NLmsghdr
                 52,  # length of if struct
@@ -147,13 +149,32 @@ class XDP(EBPF):
 
         self.packetSize = PacketSize(self)
 
-    async def attach(self, network):
-        """attach this program to a `network`"""
-        ifindex = if_nametoindex(network)
-        fd, _ = self.load(log_level=1)
+    async def _netlink(self, ifindex, fd):
         future = Future()
         transport, proto = await get_event_loop().create_datagram_endpoint(
                 lambda: XDRFD(ifindex, fd, future),
                 family=AF_NETLINK, proto=NETLINK_ROUTE)
         await future
         transport.get_extra_info("socket").close()
+
+    async def attach(self, network):
+        """attach this program to a `network`"""
+        ifindex = if_nametoindex(network)
+        fd, _ = self.load(log_level=1)
+        await self._netlink(ifindex, fd)
+
+    async def detach(self, network):
+        """attach this program from a `network`"""
+        ifindex = if_nametoindex(network)
+        await self._netlink(ifindex, -1)
+
+    @asynccontextmanager
+    async def run(self, network):
+        ifindex = if_nametoindex(network)
+        fd, _ = self.load(log_level=1)
+        await self._netlink(ifindex, fd)
+        os.close(fd)
+        try:
+            yield
+        finally:
+            await self._netlink(ifindex, -1)

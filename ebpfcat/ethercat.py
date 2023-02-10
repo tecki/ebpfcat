@@ -262,11 +262,11 @@ class EtherCat(Protocol):
         :param network: the name of the network adapter, like "eth0"
         """
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
-        self.send_queue = Queue()
         self.wait_futures = {}
 
     async def connect(self):
         """connect to the EtherCAT loop"""
+        self.send_queue = Queue()
         await get_event_loop().create_datagram_endpoint(
             lambda: self, family=AF_PACKET, proto=0xA488)
 
