@@ -531,7 +531,7 @@ class Terminal:
         ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
         return ret
 
-    async def to_operational(self):
+    async def to_operational(self, target=8):
         """try to bring the terminal to operational state
 
         this tries to push the terminal through its state machine to the
@@ -556,6 +556,8 @@ class Terminal:
                                                    0x0130, "H2xH")
                 if error != 0:
                     raise EtherCatError(f"AL register {error}")
+            if state == target:
+                return
 
     async def get_error(self):
         """read the error register"""
