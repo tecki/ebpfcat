@@ -666,9 +666,11 @@ class Terminal:
             offset = 8  # skip header in first packet
 
             while fragments:
-                type, data = await self.mbx_recv()
-                if type is not MBXType.COE:
-                    raise EtherCatError(f"expected CoE package, got {type}")
+                type = None
+                while type is not MBXType.COE:
+                    type, data = await self.mbx_recv()
+                    if type is not MBXType.COE:
+                        print(f"expected CoE package, got {type}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
                     raise EtherCatError(f"expected {odcmd.value}, got {odcmd}")
@@ -683,9 +685,11 @@ class Terminal:
                     ODCmd.UP_REQ_CA.value if subindex is None
                     else ODCmd.UP_REQ.value,
                     index, 1 if subindex is None else subindex)
-            type, data = await self.mbx_recv()
-            if type is not MBXType.COE:
-                raise EtherCatError(f"expected CoE, got {type}")
+            type = None
+            while type is not MBXType.COE:
+                type, data = await self.mbx_recv()
+                if type is not MBXType.COE:
+                    print(f"got {type}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
