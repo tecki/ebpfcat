@@ -30,9 +30,7 @@ class HashGlobalVar(Expression):
         self.signed = fmt.islower()
 
     @contextmanager
-    def get_address(self, dst, long, signed, force=False):
-        if signed != self.fmt.islower():
-            raise AssembleError("HashMap variable has wrong signedness")
+    def get_address(self, dst, long, force=False):
         with self.ebpf.save_registers([i for i in range(6) if i != dst]), \
                 self.ebpf.get_stack(4) as stack:
             self.ebpf.append(Opcode.ST, 10, 0, stack, self.count)
@@ -78,7 +76,7 @@ class HashGlobalVarDesc:
                         pack("q" if self.fmt.islower() else "Q", value), 0)
             return
         with ebpf.save_registers([3]):
-            with value.get_address(3, True, self.fmt.islower(), True):
+            with value.get_address(3, True, True):
                 with ebpf.save_registers([0, 1, 2, 4, 5]), \
                         ebpf.get_stack(4) as stack:
                     ebpf.r1 = ebpf.get_fd(ebpf.__dict__[self.name].fd)
