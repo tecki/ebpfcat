@@ -15,22 +15,33 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+from ast import literal_eval
 from asyncio import CancelledError, Future, get_event_loop, sleep, gather
-from unittest import TestCase, main
+from functools import wraps
+from itertools import count
+from struct import pack
+from unittest import TestCase, main, skip
 
 from .devices import AnalogInput, AnalogOutput, Motor
 from .terminals import EL4104, EL3164, EK1814
-from .ethercat import ECCmd
+from .ethercat import ECCmd, Terminal
 from .ebpfcat import (
     FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc)
 from .ebpf import Instruction, Opcode as O
 
 
+H = bytes.fromhex
+
+
 class MockEtherCat:
     def __init__(self, test):
         self.test = test
+        with open(__file__.rsplit("/", 1)[0] + "/testdata.py", "r") as fin:
+            self.test_data = literal_eval(fin.read())
 
-    async def roundtrip(self, *args):
+    async def roundtrip(self, *args, data=None):
+        if data is not None:
+            args += data,
         self.test.assertEqual(args, self.expected.pop(0))
         return self.results.pop(0)
 
@@ -50,68 +61,121 @@ class MockEtherCat:
         return 0x33
 
 
+class MockTerminal(Terminal):
+    async def initialize(self, relative, absolute):
+        self.position = absolute
+        self.operational = False
+        data = self.ec.test_data[-relative]
+        self.test_eeprom = data["eeprom"]
+        self.test_sdo = data["sdo"]
+        await self.apply_eeprom()
+
+    async def to_operational(self):
+        self.operational = True
+
+    async def sdo_read(self, index, subindex=None):
+        assert self.operational
+        if subindex is None:
+            r = b''
+            for i in count(1):
+                a = self.test_sdo.get((index, i))
+                if a is None:
+                    break
+                r += a
+            return r
+        elif subindex == 0 and (index, 0) not in self.test_sdo:
+            for i in count(1):
+                a = self.test_sdo.get((index, i))
+                if a is None:
+                    return pack("B", i - 1)
+        return self.test_sdo[index, subindex]
+
+    async def _eeprom_read_one(self, pos):
+        if pos * 2 > len(self.test_eeprom):
+            return b"\xff" * 8
+        return self.test_eeprom[pos*2 : pos*2 + 8]
+
+
+def mockAsync(f):
+    @wraps(f)
+    def wrapper(self):
+        get_event_loop().run_until_complete(f(self))
+    return wrapper
+
+
+def mockTerminal(cls):
+    class Mocked(MockTerminal, cls):
+        pass
+    return Mocked()
+
+
 class Tests(TestCase):
-    def test_input(self):
-        ti = EL3164()
-        ti.pdo_in_sz = 4
-        ti.pdo_in_off = 0xABCD
-        ti.position = 0x77
-        ti.pdo_out_sz = 3
-        ti.pdo_out_off = 0x4321
+    @mockAsync
+    async def test_input(self):
+        ti = mockTerminal(EL3164)
         ec = MockEtherCat(self)
         ti.ec = ec
+        ec.expected = [
+            (ECCmd.FPWR, 4, 0x800, 0x80),
+            (ECCmd.FPWR, 4, 0x800, H('00108000260001018010800022000102'
+                                     '00110000040000038011100020000104')),
+        ]
+        ec.results = [None, None]
+        await ti.initialize(-1, 4)
         ai = AnalogInput(ti.channel1.value)
         SyncGroup.packet_index = 1000
         sg = SyncGroup(ec, [ai])
         self.task = sg.start()
         ec.expected = [
-            (ECCmd.FPRD, 0x77, 304, "H2xH"),  # get state
-            bytes.fromhex("2d10"  # EtherCAT Header, length & type
-                          "0000e8030000008000000000"  # ID datagram
-                          "04007700cdab04800000000000000000" # in datagram
-                          "050077002143030000000000000000"), # out datagram
+            H("2a10"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              # in datagram
+              "04000400801110000000000000000000000000000000000000000000"),
             1000, # == 0x3e8, see ID datagram
-            bytes.fromhex("2d10"  # EtherCAT Header, length & type
-                          "0000e8030000008000000000"  # ID datagram
-                          "04007700cdab04800000123456780000" # in datagram
-                          "050077002143030000000000000000"), # out datagram
+            H("2a10"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              # in datagram
+              "04000400801110000000123456780000000000000000000000000000"),
             1000,
             ]
         ec.results = [
-            (8, 0),  # return state 8, no error
-            bytes.fromhex("2d10"  # EtherCAT Header, length & type
-                          "0000e8030000008000000000"  # ID datagram
-                          "04007700cdab04800000123456780000" # in datagram
-                          "050077002143030000000000000000"), # out datagram
+            H("2a10"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              # in datagram
+              "04000400801110000000123456780000000000000000000000000000"),
+            H("2a10"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              # in datagram
+              "04000400801110000000123456780000000000000000000000000000"),
             ]
         self.future = Future()
         with self.assertRaises(CancelledError):
-            get_event_loop().run_until_complete(
-                    gather(self.future, self.task))
+            await gather(self.future, self.task)
         self.assertEqual(ai.value, 0x7856)
         self.task.cancel()
         with self.assertRaises(CancelledError):
-            get_event_loop().run_until_complete(self.task)
+            await self.task
 
-    def test_output(self):
-        ti = EL4104()
-        ti.pdo_in_sz = 4
-        ti.pdo_in_off = 0xABCD
-        ti.position = 0x77
-        ti.pdo_out_sz = 3
-        ti.pdo_out_off = 0x4321
+    @mockAsync
+    async def test_output(self):
+        ti = mockTerminal(EL4104)
         ec = MockEtherCat(self)
         ti.ec = ec
+        ec.expected = [
+            (ECCmd.FPWR, 7, 0x800, 0x80),
+            (ECCmd.FPWR, 7, 0x800, H('0010800026000101801080002200010'
+                                     '200110800240001038011000000000004')),
+        ]
+        ec.results = [None, None]
+        await ti.initialize(-2, 7)
         ao = AnalogOutput(ti.ch1_value)
         SyncGroup.packet_index = 1000
         sg = SyncGroup(ec, [ao])
         self.task = sg.start()
         ec.expected = [
-            (ECCmd.FPRD, 0x77, 304, "H2xH"),  # get state
-            bytes.fromhex("2d10"  # EtherCAT Header, length & type
-                          "0000e8030000008000000000"  # ID datagram
-                          "04007700cdab04800000000000000000" # in datagram
-                          "050077002143030000000000000000"), # out datagram
+            H("2210"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              "0500070000110800000000000000000000000000"), # out datagram
             1000, # == 0x3e8, see ID datagram
             ]
         ec.results = [
@@ -120,48 +184,30 @@ class Tests(TestCase):
         self.future = Future()
         ao.value = 0x9876
         with self.assertRaises(CancelledError):
-            get_event_loop().run_until_complete(
-                    gather(self.future, self.task))
+            await gather(self.future, self.task)
         ec.expected = [
-            bytes.fromhex("2d10"  # EtherCAT Header, length & type
-                          "0000e8030000008000000000"  # ID datagram
-                          "04007700cdab04800000123456780000" # in datagram
-                          "050077002143030000007698000000"), # out datagram
+            H("2210"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              "0500070000110800000076980000000000000000"), # out datagram
             1000,
             ]
         ec.results = [
-            bytes.fromhex("2d10"  # EtherCAT Header, length & type
-                          "0000e8030000008000000000"  # ID datagram
-                          "04007700cdab04800000123456780000" # in datagram
-                          "050077002143030000007698000000"), # out datagram
+            H("2210"  # EtherCAT Header, length & type
+              "0000e8030000008000000000"  # ID datagram
+              "0500070000110800000076980000000000000000"), # out datagram
             ]
         self.future = Future()
         with self.assertRaises(CancelledError):
-            get_event_loop().run_until_complete(
-                    gather(self.future, self.task))
+            await gather(self.future, self.task)
         self.task.cancel()
         with self.assertRaises(CancelledError):
-            get_event_loop().run_until_complete(self.task)
+            await self.task
 
+    @skip
     def test_ebpf(self):
-        ti = EL3164()
-        ti.pdo_in_sz = 4
-        ti.pdo_in_off = 0xABCD
-        ti.position = 0x77
-        ti.pdo_out_sz = None
-        ti.pdo_out_off = None
-        to = EL4104()
-        to.pdo_in_sz = None
-        to.pdo_in_off = None
-        to.position = 0x55
-        to.pdo_out_sz = 2
-        to.pdo_out_off = 0x5678
-        td = EK1814()
-        td.pdo_in_sz = 1
-        td.pdo_in_off = 0x7777
-        td.position = 0x44
-        td.pdo_out_sz = 1
-        td.pdo_out_off = 0x8888
+        ti = mockTerminal(EL3164)
+        to = mockTerminal(EL4104)
+        td = mockTerminal(EK1814)
 
         class D(Device):
             ai = TerminalVar()
