@@ -85,8 +85,8 @@ class Tests(TestCase):
         e.r4 -= e.r7
         e.r4 *= 3
         e.r4 *= e.r7
-        e.r4 /= 3
-        e.r4 /= e.r7
+        e.r4 //= 3
+        e.r4 //= e.r7
         e.r4 |= 3
         e.r4 |= e.r7
         e.r4 &= 3
@@ -554,7 +554,7 @@ class Tests(TestCase):
     def test_reverse_binary(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3}
-        e.r3 = 7 / (e.r2 + 2)
+        e.r3 = 7 // (e.r2 + 2)
         e.r3 = 7 << e.r2
         e.r3 = 7 % (e.r2 + 3)
         e.r3 = 7 >> e.r2
