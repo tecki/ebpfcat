@@ -141,6 +141,8 @@ class Tests(TestCase):
         e.r3 = e.mH[e.r3 + 2]
         e.r4 = e.mI[7 + e.r8]
         e.r5 = e.mQ[e.r3 - 7]
+        e.r5 = e.mb[e.r3] >> 2
+        e.r5 = e.mB[e.r3] >> 2
         self.assertEqual(e.opcodes,
             [Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
@@ -153,7 +155,12 @@ class Tests(TestCase):
              Instruction(opcode=113, dst=2, src=5, off=0, imm=0),
              Instruction(opcode=105, dst=3, src=3, off=2, imm=0),
              Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
-             Instruction(opcode=121, dst=5, src=3, off=-7, imm=0)])
+             Instruction(opcode=121, dst=5, src=3, off=-7, imm=0),
+             Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
+             Instruction(opcode=O.LONG+O.ARSH, dst=5, src=0, off=0, imm=2),
+             Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
+             Instruction(opcode=O.LONG+O.RSH, dst=5, src=0, off=0, imm=2),
+            ])
 
     def test_local(self):
         class Local(EBPF):

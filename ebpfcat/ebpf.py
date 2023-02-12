@@ -1111,6 +1111,10 @@ class EBPF:
         self.mI = MemoryMap(self, "I")
         self.mA = MemoryMap(self, "A")  # actually I, but treat as Q
         self.mQ = MemoryMap(self, "Q")
+        self.mb = MemoryMap(self, "b")
+        self.mh = MemoryMap(self, "h")
+        self.mi = MemoryMap(self, "i")
+        self.mq = MemoryMap(self, "q")
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)
