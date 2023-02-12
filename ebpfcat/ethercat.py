@@ -191,12 +191,13 @@ class Packet:
     """
     MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
     ETHERNET_HEADER = 14
+    PACKET_HEADER = 16
     DATAGRAM_HEADER = 10
     DATAGRAM_TAIL = 2
 
     def __init__(self):
         self.data = []
-        self.size = 14
+        self.size = self.PACKET_HEADER
 
     def append(self, cmd, data, idx, *address):
         """Append a datagram to the packet
@@ -220,13 +221,15 @@ class Packet:
         An implicit empty datagram is added at the beginning of the packet
         that may be used as an identifier for the packet.
         """
-        ret = [pack("<HBBiHHH", self.size | 0x1000, 0, 0, index, 1 << 15, 0, 0)]
+        ret = [pack("<HBBiHHHH", (self.size-2) | 0x1000, 0, 0, index, 0x8002, 0, 0, 0)]
         for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
             ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
                             cmd.value, *dgram,
                             len(data) | ((i < len(self.data)) << 15), 0))
             ret.append(data)
             ret.append(b"\0\0")
+        if self.size < 46:
+            ret.append(b"3" * (46 - self.size))
         return b''.join(ret)
 
     def __str__(self):

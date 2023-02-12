@@ -260,36 +260,36 @@ class EtherXDP(XDP):
     counters = variables.globalVar("64I")
 
     rate = 0
+    DATA0 = 26
 
     def program(self):
         ETHERTYPE = 12
         CMD0 = 16
-        IDX0 = 17
         ADDR0 = 18
 
         with prandom(self.ebpf) & 0xffff < self.rate:
             self.dropcounter += 1
             self.ebpf.exit(XDPExitCode.DROP)
-        with self.packetSize > 24 as p, p.pH[ETHERTYPE] == 0xA488, \
+        with self.packetSize > 30 as p, p.pH[ETHERTYPE] == 0xA488, \
                 p.pB[CMD0] == 0:
             self.r3 = p.pI[ADDR0]  # use r3 for tail_call
             with self.counters.get_address(None, False, False) as (dst, _), \
                     self.r3 < FastEtherCat.MAX_PROGS:
                 self.r[dst] += 4 * self.r3
-                self.r4 = self.mB[self.r[dst]]
+                self.r4 = self.mH[self.r[dst]]
                 # we lost a packet
-                with p.pB[IDX0] == self.r4 as Else:
+                with p.pH[self.DATA0] == self.r4 as Else:
                     self.mI[self.r[dst]] += 1 + (self.r4 & 1)
                 # normal case: two packets on the wire
-                with Else, ((p.pB[IDX0] + 1 & 0xff) == self.r4) \
-                           | (p.pB[IDX0] == 0) as Else:
+                with Else, ((p.pH[self.DATA0] + 1 & 0xffff) == self.r4) \
+                           | (p.pH[self.DATA0] == 0) as Else:
                     self.mI[self.r[dst]] += 1
                     with self.r4 & 1:  # last one was active
-                        p.pB[IDX0] = self.mB[self.r[dst]]
+                        p.pH[self.DATA0] = self.mH[self.r[dst]]
                         self.exit(XDPExitCode.TX)
                 with Else:
                     self.exit(XDPExitCode.PASS)
-                p.pB[IDX0] = self.mB[self.r[dst]]
+                p.pH[self.DATA0] = self.mH[self.r[dst]]
                 self.r2 = self.get_fd(self.programs)
                 self.call(FuncId.tail_call)
         self.exit(XDPExitCode.PASS)
@@ -432,7 +432,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
             await super().run()
 
     def update_devices(self, data):
-        if data[3] & 1:
+        if data[EtherXDP.DATA0 - Packet.ETHERNET_HEADER] & 1:
             self.current_data = data
         elif self.current_data is None:
             return self.asm_packet
