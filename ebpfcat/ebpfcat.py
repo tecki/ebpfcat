@@ -350,6 +350,8 @@ class FastEtherCat(SimpleEtherCat):
 class SyncGroupBase:
     missed_counter = 0
 
+    current_data = None
+
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
         self.ec = ec
@@ -408,8 +410,6 @@ class SyncGroup(SyncGroupBase):
 
 class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
-
-    current_data = None
 
     properties = ArrayMap()
 
