@@ -218,3 +218,48 @@ class Motor(EtherCATDevice):
         self.device.max_velocity = self.max_velocity
         self.device.proportional = int(self.proportional * (1 << 16))
         self.device.target = int(self.target // self.stepSize)
+
+
+class TurboVacDevice(Device):
+    pump_on = TerminalVar()
+    reset = TerminalVar()
+    error_status = TerminalVar()
+    pump_is_on = TerminalVar()
+    speed = TerminalVar()
+    current = TerminalVar()
+    set_pump_on = False
+
+    def update(self):
+        self.pump_on = self.set_pump_on
+
+
+class TurboVac(EtherCATDevice):
+    pump = String(accessMode=AccessMode.INITONLY)
+    speed = UInt16(accessMode=AccessMode.READONLY)
+    current = UInt16(accessMode=AccessMode.READONLY)
+
+    @Slot()
+    async def start(self):
+        self.device.set_pump_on = True
+
+    @Slot()
+    async def stop(self):
+        self.device.set_pump_on = False
+
+    def update_properties(self):
+        if self.device.pump_is_on:
+            self.state = State.ON
+        else:
+            self.state = State.OFF
+        self.current = self.device.current
+        self.speed = self.device.speed
+
+    @Slot()
+    async def join(self):
+        self.device = TurboVacDevice()
+        self.pump_term = self.find_channel(self.pump)
+        self.device.pump_on = self.pump_term.pump_on
+        self.device.error_status = self.pump_term.error_status
+        self.device.pump_is_on = self.pump_term.pump_is_on
+        self.device.speed = self.pump_term.speed
+        self.device.current = self.pump_term.current
