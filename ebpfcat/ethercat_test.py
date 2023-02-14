@@ -64,17 +64,17 @@ class MockEtherCat:
 class MockTerminal(Terminal):
     async def initialize(self, relative, absolute):
         self.position = absolute
-        self.operational = False
+        self.operational = 1
         data = self.ec.test_data[-relative]
         self.test_eeprom = data["eeprom"]
         self.test_sdo = data["sdo"]
         await self.apply_eeprom()
 
-    async def to_operational(self):
-        self.operational = True
+    async def to_operational(self, state):
+        self.operational = state
 
     async def sdo_read(self, index, subindex=None):
-        assert self.operational
+        assert self.operational >= 2
         if subindex is None:
             r = b''
             for i in count(1):

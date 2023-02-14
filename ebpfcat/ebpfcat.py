@@ -16,7 +16,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """The high-level API for EtherCAT loops"""
-from asyncio import ensure_future, gather, wait_for, TimeoutError
+from asyncio import ensure_future, gather, sleep, wait_for, TimeoutError
 from contextlib import asynccontextmanager, contextmanager
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
@@ -222,7 +222,7 @@ class EBPFTerminal(Terminal):
             raise RuntimeError(
                 f"Incompatible Terminal: {self.vendorId}:{self.productCode} "
                 f"({relative}, {absolute})")
-        await self.to_operational()
+        await self.to_operational(4)
         self.pdos = {}
         if self.has_mailbox():
             await self.parse_pdos()
@@ -363,6 +363,9 @@ class SyncGroupBase:
         self.terminals = {t: None for t in
                           sorted(terminals, key=lambda t: t.position)}
 
+    async def to_operational(self):
+        await gather(*[t.to_operational() for t in self.terminals])
+
     async def run(self):
         data = self.asm_packet
         while True:
@@ -393,7 +396,9 @@ class SyncGroup(SyncGroupBase):
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index)
-        return ensure_future(self.run())
+        ret = ensure_future(self.run())
+        ensure_future(self.to_operational())
+        return ret
 
     def allocate(self):
         self.packet = Packet()
@@ -443,6 +448,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
     def start(self):
         self.allocate()
         self.task = ensure_future(self.run())
+        ensure_future(self.to_operational())
         return self.task
 
     def cancel(self):
