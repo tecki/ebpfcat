@@ -61,6 +61,8 @@ class FastEtherCATMaster(EtherCATMasterBase):
 class EtherCATSyncGroupBase(Device):
     master = String(accessMode=AccessMode.INITONLY)
     devices = VectorString(accessMode=AccessMode.INITONLY)
+    interval = Float(defaultValue=0.05)
+
 
     async def onInitialization(self):
         self.status = "waiting for master"
@@ -81,30 +83,6 @@ class EtherCATSyncGroupBase(Device):
     @Slot(allowedStates={State.OFF})
     async def start(self):
         self.syncGroup.start()
-        self.state = State.RUNNING
-
-
-class EtherCATSyncGroup(EtherCATSyncGroupBase):
-    async def onInitialization(self):
-        await super().onInitialization()
-        self.syncGroup = SyncGroup(self.ethercat.ethercat,
-                                   [d.device for d in self.devs])
-        self.state = State.OFF
-
-
-class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
-    interval = Float(defaultValue=0.05)
-
-    async def onInitialization(self):
-        await super().onInitialization()
-        devices = [EtherCATDevice.instances[d] for d in self.devices]
-        self.syncGroup = FastSyncGroup(self.ethercat.ethercat,
-                                       [d.device for d in self.devs])
-        self.state = State.OFF
-
-    @Slot(allowedStates={State.OFF})
-    async def start(self):
-        self.syncGroup.start()
         self.state = State.ON
         background(self.run())
 
@@ -119,6 +97,23 @@ class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
                 await sleep(self.interval)
         finally:
             self.state = State.ERROR
+
+
+class EtherCATSyncGroup(EtherCATSyncGroupBase):
+    async def onInitialization(self):
+        await super().onInitialization()
+        self.syncGroup = SyncGroup(self.ethercat.ethercat,
+                                   [d.device for d in self.devs])
+        self.state = State.OFF
+
+
+class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
+    async def onInitialization(self):
+        await super().onInitialization()
+        devices = [EtherCATDevice.instances[d] for d in self.devices]
+        self.syncGroup = FastSyncGroup(self.ethercat.ethercat,
+                                       [d.device for d in self.devs])
+        self.state = State.OFF
 
 
 class EtherCATDevice(Device):
