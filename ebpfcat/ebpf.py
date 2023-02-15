@@ -579,9 +579,15 @@ class Binary(Expression):
                         + Opcode.LONG * ((r_long or l_long)
                                          if long is None else long),
                         dst, src, 0, 0)
-            else:
+            elif -0x80000000 <= self.right < 0x100000000:
                 self.ebpf.append(self.operator + Opcode.LONG * long,
                                  dst, 0, 0, self.right)
+            else:
+                with self.ebpf.get_free_register(None) as src:
+                    self.ebpf._load_value(src, self.right)
+                    self.ebpf.append(
+                        self.operator + Opcode.REG + Opcode.LONG,
+                        dst, src, 0, 0)
             if orig_dst is None or orig_dst == dst:
                 yield dst, long
                 return
@@ -1203,7 +1209,7 @@ class EBPF:
         raise AssembleError("not enough registers")
 
     def _load_value(self, no, value):
-        if -0x80000000 <= value < 0x80000000:
+        if -0x80000000 <= value < 0x100000000:
             self.append(Opcode.MOV + Opcode.LONG, no, 0, 0, value)
         else:
             self.append(Opcode.DW, no, 0, 0, value & 0xffffffff)

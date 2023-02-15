@@ -487,11 +487,20 @@ class Tests(TestCase):
         e = EBPF()
         e.r3 = 0x1234567890
         e.r4 = e.get_fd(7)
+        e.r3 = e.r4 + 0x1234567890
+        e.r3 = 0x90000000
+
         self.assertEqual(e.opcodes, [
             Instruction(opcode=24, dst=3, src=0, off=0, imm=878082192),
             Instruction(opcode=0, dst=0, src=0, off=0, imm=18),
             Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
-            Instruction(opcode=0, dst=0, src=0, off=0, imm=0)])
+            Instruction(opcode=0, dst=0, src=0, off=0, imm=0),
+            Instruction(opcode=O.REG+O.LONG+O.MOV, dst=3, src=4, off=0, imm=0),
+            Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=878082192),
+            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=18),
+            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=3, src=0, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=2415919104),
+        ])
 
     def test_simple_binary(self):
         e = EBPF()
