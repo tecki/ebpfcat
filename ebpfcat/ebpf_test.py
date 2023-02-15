@@ -85,8 +85,8 @@ class Tests(TestCase):
         e.r4 -= e.r7
         e.r4 *= 3
         e.r4 *= e.r7
-        e.r4 /= 3
-        e.r4 /= e.r7
+        e.r4 //= 3
+        e.r4 //= e.r7
         e.r4 |= 3
         e.r4 |= e.r7
         e.r4 &= 3
@@ -141,6 +141,8 @@ class Tests(TestCase):
         e.r3 = e.mH[e.r3 + 2]
         e.r4 = e.mI[7 + e.r8]
         e.r5 = e.mQ[e.r3 - 7]
+        e.r5 = e.mb[e.r3] >> 2
+        e.r5 = e.mB[e.r3] >> 2
         self.assertEqual(e.opcodes,
             [Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
@@ -153,7 +155,122 @@ class Tests(TestCase):
              Instruction(opcode=113, dst=2, src=5, off=0, imm=0),
              Instruction(opcode=105, dst=3, src=3, off=2, imm=0),
              Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
-             Instruction(opcode=121, dst=5, src=3, off=-7, imm=0)])
+             Instruction(opcode=121, dst=5, src=3, off=-7, imm=0),
+             Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
+             Instruction(opcode=O.LONG+O.ARSH, dst=5, src=0, off=0, imm=2),
+             Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
+             Instruction(opcode=O.LONG+O.RSH, dst=5, src=0, off=0, imm=2),
+            ])
+
+    def test_fixed(self):
+        e = EBPF()
+        e.owners = {0, 1, 2, 3, 4, 5, 6}
+        e.f1 = e.r2 + 3
+        e.f3 = e.r4 + 3.5
+        e.f5 = e.f6 + 3
+        e.r1 = e.r2 + e.f3
+        e.f4 = e.f5 + e.f6
+        e.r1 = 2 - e.f2
+        e.r3 = 3.4 - e.r4
+        e.r5 = e.f6 % 4
+
+        e.f1 = e.r2 * 3
+        e.f3 = e.r4 * 3.5
+        e.f5 = e.f6 * 3
+        e.r1 = e.r2 * e.f3
+        e.f4 = e.f5 * e.f6
+
+        e.f1 = e.r2 / 3
+        e.f3 = e.r4 / 3.5
+        e.f5 = e.f6 / 3
+        e.r1 = e.r2 / e.f3
+        e.f4 = e.f5 / e.f6
+
+        e.f1 = e.r2 // 3
+        e.f3 = e.r4 // 3.5
+        e.f5 = e.f6 // 3
+        e.r1 = e.r2 // e.f3
+        e.f4 = e.f5 // e.f6
+
+        self.maxDiff = None
+        self.assertEqual(e.opcodes, [
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.ADD+O.LONG, dst=1, src=0, off=0, imm=3),
+           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=3, src=0, off=0, imm=100000),
+           Instruction(opcode=O.ADD+O.LONG, dst=3, src=0, off=0, imm=350000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.ADD+O.LONG, dst=5, src=0, off=0, imm=300000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.ADD+O.LONG, dst=1, src=3, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=4, src=5, off=0, imm=0),
+           Instruction(opcode=O.REG+O.ADD+O.LONG, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=200000),
+           Instruction(opcode=O.REG+O.SUB+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.DIV, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=340000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=7, src=4, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=7, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.SUB+O.LONG, dst=3, src=7, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.LONG+O.MOV, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOD, dst=5, src=0, off=0, imm=400000),
+           Instruction(opcode=O.LONG+O.DIV, dst=5, src=0, off=0, imm=100000),
+
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=3),
+           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=3, src=0, off=0, imm=350000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=5, src=0, off=0, imm=3),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.REG+O.LONG+O.MUL, dst=1, src=3, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=4, src=5, off=0, imm=0),
+           Instruction(opcode=O.REG+O.LONG+O.MUL, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=4, src=0, off=0, imm=100000),
+
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=3),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.DW, dst=7, src=0, off=0, imm=1410065408),
+           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=2),
+           Instruction(opcode=O.MUL+O.REG+O.LONG, dst=3, src=7, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=350000),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=5, src=0, off=0, imm=3),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.DW, dst=7, src=0, off=0, imm=1410065408),
+           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=2),
+           Instruction(opcode=O.REG+O.LONG+O.MUL, dst=1, src=7, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=4, src=5, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=4, src=0, off=0, imm=100000),
+           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=4, src=6, off=0, imm=0),
+
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=3),
+           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=3, src=0, off=0, imm=100000),
+           Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=350000),
+           Instruction(opcode=O.MUL+O.LONG, dst=3, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG, dst=5, src=0, off=0, imm=300000),
+           Instruction(opcode=O.MUL+O.LONG, dst=5, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=4, src=5, off=0, imm=0),
+           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=4, src=0, off=0, imm=100000),
+        ])
 
     def test_local(self):
         class Local(EBPF):
@@ -161,18 +278,26 @@ class Tests(TestCase):
             b = LocalVar('H')
             c = LocalVar('i')
             d = LocalVar('Q')
+            lf = LocalVar('f')
 
         e = Local(ProgType.XDP, "GPL")
         e.a = 5
         e.b = e.c >> 3
         e.d = e.r1
+        e.lf = 7
+        e.b = e.f1
 
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.B+O.ST, dst=10, src=0, off=-1, imm=5),
             Instruction(opcode=O.W+O.LD, dst=0, src=10, off=-8, imm=0),
             Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=3),
             Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
-            Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0)])
+            Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0),
+            Instruction(opcode=O.DW+O.ST, dst=10, src=0, off=-20, imm=700000),
+            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=O.DIV, dst=0, src=0, off=0, imm=100000),
+            Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
+        ])
 
     def test_local_bits(self):
         class Local(EBPF):
@@ -368,7 +493,7 @@ class Tests(TestCase):
 
     def test_with(self):
         e = EBPF()
-        e.owners = set(range(11))
+        e.owners = set(range(9))
         with e.r2 > 3 as Else:
             e.r2 = 5
         with Else:
@@ -379,8 +504,16 @@ class Tests(TestCase):
             e.r5 = 7
         with Else:
             e.r7 = 8
-        self.assertEqual(e.opcodes,
-            [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
+        with e.f4 > 3:
+            pass
+        with 3 > e.f4:
+            pass
+        with e.r4 > 3.5:
+            pass
+        with e.f4 > e.f2:
+            pass
+        self.assertEqual(e.opcodes, [
+             Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
              Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=O.MOV+O.LONG, dst=6, src=0, off=0, imm=7),
@@ -389,7 +522,14 @@ class Tests(TestCase):
              Instruction(opcode=O.JLE, dst=4, src=0, off=2, imm=3),
              Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=7, src=0, off=0, imm=8)])
+             Instruction(opcode=O.MOV+O.LONG, dst=7, src=0, off=0, imm=8),
+             Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=300000),
+             Instruction(opcode=O.JSGE, dst=4, src=0, off=0, imm=300000),
+             Instruction(opcode=O.REG+O.MOV+O.LONG, dst=9, src=4, off=0, imm=0),
+             Instruction(opcode=O.MUL+O.LONG, dst=9, src=0, off=0, imm=100000),
+             Instruction(opcode=O.JLE, dst=9, src=0, off=0, imm=350000),
+             Instruction(opcode=O.REG+O.JSLE, dst=4, src=2, off=0, imm=0),
+        ])
 
     def test_with_inversion(self):
         e = EBPF()
@@ -480,11 +620,20 @@ class Tests(TestCase):
         e = EBPF()
         e.r3 = 0x1234567890
         e.r4 = e.get_fd(7)
+        e.r3 = e.r4 + 0x1234567890
+        e.r3 = 0x90000000
+
         self.assertEqual(e.opcodes, [
             Instruction(opcode=24, dst=3, src=0, off=0, imm=878082192),
             Instruction(opcode=0, dst=0, src=0, off=0, imm=18),
             Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
-            Instruction(opcode=0, dst=0, src=0, off=0, imm=0)])
+            Instruction(opcode=0, dst=0, src=0, off=0, imm=0),
+            Instruction(opcode=O.REG+O.LONG+O.MOV, dst=3, src=4, off=0, imm=0),
+            Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=878082192),
+            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=18),
+            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=3, src=0, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=2415919104),
+        ])
 
     def test_simple_binary(self):
         e = EBPF()
@@ -554,7 +703,7 @@ class Tests(TestCase):
     def test_reverse_binary(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3}
-        e.r3 = 7 / (e.r2 + 2)
+        e.r3 = 7 // (e.r2 + 2)
         e.r3 = 7 << e.r2
         e.r3 = 7 % (e.r2 + 3)
         e.r3 = 7 >> e.r2
@@ -586,10 +735,15 @@ class Tests(TestCase):
     def test_absolute(self):
         e = EBPF()
         e.r7 = abs(e.r1)
+        e.f3 = abs(e.f1)
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
-            Instruction(opcode=O.JGE, dst=7, src=0, off=1, imm=0),
-            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0)])
+            Instruction(opcode=O.JSGE, dst=7, src=0, off=1, imm=0),
+            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
+            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=1, off=0, imm=0),
+            Instruction(opcode=O.JSGE, dst=3, src=0, off=1, imm=0),
+            Instruction(opcode=O.NEG+O.LONG, dst=3, src=0, off=0, imm=0),
+        ])
 
     def test_jump_data(self):
         e = EBPF()
@@ -696,6 +850,10 @@ class Tests(TestCase):
                 e.r7 = e.tmp
             e.tmp = 2
             e.r3 = e.tmp
+        with e.ftmp:
+            e.ftmp = 3
+            e.r3 = e.ftmp
+            e.ftmp = e.r3 * 3.5
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=7),
             Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=3),
@@ -703,7 +861,12 @@ class Tests(TestCase):
             Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=5),
             Instruction(opcode=O.MOV+O.LONG+O.REG, dst=7, src=4, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=2),
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=3, src=2, off=0, imm=0)
+            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=3, src=2, off=0, imm=0),
+            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=300000),
+            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=3, src=2, off=0, imm=0),
+            Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=100000),
+            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=2, src=3, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.MUL, dst=2, src=0, off=0, imm=350000),
             ])
 
     def test_ktime(self):
@@ -759,15 +922,18 @@ class KernelTests(TestCase):
         class Global(EBPF):
             map = ArrayMap()
             ar = map.globalVar()
-            aw = map.globalVar()
+            aw = map.globalVar("h")
 
         class Sub(SubProgram):
             br = Global.map.globalVar()
-            bw = Global.map.globalVar()
+            bw = Global.map.globalVar("h")
+            bf = Global.map.globalVar("f")
 
             def program(self):
+                self.bw = 4
                 self.br -= -33
                 self.bw = self.br + 3
+                self.bf = self.br / 3.5 + self.bf
 
         s1 = Sub()
         s2 = Sub()
@@ -785,9 +951,11 @@ class KernelTests(TestCase):
         self.assertEqual(e.aw, 11)
         self.assertEqual(s1.br, 33)
         self.assertEqual(s1.bw, 36)
+        self.assertEqual(s2.bf, 9.42857)
         s1.br = 3
         s2.br *= 5
         e.ar = 1111
+        s2.bf = 1.3
         self.assertEqual(e.ar, 1111)
         self.assertEqual(e.aw, 11)
         self.assertEqual(s1.br, 3)
@@ -801,6 +969,7 @@ class KernelTests(TestCase):
         self.assertEqual(s1.bw, 39)
         self.assertEqual(s2.br, 198)
         self.assertEqual(s2.bw, 201)
+        self.assertEqual(s2.bf, 57.87142)
 
     def test_minimal(self):
         class Local(EBPF):
