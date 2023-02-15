@@ -28,6 +28,7 @@ class HashGlobalVar(Expression):
         self.count = count
         self.fmt = fmt
         self.signed = fmt.islower()
+        self.fixed = fmt == "f"
 
     @contextmanager
     def get_address(self, dst, long, force=False):

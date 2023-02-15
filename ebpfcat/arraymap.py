@@ -19,7 +19,7 @@ from itertools import chain
 from mmap import mmap
 from struct import pack_into, unpack_from, calcsize
 
-from .ebpf import FuncId, Map, MemoryDesc, Opcode, SubProgram
+from .ebpf import Expression, FuncId, Map, MemoryDesc, Opcode, SubProgram
 from .bpf import create_map, lookup_elem, MapType, MapFlags, update_elem
 
 
@@ -29,6 +29,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
     def __init__(self, map, fmt):
         self.map = map
         self.fmt = fmt
+        self.fixed = fmt == "f"
 
     def fmt_addr(self, ebpf):
         return self.fmt, ebpf.__dict__[self.name]
@@ -42,7 +43,10 @@ class ArrayGlobalVarDesc(MemoryDesc):
         if instance.ebpf.loaded:
             fmt, addr = self.fmt_addr(instance)
             data = instance.ebpf.__dict__[self.map.name].data
-            ret = unpack_from(fmt, data, addr)
+            if fmt == "f":
+                return unpack_from("q", data, addr)[0] / Expression.FIXED_BASE
+            else:
+                ret = unpack_from(fmt, data, addr)
             if len(ret) == 1:
                 return ret[0]
             else:
@@ -53,6 +57,9 @@ class ArrayGlobalVarDesc(MemoryDesc):
     def __set__(self, instance, value):
         if instance.ebpf.loaded:
             fmt, addr = self.fmt_addr(instance)
+            if fmt == "f":
+                fmt = "q"
+                value = int(value * Expression.FIXED_BASE)
             if not isinstance(value, tuple):
                 value = value,
             pack_into(fmt, instance.ebpf.__dict__[self.map.name].data,
@@ -80,7 +87,8 @@ class ArrayMap(Map):
         for prog in chain([ebpf], ebpf.subprograms):
             for k, v in prog.__class__.__dict__.items():
                 if isinstance(v, ArrayGlobalVarDesc):
-                    collection.append((calcsize(v.fmt), prog, k))
+                    collection.append((8 if v.fmt == "f" else calcsize(v.fmt),
+                                       prog, k))
         collection.sort(key=lambda t: t[0], reverse=True)
         position = 0
         for size, prog, name in collection:
