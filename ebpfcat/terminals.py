@@ -89,13 +89,13 @@ class EK1814(EBPFTerminal):
 class EL5042(EBPFTerminal):
     compatibility = {(2, 330444882)}
     class Channel(Struct):
-        position = PacketDesc(3, 2, "q")
-        warning = PacketDesc(3, 0, 0)
-        error = PacketDesc(3, 0, 1)
-        status = PacketDesc(3, 0, "H")
+        position = ProcessDesc(0x6000, 0x11)
+        warning = ProcessDesc(0x6000, 1)
+        error = ProcessDesc(0x6000, 2)
+        status = ProcessDesc(0x6000, 1, "H")
 
-    channel1 = Channel(0, 0)
-    channel2 = Channel(10, 0x10)
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
 
 
 class EL6022(EBPFTerminal):
@@ -118,8 +118,8 @@ class EL6022(EBPFTerminal):
 
 class EL7041(EBPFTerminal):
     compatibility = {(2, 461451346), (2, 461455442), (2, 460795986)}
-    velocity = PacketDesc(2, 6, "h")
-    enable = PacketDesc(2, 4, 0)
-    status = PacketDesc(3, 6, "H")
-    low_switch = PacketDesc(3, 1, 7)
-    high_switch = PacketDesc(3, 1, 8)
+    velocity = ProcessDesc(0x7010, 0x21, "h")
+    enable = ProcessDesc(0x7010, 1)
+    status = ProcessDesc(0x6000, 1, "H")
+    low_switch = ProcessDesc(0x6010, 0xc)
+    high_switch = ProcessDesc(0x6010, 0xd)

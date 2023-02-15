@@ -18,7 +18,8 @@
 """support for XDP programs"""
 from asyncio import DatagramProtocol, Future, get_event_loop
 from enum import Enum
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
+import os
 from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
@@ -49,6 +50,7 @@ class XDRFD(DatagramProtocol):
         sock.setsockopt(270, 11, 1)
         sock.bind((0, 0))
         self.transport = transport
+        # this was adopted from xdp1_user.c
         p = pack("IHHIIBxHiIiHHHHiHHI",
                 # NLmsghdr
                 52,  # length of if struct
@@ -104,18 +106,15 @@ class PacketArray:
 
 
 class Packet:
-    def __init__(self, ebpf, comp, no):
+    def __init__(self, ebpf, Else, no):
         self.ebpf = ebpf
-        self.comp = comp
+        self.Else = Else
         self.no = no
 
         self.pB = PacketArray(self.ebpf, self.no, self.ebpf.mB)
         self.pH = PacketArray(self.ebpf, self.no, self.ebpf.mH)
         self.pI = PacketArray(self.ebpf, self.no, self.ebpf.mI)
         self.pQ = PacketArray(self.ebpf, self.no, self.ebpf.mQ)
-
-    def Else(self):
-        return self.comp.Else()
 
 
 class PacketSize:
@@ -126,15 +125,15 @@ class PacketSize:
     def __lt__(self, value):
         e = self.ebpf
         e.r9 = e.mA[e.r1]
-        with e.mA[e.r1 + 4] < e.mA[e.r1] + value as comp:
-            yield Packet(e, comp, 9)
+        with e.mA[e.r1 + 4] < e.mA[e.r1] + value as Else:
+            yield Packet(e, Else, 9)
 
     @contextmanager
     def __gt__(self, value):
         e = self.ebpf
         e.r9 = e.mA[e.r1]
-        with e.mA[e.r1 + 4] > e.mA[e.r1] + value as comp:
-            yield Packet(e, comp, 9)
+        with e.mA[e.r1 + 4] > e.mA[e.r1] + value as Else:
+            yield Packet(e, Else, 9)
 
     def __le__(self, value):
         return self < value + 1
@@ -150,13 +149,32 @@ class XDP(EBPF):
 
         self.packetSize = PacketSize(self)
 
-    async def attach(self, network):
-        """attach this program to a `network`"""
-        ifindex = if_nametoindex(network)
-        fd, _ = self.load(log_level=1)
+    async def _netlink(self, ifindex, fd):
         future = Future()
         transport, proto = await get_event_loop().create_datagram_endpoint(
                 lambda: XDRFD(ifindex, fd, future),
                 family=AF_NETLINK, proto=NETLINK_ROUTE)
         await future
         transport.get_extra_info("socket").close()
+
+    async def attach(self, network):
+        """attach this program to a `network`"""
+        ifindex = if_nametoindex(network)
+        fd, _ = self.load(log_level=1)
+        await self._netlink(ifindex, fd)
+
+    async def detach(self, network):
+        """attach this program from a `network`"""
+        ifindex = if_nametoindex(network)
+        await self._netlink(ifindex, -1)
+
+    @asynccontextmanager
+    async def run(self, network):
+        ifindex = if_nametoindex(network)
+        fd, _ = self.load(log_level=1)
+        await self._netlink(ifindex, fd)
+        os.close(fd)
+        try:
+            yield
+        finally:
+            await self._netlink(ifindex, -1)

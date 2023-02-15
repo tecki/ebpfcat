@@ -17,6 +17,8 @@
 
 """The high-level API for EtherCAT loops"""
 from asyncio import ensure_future, gather, wait_for, TimeoutError
+from contextlib import asynccontextmanager, contextmanager
+import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
@@ -24,7 +26,8 @@ from .ethercat import ECCmd, EtherCat, Packet, Terminal
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
 from .xdp import XDP, XDPExitCode
 from .bpf import (
-    ProgType, MapType, create_map, update_elem, prog_test_run, lookup_elem)
+    ProgType, MapType, create_map, delete_elem, update_elem, prog_test_run,
+    lookup_elem)
 
 
 class PacketDesc:
@@ -93,25 +96,6 @@ class PacketVar(MemoryDesc):
 
     def set(self, device, value):
         if device.sync_group.current_data is None:
-            if isinstance(self.size, int):
-                try:
-                    bool(value)
-                except RuntimeError:
-                    e = device.sync_group
-                    with e.wtmp:
-                        e.wtmp = super().__get__(device, None)
-                        with value as cond:
-                            e.wtmp |= 1 << self.size
-                        with cond.Else():
-                            e.wtmp &= ~(1 << self.size)
-                        super().__set__(device, e.wtmp)
-                    return
-                else:
-                    old = super().__get__(device, None)
-                    if value:
-                        value = old | (1 << self.size)
-                    else:
-                        value = old & ~(1 << self.size)
             super().__set__(device, value)
         else:
             data = device.sync_group.current_data
@@ -126,10 +110,7 @@ class PacketVar(MemoryDesc):
 
     def get(self, device):
         if device.sync_group.current_data is None:
-            if isinstance(self.size, int):
-                return super().__get__(device, None) & (1 << self.size)
-            else:
-                return super().__get__(device, None)
+            return super().__get__(device, None)
         else:
             data = device.sync_group.current_data
             start = self._start(device)
@@ -143,7 +124,7 @@ class PacketVar(MemoryDesc):
                + self.position
 
     def fmt_addr(self, device):
-        return ("B" if isinstance(self.size, int) else self.size,
+        return ((self.size, 1) if isinstance(self.size, int) else self.size,
                 self._start(device) + Packet.ETHERNET_HEADER)
 
 
@@ -279,36 +260,36 @@ class EtherXDP(XDP):
     counters = variables.globalVar("64I")
 
     rate = 0
+    DATA0 = 26
 
     def program(self):
         ETHERTYPE = 12
         CMD0 = 16
-        IDX0 = 17
         ADDR0 = 18
 
         with prandom(self.ebpf) & 0xffff < self.rate:
             self.dropcounter += 1
             self.ebpf.exit(XDPExitCode.DROP)
-        with self.packetSize > 24 as p, p.pH[ETHERTYPE] == 0xA488, \
+        with self.packetSize > 30 as p, p.pH[ETHERTYPE] == 0xA488, \
                 p.pB[CMD0] == 0:
             self.r3 = p.pI[ADDR0]  # use r3 for tail_call
             with self.counters.get_address(None, False, False) as (dst, _), \
                     self.r3 < FastEtherCat.MAX_PROGS:
                 self.r[dst] += 4 * self.r3
-                self.r4 = self.mB[self.r[dst]]
+                self.r4 = self.mH[self.r[dst]]
                 # we lost a packet
-                with p.pB[IDX0] == self.r4 as cond:
+                with p.pH[self.DATA0] == self.r4 as Else:
                     self.mI[self.r[dst]] += 1 + (self.r4 & 1)
                 # normal case: two packets on the wire
-                with cond.Else(), ((p.pB[IDX0] + 1 & 0xff) == self.r4) \
-                                  | (p.pB[IDX0] == 0) as c2:
+                with Else, ((p.pH[self.DATA0] + 1 & 0xffff) == self.r4) \
+                           | (p.pH[self.DATA0] == 0) as Else:
                     self.mI[self.r[dst]] += 1
                     with self.r4 & 1:  # last one was active
-                        p.pB[IDX0] = self.mB[self.r[dst]]
+                        p.pH[self.DATA0] = self.mH[self.r[dst]]
                         self.exit(XDPExitCode.TX)
-                with c2.Else():
+                with Else:
                     self.exit(XDPExitCode.PASS)
-                p.pB[IDX0] = self.mB[self.r[dst]]
+                p.pH[self.DATA0] = self.mH[self.r[dst]]
                 self.r2 = self.get_fd(self.programs)
                 self.call(FuncId.tail_call)
         self.exit(XDPExitCode.PASS)
@@ -333,20 +314,37 @@ class FastEtherCat(SimpleEtherCat):
         self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 
-    def register_sync_group(self, sg, packet):
+    @contextmanager
+    def register_sync_group(self, sg):
         index = len(self.sync_groups)
         while index in self.sync_groups:
             index = (index + 1) % self.MAX_PROGS
         fd, _ = sg.load(log_level=1)
         update_elem(self.programs, pack("<I", index), pack("<I", fd), 0)
+        os.close(fd)
         self.sync_groups[index] = sg
-        return index
+        try:
+            yield index
+        finally:
+            delete_elem(self.programs, pack("<I", index))
 
     async def connect(self):
         await super().connect()
         self.ebpf = EtherXDP()
         self.ebpf.programs = self.programs
         self.fd = await self.ebpf.attach(self.addr[0])
+
+    @asynccontextmanager
+    async def run(self):
+        await super().connect()
+        self.ebpf = EtherXDP()
+        self.ebpf.programs = self.programs
+        async with self.ebpf.run(self.addr[0]):
+            try:
+                yield
+            finally:
+                for v in self.sync_groups.values():
+                    v.cancel()
 
 
 class SyncGroupBase:
@@ -427,21 +425,28 @@ class FastSyncGroup(SyncGroupBase, XDP):
         self.exit(XDPExitCode.TX)
 
     async def run(self):
-        self.ec.send_packet(self.asm_packet)
-        self.ec.send_packet(self.asm_packet)
-        await super().run()
+        with self.ec.register_sync_group(self) as self.packet_index:
+            self.asm_packet = self.packet.assemble(self.packet_index)
+            self.ec.send_packet(self.asm_packet)
+            self.ec.send_packet(self.asm_packet)
+            await super().run()
 
     def update_devices(self, data):
-        self.current_data = data
+        if data[EtherXDP.DATA0 - Packet.ETHERNET_HEADER] & 1:
+            self.current_data = data
+        elif self.current_data is None:
+            return self.asm_packet
         for dev in self.devices:
             dev.fast_update()
         return self.asm_packet
 
     def start(self):
         self.allocate()
-        self.packet_index = self.ec.register_sync_group(self, self.packet)
-        self.asm_packet = self.packet.assemble(self.packet_index)
-        ensure_future(self.run())
+        self.task = ensure_future(self.run())
+        return self.task
+
+    def cancel(self):
+        self.task.cancel()
 
     def allocate(self):
         self.packet = Packet()

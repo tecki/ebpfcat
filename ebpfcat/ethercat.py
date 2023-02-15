@@ -191,12 +191,13 @@ class Packet:
     """
     MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
     ETHERNET_HEADER = 14
+    PACKET_HEADER = 16
     DATAGRAM_HEADER = 10
     DATAGRAM_TAIL = 2
 
     def __init__(self):
         self.data = []
-        self.size = 14
+        self.size = self.PACKET_HEADER
 
     def append(self, cmd, data, idx, *address):
         """Append a datagram to the packet
@@ -220,13 +221,15 @@ class Packet:
         An implicit empty datagram is added at the beginning of the packet
         that may be used as an identifier for the packet.
         """
-        ret = [pack("<HBBiHHH", self.size | 0x1000, 0, 0, index, 1 << 15, 0, 0)]
+        ret = [pack("<HBBiHHHH", (self.size-2) | 0x1000, 0, 0, index, 0x8002, 0, 0, 0)]
         for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
             ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
                             cmd.value, *dgram,
                             len(data) | ((i < len(self.data)) << 15), 0))
             ret.append(data)
             ret.append(b"\0\0")
+        if self.size < 46:
+            ret.append(b"3" * (46 - self.size))
         return b''.join(ret)
 
     def __str__(self):
@@ -262,11 +265,11 @@ class EtherCat(Protocol):
         :param network: the name of the network adapter, like "eth0"
         """
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
-        self.send_queue = Queue()
         self.wait_futures = {}
 
     async def connect(self):
         """connect to the EtherCAT loop"""
+        self.send_queue = Queue()
         await get_event_loop().create_datagram_endpoint(
             lambda: self, family=AF_PACKET, proto=0xA488)
 
@@ -531,7 +534,7 @@ class Terminal:
         ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
         return ret
 
-    async def to_operational(self):
+    async def to_operational(self, target=8):
         """try to bring the terminal to operational state
 
         this tries to push the terminal through its state machine to the
@@ -556,6 +559,8 @@ class Terminal:
                                                    0x0130, "H2xH")
                 if error != 0:
                     raise EtherCatError(f"AL register {error}")
+            if state == target:
+                return
 
     async def get_error(self):
         """read the error register"""
@@ -584,7 +589,13 @@ class Terminal:
         busy = 0x8000
         while busy & 0x8000:
             busy, data = await self.read(0x502, "H4x8s")
-        return data
+        if busy & 0x40:  # otherwise we actually only read 4 bytes
+            return data
+        await self.write(0x502, "HI", 0x100, start + 2)
+        busy = 0x8000
+        while busy & 0x8000:
+            busy, data2 = await self.read(0x502, "H4x4s")
+        return data[:4] + data2
 
     async def eeprom_write_one(self, start, data):
         """read 2 bytes from the eeprom at `start`"""
@@ -658,9 +669,11 @@ class Terminal:
             offset = 8  # skip header in first packet
 
             while fragments:
-                type, data = await self.mbx_recv()
-                if type is not MBXType.COE:
-                    raise EtherCatError(f"expected CoE package, got {type}")
+                type = None
+                while type is not MBXType.COE:
+                    type, data = await self.mbx_recv()
+                    if type is not MBXType.COE:
+                        print(f"expected CoE package, got {type}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
                     raise EtherCatError(f"expected {odcmd.value}, got {odcmd}")
@@ -675,9 +688,11 @@ class Terminal:
                     ODCmd.UP_REQ_CA.value if subindex is None
                     else ODCmd.UP_REQ.value,
                     index, 1 if subindex is None else subindex)
-            type, data = await self.mbx_recv()
-            if type is not MBXType.COE:
-                raise EtherCatError(f"expected CoE, got {type}")
+            type = None
+            while type is not MBXType.COE:
+                type, data = await self.mbx_recv()
+                if type is not MBXType.COE:
+                    print(f"got {type}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:

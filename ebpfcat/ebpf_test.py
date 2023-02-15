@@ -174,6 +174,53 @@ class Tests(TestCase):
             Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
             Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0)])
 
+    def test_local_bits(self):
+        class Local(EBPF):
+            a = LocalVar((5, 1))
+            b = LocalVar((3, 4))
+
+        e = Local(ProgType.XDP, "GPL")
+
+        with e.a:
+            e.a = 1
+
+        e.b = e.a
+
+        with ~e.a:
+            e.b = 3
+
+        with e.b:
+            e.a = 0
+
+        self.assertEqual(e.opcodes, [
+           Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=32),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
+            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.AND+O.LONG, dst=0, src=0, off=0, imm=32),
+            Instruction(opcode=O.RSH+O.LONG, dst=0, src=0, off=0, imm=5),
+            Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=120),
+            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-2, imm=0),
+            Instruction(opcode=O.AND, dst=2, src=0, off=0, imm=-121),
+            Instruction(opcode=O.REG+O.OR, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-2, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.JSET, dst=0, src=0, off=4, imm=32),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-2, imm=0),
+            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-121),
+            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=24),
+            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-2, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-2, imm=0),
+            Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=120),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
+            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0)])
+
     def test_local_subprog(self):
         class Local(EBPF):
             a = LocalVar('I')
@@ -322,15 +369,15 @@ class Tests(TestCase):
     def test_with(self):
         e = EBPF()
         e.owners = set(range(11))
-        with e.r2 > 3 as cond:
+        with e.r2 > 3 as Else:
             e.r2 = 5
-        with cond.Else():
+        with Else:
             e.r6 = 7
         with e.r2:
             e.r3 = 2
-        with e.r4 > 3 as cond:
+        with e.r4 > 3 as Else:
             e.r5 = 7
-        with cond.Else():
+        with Else:
             e.r7 = 8
         self.assertEqual(e.opcodes,
             [Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
@@ -348,10 +395,10 @@ class Tests(TestCase):
         e = EBPF()
         with e.r1 & 1 as cond:
             e.r0 = 2
-        with e.r1 & 7 as cond:
+        with e.r1 & 7 as Else:
             e.r0 = 2
             e.r1 = 4
-        with cond.Else():
+        with Else:
             e.r0 = 3
         self.assertEqual(e.opcodes, [
             Instruction(opcode=69, dst=1, src=0, off=1, imm=1),
@@ -366,11 +413,11 @@ class Tests(TestCase):
     def test_with_and(self):
         e = EBPF()
         e.owners = set(range(11))
-        with (e.r2 > 3) & (e.r3 > 2) as cond:
+        with (e.r2 > 3) & (e.r3 > 2) as Else:
             e.r1 = 5
-        with (e.r2 > 2) & (e.r1 < 2) as cond:
+        with (e.r2 > 2) & (e.r1 < 2) as Else:
             e.r2 = 5
-        with cond.Else():
+        with Else:
             e.r3 = 7
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.JLE, dst=2, src=0, off=2, imm=3),
@@ -385,12 +432,12 @@ class Tests(TestCase):
     def test_with_or(self):
         e = EBPF()
         e.owners = set(range(11))
-        with (e.r2 > 3) | (e.r3 > 2) as cond:
+        with (e.r2 > 3) | (e.r3 > 2) as Else:
             e.r1 = 5
-        with (e.r2 > 2) | (e.r1 > 2) as cond:
+        with (e.r2 > 2) | (e.r1 > 2) as Else:
             e.r2 = 5
             e.r5 = 4
-        with cond.Else():
+        with Else:
             e.r3 = 7
             e.r4 = 3
         self.assertEqual(e.opcodes, [
@@ -408,9 +455,9 @@ class Tests(TestCase):
     def test_comp_binary(self):
         e = EBPF()
         e.owners = {1, 2, 3, 5}
-        with e.r1 + e.r3 > 3 as cond:
+        with e.r1 + e.r3 > 3 as Else:
             e.r0 = 5
-        with cond.Else():
+        with Else:
             e.r0 = 7
 
         tgt = e.jumpIf(e.r0 < e.r2 + e.r5)
@@ -536,6 +583,14 @@ class Tests(TestCase):
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0)])
 
+    def test_absolute(self):
+        e = EBPF()
+        e.r7 = abs(e.r1)
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
+            Instruction(opcode=O.JGE, dst=7, src=0, off=1, imm=0),
+            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0)])
+
     def test_jump_data(self):
         e = EBPF()
         t1 = e.jumpIf(e.r1 > 0)
@@ -557,10 +612,10 @@ class Tests(TestCase):
 
     def test_with_data(self):
         e = EBPF()
-        with e.r1 > 0 as cond:
+        with e.r1 > 0 as Else:
             e.r2 = 3
             e.r3 = 5
-        with cond.Else():
+        with Else:
             with self.assertRaises(AssembleError):
                 e.r0 = e.r2
             e.r3 = 5
@@ -669,7 +724,7 @@ class Tests(TestCase):
         e = XDP(license="GPL")
         with e.packetSize > 100 as p:
             e.r3 = p.pH[22]
-        with p.Else():
+        with p.Else:
             e.r3 = 77
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),

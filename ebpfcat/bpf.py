@@ -123,6 +123,9 @@ def update_elem(fd, key, value, flags):
         addr = addrof(value)
     return bpf(2, "IQQQ", fd, addrof(key), addr, flags)[0]
 
+def delete_elem(fd, key):
+    return bpf(3, "IQ", fd, addrof(key))[0]
+
 def prog_load(prog_type, insns, license,
               log_level=0, log_size=4096, kern_version=0, flags=0,
               name="", ifindex=0, attach_type=0):

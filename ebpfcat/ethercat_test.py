@@ -123,30 +123,34 @@ class Tests(TestCase):
         ec.results = [None, None]
         await ti.initialize(-1, 4)
         ai = AnalogInput(ti.channel1.value)
-        SyncGroup.packet_index = 1000
+        SyncGroup.packet_index = 0x66554433
         sg = SyncGroup(ec, [ai])
         self.task = sg.start()
         ec.expected = [
             H("2a10"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
+              "0000334455660280000000000000"  # ID datagram
               # in datagram
-              "04000400801110000000000000000000000000000000000000000000"),
-            1000, # == 0x3e8, see ID datagram
+              "04000400801110000000000000000000000000000000000000000000"
+              "3333"), # padding
+            0x66554433, # index
             H("2a10"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
+              "0000334455660280000000000000"  # ID datagram
               # in datagram
-              "04000400801110000000123456780000000000000000000000000000"),
-            1000,
+              "04000400801110000000123456780000000000000000000000000000"
+              "3333"),  # padding
+            0x66554433, # index
             ]
         ec.results = [
             H("2a10"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
+              "0000334455660280000000000000"  # ID datagram
               # in datagram
-              "04000400801110000000123456780000000000000000000000000000"),
+              "04000400801110000000123456780000000000000000000000000000"
+              "3333"), # padding
             H("2a10"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
+              "0000334455660280000000000000"  # ID datagram
               # in datagram
-              "04000400801110000000123456780000000000000000000000000000"),
+              "04000400801110000000123456780000000000000000000000000000"
+              "3333"), # padding
             ]
         self.future = Future()
         with self.assertRaises(CancelledError):
@@ -169,14 +173,15 @@ class Tests(TestCase):
         ec.results = [None, None]
         await ti.initialize(-2, 7)
         ao = AnalogOutput(ti.ch1_value)
-        SyncGroup.packet_index = 1000
+        SyncGroup.packet_index = 0x55443322
         sg = SyncGroup(ec, [ao])
         self.task = sg.start()
         ec.expected = [
             H("2210"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
-              "0500070000110800000000000000000000000000"), # out datagram
-            1000, # == 0x3e8, see ID datagram
+              "0000223344550280000000000000"  # ID datagram
+              "0500070000110800000000000000000000000000" # out datagram
+              "33333333333333333333"), # padding
+            0x55443322,  # index
             ]
         ec.results = [
             (8, 0),  # return state 8, no error
@@ -187,14 +192,16 @@ class Tests(TestCase):
             await gather(self.future, self.task)
         ec.expected = [
             H("2210"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
-              "0500070000110800000076980000000000000000"), # out datagram
-            1000,
+              "0000223344550280000000000000"  # ID datagram
+              "0500070000110800000076980000000000000000" # out datagram
+              "33333333333333333333"), # padding
+            0x55443322,  # index
             ]
         ec.results = [
             H("2210"  # EtherCAT Header, length & type
-              "0000e8030000008000000000"  # ID datagram
-              "0500070000110800000076980000000000000000"), # out datagram
+              "0000223344550280000000000000"  # ID datagram
+              "0500070000110800000076980000000000000000" # out datagram
+              "33333333333333333333"), # padding
             ]
         self.future = Future()
         with self.assertRaises(CancelledError):
