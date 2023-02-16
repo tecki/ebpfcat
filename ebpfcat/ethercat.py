@@ -559,7 +559,7 @@ class Terminal:
                                                    0x0130, "H2xH")
                 if error != 0:
                     raise EtherCatError(f"AL register {error}")
-            if state == target:
+            if state >= target:
                 return
 
     async def get_error(self):

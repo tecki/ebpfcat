@@ -220,9 +220,8 @@ class EBPFTerminal(Terminal):
         if (self.compatibility is not None and
                 (self.vendorId, self.productCode) not in self.compatibility):
             raise RuntimeError(
-                f"Incompatible Terminal: {self.vendorId}:{self.productCode} "
-                f"({relative}, {absolute})")
-        await self.to_operational(4)
+                f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
+        await self.to_operational(2)
         self.pdos = {}
         if self.has_mailbox():
             await self.parse_pdos()

@@ -74,7 +74,7 @@ async def info():
                 print(f"{k:2}: {v}\n    {v.hex()}")
 
         if args.sdo:
-            await t.to_operational(4)
+            await t.to_operational(2)
             ret = await t.read_ODlist()
             for k, v in ret.items():
                 print(f"{k:X}:")
@@ -91,7 +91,7 @@ async def info():
                             else:
                                 print(f"        {r}")
         if args.pdo:
-            await t.to_operational(4)
+            await t.to_operational(2)
             await t.parse_pdos()
             for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
                 print(f"{idx:4X}:{subidx:02X} {sm} {pos} {fmt}")
@@ -164,7 +164,7 @@ async def create_test():
         await t.initialize(-i, await ec.find_free_address())
         sdo = {}
         if t.has_mailbox():
-            await t.to_operational(4)
+            await t.to_operational(2)
             odlist = await t.read_ODlist()
 
             for k, v in odlist.items():
