@@ -293,8 +293,10 @@ class EtherCat(Protocol):
                     if wkc == 0:
                         future.set_exception(
                             EtherCatError("datagram was not processed"))
-                    else:
+                    elif not future.done():
                         future.set_result(data[start:stop])
+                    else:
+                        print("dropped package")
                 dgrams = []
                 packet = Packet()
 
