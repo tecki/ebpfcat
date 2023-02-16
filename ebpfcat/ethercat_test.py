@@ -42,6 +42,8 @@ class MockEtherCat:
     async def roundtrip(self, *args, data=None):
         if data is not None:
             args += data,
+        if not self.expected:
+            self.test.fail(f"missing {args}")
         self.test.assertEqual(args, self.expected.pop(0))
         return self.results.pop(0)
 
@@ -70,7 +72,7 @@ class MockTerminal(Terminal):
         self.test_sdo = data["sdo"]
         await self.apply_eeprom()
 
-    async def to_operational(self, state):
+    async def to_operational(self, state=8):
         self.operational = state
 
     async def sdo_read(self, index, subindex=None):
@@ -119,8 +121,14 @@ class Tests(TestCase):
             (ECCmd.FPWR, 4, 0x800, 0x80),
             (ECCmd.FPWR, 4, 0x800, H('00108000260001018010800022000102'
                                      '00110000040000038011100020000104')),
+            (ECCmd.FPWR, 4, 2070, 'B', 0),  # disable sync manager
+            (ECCmd.FPWR, 4, 2066, 'H', 0),  # set sync manager size
+            (ECCmd.FPWR, 4, 2070, 'B', False),  # disable 0-length sync manager
+            (ECCmd.FPWR, 4, 2078, 'B', 0),  # disable other sync manager
+            (ECCmd.FPWR, 4, 2074, 'H', 16),  # set sync manager size
+            (ECCmd.FPWR, 4, 2078, 'B', True),  # enable sync manager
         ]
-        ec.results = [None, None]
+        ec.results = [None, None, None, None, None, None, None, None]
         await ti.initialize(-1, 4)
         ai = AnalogInput(ti.channel1.value)
         SyncGroup.packet_index = 0x66554433
@@ -169,8 +177,14 @@ class Tests(TestCase):
             (ECCmd.FPWR, 7, 0x800, 0x80),
             (ECCmd.FPWR, 7, 0x800, H('0010800026000101801080002200010'
                                      '200110800240001038011000000000004')),
+            (ECCmd.FPWR, 7, 2070, 'B', 0),  # disable sync manager
+            (ECCmd.FPWR, 7, 2066, 'H', 8),  # set sync manager size
+            (ECCmd.FPWR, 7, 2070, 'B', True),  # enable sync manager
+            (ECCmd.FPWR, 7, 2078, 'B', 0),  # disable other sync manager
+            (ECCmd.FPWR, 7, 2074, 'H', 0),  # set sync manager size
+            (ECCmd.FPWR, 7, 2078, 'B', False),  # disable 0-length sync manager
         ]
-        ec.results = [None, None]
+        ec.results = [None, None, None, None, None, None, None, None]
         await ti.initialize(-2, 7)
         ao = AnalogOutput(ti.ch1_value)
         SyncGroup.packet_index = 0x55443322

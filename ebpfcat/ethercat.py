@@ -450,8 +450,16 @@ class Terminal:
             elif mode == 6:
                 self.mbx_out_off = offset
                 self.mbx_out_sz = size
-        s = await self.read(0x800, data=0x80)
-        print(absolute, " ".join(f"{c:02x} {'|' if i % 8 == 7 else ''}" for i, c in enumerate(s)))
+            else:
+                print("wrong mode")
+
+    async def write_pdo_sm(self):
+        await self.write(0x816, "B", 0)
+        await self.write(0x812, "H", self.pdo_out_sz)
+        await self.write(0x816, "B", self.pdo_out_sz > 0)
+        await self.write(0x81E, "B", 0)
+        await self.write(0x81A, "H", self.pdo_in_sz)
+        await self.write(0x81E, "B", self.pdo_in_sz > 0)
 
     async def parse_pdos(self):
         async def parse_eeprom(s):
@@ -492,16 +500,18 @@ class Terminal:
                         (sm, bitpos // 8,
                          {8: "B", 16: "H", 32: "I", 64: "Q"}[bits])
                 bitpos += bits
+            return bitpos
 
         self.pdos = {}
         if self.has_mailbox():
-            await parse(parse_sdo(0x1c12, 2))
-            await parse(parse_sdo(0x1c13, 3))
+            return (await parse(parse_sdo(0x1c12, 2)),
+                    await parse(parse_sdo(0x1c13, 3)))
         else:
-            if 50 in self.eeprom:
+            return (
                 await parse(parse_eeprom(self.eeprom[50]))
-            if 51 in self.eeprom:
+                if 50 in self.eeprom else 0,
                 await parse(parse_eeprom(self.eeprom[51]))
+                if 51 in self.eeprom else 0)
 
     async def parse_pdo(self, index, sm):
         assignment = await self.sdo_read(index)

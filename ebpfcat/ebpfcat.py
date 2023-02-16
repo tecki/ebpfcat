@@ -223,8 +223,10 @@ class EBPFTerminal(Terminal):
                 f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
         await self.to_operational(2)
         self.pdos = {}
-        if self.has_mailbox():
-            await self.parse_pdos()
+        outbits, inbits = await self.parse_pdos()
+        self.pdo_out_sz = int((outbits + 7) // 8)
+        self.pdo_in_sz = int((inbits + 7) // 8)
+        await self.write_pdo_sm()
 
     def allocate(self, packet, readonly):
         """allocate space in packet for the pdos of this terminal
