@@ -137,3 +137,8 @@ class TurboVac(EBPFTerminal):
     pump_alarm = ProcessDesc(0x20CC, 0, 3)
     speed = ProcessDesc(0x20CD, 0, "H")
     current = ProcessDesc(0x20D1, 0, "H")
+
+
+class Inficon(EBPFTerminal):
+    compatibility = {(0x644, 0x21)}
+    value = ProcessDesc(0xF640, 0x11, "f")
