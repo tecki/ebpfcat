@@ -165,32 +165,32 @@ class Tests(TestCase):
     def test_fixed(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3, 4, 5, 6}
-        e.f1 = e.r2 + 3
-        e.f3 = e.r4 + 3.5
-        e.f5 = e.f6 + 3
-        e.r1 = e.r2 + e.f3
-        e.f4 = e.f5 + e.f6
-        e.r1 = 2 - e.f2
+        e.x1 = e.r2 + 3
+        e.x3 = e.r4 + 3.5
+        e.x5 = e.x6 + 3
+        e.r1 = e.r2 + e.x3
+        e.x4 = e.x5 + e.x6
+        e.r1 = 2 - e.x2
         e.r3 = 3.4 - e.r4
-        e.r5 = e.f6 % 4
+        e.r5 = e.x6 % 4
 
-        e.f1 = e.r2 * 3
-        e.f3 = e.r4 * 3.5
-        e.f5 = e.f6 * 3
-        e.r1 = e.r2 * e.f3
-        e.f4 = e.f5 * e.f6
+        e.x1 = e.r2 * 3
+        e.x3 = e.r4 * 3.5
+        e.x5 = e.x6 * 3
+        e.r1 = e.r2 * e.x3
+        e.x4 = e.x5 * e.x6
 
-        e.f1 = e.r2 / 3
-        e.f3 = e.r4 / 3.5
-        e.f5 = e.f6 / 3
-        e.r1 = e.r2 / e.f3
-        e.f4 = e.f5 / e.f6
+        e.x1 = e.r2 / 3
+        e.x3 = e.r4 / 3.5
+        e.x5 = e.x6 / 3
+        e.r1 = e.r2 / e.x3
+        e.x4 = e.x5 / e.x6
 
-        e.f1 = e.r2 // 3
-        e.f3 = e.r4 // 3.5
-        e.f5 = e.f6 // 3
-        e.r1 = e.r2 // e.f3
-        e.f4 = e.f5 // e.f6
+        e.x1 = e.r2 // 3
+        e.x3 = e.r4 // 3.5
+        e.x5 = e.x6 // 3
+        e.r1 = e.r2 // e.x3
+        e.x4 = e.x5 // e.x6
 
         self.maxDiff = None
         self.assertEqual(e.opcodes, [
@@ -278,14 +278,14 @@ class Tests(TestCase):
             b = LocalVar('H')
             c = LocalVar('i')
             d = LocalVar('Q')
-            lf = LocalVar('f')
+            lx = LocalVar('x')
 
         e = Local(ProgType.XDP, "GPL")
         e.a = 5
         e.b = e.c >> 3
         e.d = e.r1
-        e.lf = 7
-        e.b = e.f1
+        e.lx = 7
+        e.b = e.x1
 
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.B+O.ST, dst=10, src=0, off=-1, imm=5),
@@ -293,7 +293,7 @@ class Tests(TestCase):
             Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=3),
             Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
             Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0),
-            Instruction(opcode=O.DW+O.ST, dst=10, src=0, off=-20, imm=700000),
+            Instruction(opcode=O.DW+O.ST, dst=10, src=0, off=-24, imm=700000),
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=O.DIV, dst=0, src=0, off=0, imm=100000),
             Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
@@ -504,13 +504,13 @@ class Tests(TestCase):
             e.r5 = 7
         with Else:
             e.r7 = 8
-        with e.f4 > 3:
+        with e.x4 > 3:
             pass
-        with 3 > e.f4:
+        with 3 > e.x4:
             pass
         with e.r4 > 3.5:
             pass
-        with e.f4 > e.f2:
+        with e.x4 > e.x2:
             pass
         self.assertEqual(e.opcodes, [
              Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
@@ -735,7 +735,7 @@ class Tests(TestCase):
     def test_absolute(self):
         e = EBPF()
         e.r7 = abs(e.r1)
-        e.f3 = abs(e.f1)
+        e.x3 = abs(e.x1)
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.JSGE, dst=7, src=0, off=1, imm=0),
@@ -850,10 +850,10 @@ class Tests(TestCase):
                 e.r7 = e.tmp
             e.tmp = 2
             e.r3 = e.tmp
-        with e.ftmp:
-            e.ftmp = 3
-            e.r3 = e.ftmp
-            e.ftmp = e.r3 * 3.5
+        with e.xtmp:
+            e.xtmp = 3
+            e.r3 = e.xtmp
+            e.xtmp = e.r3 * 3.5
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=7),
             Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=3),
@@ -927,7 +927,7 @@ class KernelTests(TestCase):
         class Sub(SubProgram):
             br = Global.map.globalVar()
             bw = Global.map.globalVar("h")
-            bf = Global.map.globalVar("f")
+            bf = Global.map.globalVar("x")
 
             def program(self):
                 self.bw = 4

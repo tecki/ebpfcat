@@ -29,7 +29,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
     def __init__(self, map, fmt):
         self.map = map
         self.fmt = fmt
-        self.fixed = fmt == "f"
+        self.fixed = fmt == "x"
 
     def fmt_addr(self, ebpf):
         return self.fmt, ebpf.__dict__[self.name]
@@ -43,7 +43,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
         if instance.ebpf.loaded:
             fmt, addr = self.fmt_addr(instance)
             data = instance.ebpf.__dict__[self.map.name].data
-            if fmt == "f":
+            if fmt == "x":
                 return unpack_from("q", data, addr)[0] / Expression.FIXED_BASE
             else:
                 ret = unpack_from(fmt, data, addr)
@@ -57,7 +57,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
     def __set__(self, instance, value):
         if instance.ebpf.loaded:
             fmt, addr = self.fmt_addr(instance)
-            if fmt == "f":
+            if fmt == "x":
                 fmt = "q"
                 value = int(value * Expression.FIXED_BASE)
             if not isinstance(value, tuple):
@@ -87,7 +87,7 @@ class ArrayMap(Map):
         for prog in chain([ebpf], ebpf.subprograms):
             for k, v in prog.__class__.__dict__.items():
                 if isinstance(v, ArrayGlobalVarDesc):
-                    collection.append((8 if v.fmt == "f" else calcsize(v.fmt),
+                    collection.append((8 if v.fmt == "x" else calcsize(v.fmt),
                                        prog, k))
         collection.sort(key=lambda t: t[0], reverse=True)
         position = 0

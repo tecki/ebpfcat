@@ -870,7 +870,7 @@ class Memory(Expression):
     bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
     fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
                      'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW,
-                     'A': Opcode.W, 'f': Opcode.DW}
+                     'A': Opcode.W, 'x': Opcode.DW}
 
     def __init__(self, ebpf, fmt, address):
         self.ebpf = ebpf
@@ -922,7 +922,7 @@ class Memory(Expression):
 
     @property
     def fixed(self):
-        return isinstance(self.fmt, str) and self.fmt == "f"
+        return isinstance(self.fmt, str) and self.fmt == "x"
 
     def __invert__(self):
         if not isinstance(self.fmt, tuple) or self.fmt[1] != 1:
@@ -992,11 +992,11 @@ class MemoryDesc:
             ebpf.append(Opcode.ST + bits, self.base_register, 0,
                         addr, value)
             return
-        if self.fmt == "f" and not value.fixed:
+        if self.fmt == "x" and not value.fixed:
             value = value * Expression.FIXED_BASE
-        elif self.fmt != "f" and value.fixed:
+        elif self.fmt != "x" and value.fixed:
             value = value / Expression.FIXED_BASE
-        with value.calculate(None, isinstance(fmt, str) and fmt in 'qQf'
+        with value.calculate(None, isinstance(fmt, str) and fmt in 'qQx'
                             ) as (src, _):
             ebpf.append(opcode + bits, self.base_register, src, addr, 0)
 
@@ -1007,10 +1007,12 @@ class LocalVar(MemoryDesc):
 
     def __init__(self, fmt='I'):
         self.fmt = fmt
-        self.fixed = fmt == "f"
+        self.fixed = fmt == "x"
 
     def __set_name__(self, owner, name):
-        if isinstance(self.fmt, str):
+        if self.fmt == "x":
+            size = 8
+        elif isinstance(self.fmt, str):
             size = calcsize(self.fmt)
         else:  # this is to support bit addressing, mostly for testing
             size = 1
@@ -1041,7 +1043,7 @@ class MemoryMap:
                 offset = 0
             if isinstance(value, IAdd):
                 value = value.value
-                if self.fmt == "f":
+                if self.fmt == "x":
                     value = int(value * self.FIXED_BASE)
                 if not isinstance(value, Expression):
                     with self.ebpf.get_free_register(None) as src:
@@ -1054,7 +1056,7 @@ class MemoryMap:
             elif isinstance(value, Expression):
                 opcode = Opcode.STX
             else:
-                if self.fmt == "f":
+                if self.fmt == "x":
                     value = int(value * self.FIXED_BASE)
                 self.ebpf.append(Opcode.ST + Memory.fmt_to_opcode[self.fmt],
                                  dst, 0, offset, value)
@@ -1236,13 +1238,13 @@ class EBPF:
         self.mh = MemoryMap(self, "h")
         self.mi = MemoryMap(self, "i")
         self.mq = MemoryMap(self, "q")
-        self.mf = MemoryMap(self, "f")
+        self.mx = MemoryMap(self, "x")
 
         self.r = RegisterArray(self, True, False)
         self.sr = RegisterArray(self, True, True)
         self.w = RegisterArray(self, False, False)
         self.sw = RegisterArray(self, False, True)
-        self.f = RegisterArray(self, True, True, True)
+        self.x = RegisterArray(self, True, True, True)
 
         self.owners = {1, 10}
 
@@ -1367,7 +1369,7 @@ class EBPF:
     stmp = TemporaryDesc(None, "sr")
     wtmp = TemporaryDesc(None, "w")
     swtmp = TemporaryDesc(None, "sw")
-    ftmp = TemporaryDesc(None, "f")
+    xtmp = TemporaryDesc(None, "x")
 
 
 for i in range(11):
@@ -1383,7 +1385,7 @@ for i in range(10):
     setattr(EBPF, f"sw{i}", RegisterDesc(i, "sw"))
 
 for i in range(10):
-    setattr(EBPF, f"f{i}", RegisterDesc(i, "f"))
+    setattr(EBPF, f"x{i}", RegisterDesc(i, "x"))
 
 
 class SubProgram:
