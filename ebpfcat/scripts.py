@@ -37,6 +37,7 @@ async def info():
     parser.add_argument("-s", "--sdo", action="store_true")
     parser.add_argument("-v", "--values", action="store_true")
     parser.add_argument("-p", "--pdo", action="store_true")
+    parser.add_argument("-e", "--eeprom", action="store_true")
     args = parser.parse_args()
 
     ec = EtherCat(args.interface)
@@ -67,6 +68,10 @@ async def info():
             while i < len(infos):
                 print(infos[i+1 : i+infos[i]+1].decode("ascii"))
                 i += infos[i] + 1
+
+        if args.eeprom:
+            for k, v in t.eeprom.items():
+                print(f"{k:2}: {v}\n    {v.hex()}")
 
         if args.sdo:
             await t.to_operational(4)
