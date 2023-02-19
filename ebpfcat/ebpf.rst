@@ -68,9 +68,9 @@ we cannot use a Python ``if`` statement, as then the code actually does not
 get executed, so no code would be generated. So we replace ``if`` statements
 by Python ``with`` statements like so::
 
-    with self.some_variable > 6 as cond:
+    with self.some_variable > 6 as Else:
         do_someting
-    with cond.Else():
+    with Else:
         do_something_else
 
 certainly an ``Else`` statement may be omitted if not needed.
@@ -144,16 +144,33 @@ variables at the same time. So concurrent access may lead to problems. An
 exception is the in-place addition operator `+=`, which works under a lock,
 but only if the variable is of 4 or 8 bytes size.
 
-Otherwise variables may be declared in all sizes. Additionally, one can mark
-which variables are supposed to be written from user space to the EBPF,
-as opposed to just being read. The declaration is like so::
+Otherwise variables may be declared in all sizes. The declaration is like so::
 
    class MyProgram(EBPF):
        array_map = ArrayMap()
-       a_read_var = array_map.globalVar("B")  # one byte read-only variable
-       a_write_var = array_map.globalVar("i", write=True)  # read-write integer
+       a_byte_variable = array_map.globalVar("B")
+       an_integer_variable = array_map.globalVar("i")
 
-the array map has methods to access the variables:
+those variables can be accessed both from within the ebpf program, as from
+outside. Both sides are actually accessing the same memory, so be aware of
+race conditions.
 
-.. autoclass:: ebpfcat.arraymap.ArrayMapAccess
-   :members:
+Fixed-point arithmetic
+~~~~~~~~~~~~~~~~~~~~~~
+
+as a bonus beyond standard ebpf, we support fixed-point values as a type `x`.
+Within ebpf they are calculated as per-10000, so a 0.2 is represented as
+20000. From outside, the variables seem to be doubles. Vaguely following
+Python, all true divisions `/` result in a fixed-point result, while all
+floor divisions `//` result in a standard integer. Some examples:
+
+    class FixedPoint(EPBF):
+        array_map = ArrayMap()
+        fixed_var = array_map.globalVar("x")  # declare a fixed-point variable
+        normal_var = array_map.globalVar("i")
+
+        def program(self):
+            self.fixed_var = 3.5  # automatically converted to fixed
+            self.normal_var = self.fixed_var  # automatically truncated
+            self.fixed_var = self.normal_var / 5  # keep decimals
+            self.fixed_var = self.normal_var // 5  # floor division
