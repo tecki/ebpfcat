@@ -1,6 +1,6 @@
 from asyncio import get_event_loop, sleep
 from ebpfcat.hashmap import HashMap
-from ebpfcat.xdp import XDP, XDPExitCode
+from ebpfcat.xdp import XDP, XDPExitCode, XDPFlags
 
 class Count(XDP):
     license = "GPL"
@@ -15,11 +15,11 @@ class Count(XDP):
 
 async def main():
     c = Count()
-    await c.attach("eth0")
 
-    for i in range(100):
-        await sleep(0.1)
-        print("packets arrived so far:", c.count)
+    async with c.run("eth0", XDPFlags.DRV_MODE):
+        for i in range(10):
+            await sleep(0.1)
+            print("packets arrived so far:", c.count)
 
 
 if __name__ == "__main__":

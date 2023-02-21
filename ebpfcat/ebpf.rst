@@ -47,14 +47,27 @@ for synchronization::
 Once attached, our little program will be executed each time a packet
 arrives on the interface. We can read the result in a loop::
 
-    for i in range(100):
+    for i in range(10):
         await sleep(0.1)
+        print("packets arrived so far:", c.count)
+
+With ``attach`` the program is attached indefinitely on the interface,
+even beyond the end of the program. Use ``detach`` to detach it, or you
+may use the async contextmanager ``run`` to detach automatically, as in::
+
+   async with c.run("eth0"):
+        await sleep(1)
         print("packets arrived so far:", c.count)
 
 Note that here we access the member variable ``count`` from user space.
 While generating EBPF, the code generator knows it needs to write out
 commands to access that variable from EBPF, once accessed outside of
 generation context, we access it from the user side.
+
+Both ``attach`` and ``detach`` have an additional parameter ``flags`` to
+choose in which mode to attach the program, use ``XDPFlags.SKB_MODE`` (the
+default) to use the generic kernel driver, or ``XDPFlags.DRV_MODE`` to let
+the interface device driver run the program.
 
 For reference, this is the full example:
 
@@ -158,11 +171,11 @@ race conditions.
 Fixed-point arithmetic
 ~~~~~~~~~~~~~~~~~~~~~~
 
-as a bonus beyond standard ebpf, we support fixed-point values as a type `x`.
+as a bonus beyond standard ebpf, we support fixed-point values as a type ``x``.
 Within ebpf they are calculated as per-10000, so a 0.2 is represented as
 20000. From outside, the variables seem to be doubles. Vaguely following
-Python, all true divisions `/` result in a fixed-point result, while all
-floor divisions `//` result in a standard integer. Some examples:
+Python, all true divisions ``/`` result in a fixed-point result, while all
+floor divisions ``//`` result in a standard integer. Some examples::
 
     class FixedPoint(EPBF):
         array_map = ArrayMap()
