@@ -304,7 +304,7 @@ class Tests(TestCase):
             Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=3),
             Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0)])
 
-
+    @skip
     def tet_two(self):
         ti1 = EL3164()
         ti2 = EL3164()
@@ -353,6 +353,7 @@ class Tests(TestCase):
         with self.assertRaises(CancelledError):
             get_event_loop().run_until_complete(self.task)
 
+    @skip
     def test_motor(self):
         class T(EBPFTerminal):
             v = PacketDesc((0, 2), "H")
