@@ -423,11 +423,6 @@ class FastSyncGroup(SyncGroupBase, XDP):
                 p.pB[pos + Packet.ETHERNET_HEADER] = cmd.value
             for dev in self.devices:
                 dev.program()
-        for o in self.opcodes:
-            if o is not None:
-                print(o, hex(o.opcode.value))
-            else:
-                print("JMP")
         self.exit(XDPExitCode.TX)
 
     async def run(self):
