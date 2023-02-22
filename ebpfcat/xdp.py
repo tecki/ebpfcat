@@ -36,13 +36,19 @@ class XDPExitCode(Enum):
     REDIRECT = 4
 
 
+class XDPFlags(Enum):
+    SKB_MODE = 2
+    DRV_MODE = 4  # XDP done by the network driver
+
+
 class XDRFD(DatagramProtocol):
     """just implement enough of the NETLINK protocol to attach programs"""
 
-    def __init__(self, ifindex, fd, future):
+    def __init__(self, ifindex, fd, future, flags):
         self.ifindex = ifindex
         self.fd = fd
         self.seq = None
+        self.flags = flags
         self.future = future
 
     def connection_made(self, transport):
@@ -73,7 +79,7 @@ class XDRFD(DatagramProtocol):
                 self.fd,
                 8,
                 3,  # IFLA_XDP_FLAGS,
-                2)
+                self.flags.value)
         transport.sendto(p, (0, 0))
 
     def datagram_received(self, data, addr):
@@ -82,12 +88,15 @@ class XDRFD(DatagramProtocol):
             ln, type, flags, seq, pid = unpack("IHHII", data[pos : pos+16])
             if type == 3:  # DONE
                 self.future.set_result(0)
+                return
             elif type == 2:  # ERROR
                 errno, *args = unpack("iIHHII", data[pos+16 : pos+36])
                 if errno != 0:
-                    self.future.set_result(errno)
+                    self.future.set_exception(OSError(errno, os.strerror(-errno)))
+                    return
             if flags & 2 == 0:  # not a multipart message
                 self.future.set_result(0)
+                return
             pos += ln
 
 
@@ -149,32 +158,40 @@ class XDP(EBPF):
 
         self.packetSize = PacketSize(self)
 
-    async def _netlink(self, ifindex, fd):
+    async def _netlink(self, ifindex, fd, flags):
         future = Future()
         transport, proto = await get_event_loop().create_datagram_endpoint(
-                lambda: XDRFD(ifindex, fd, future),
+                lambda: XDRFD(ifindex, fd, future, flags),
                 family=AF_NETLINK, proto=NETLINK_ROUTE)
-        await future
-        transport.get_extra_info("socket").close()
+        try:
+            await future
+        finally:
+            transport.get_extra_info("socket").close()
 
-    async def attach(self, network):
+    async def attach(self, network, flags=XDPFlags.SKB_MODE):
         """attach this program to a `network`"""
         ifindex = if_nametoindex(network)
         fd, _ = self.load(log_level=1)
-        await self._netlink(ifindex, fd)
+        await self._netlink(ifindex, fd, flags)
 
-    async def detach(self, network):
+    async def detach(self, network, flags=XDPFlags.SKB_MODE):
         """attach this program from a `network`"""
         ifindex = if_nametoindex(network)
         await self._netlink(ifindex, -1)
 
     @asynccontextmanager
-    async def run(self, network):
+    async def run(self, network, flags=XDPFlags.SKB_MODE):
+        """attach this program to a `network` during context
+
+        attach this program to the `network` while the context
+        manager is running, and detach it afterwards."""
         ifindex = if_nametoindex(network)
         fd, _ = self.load(log_level=1)
-        await self._netlink(ifindex, fd)
-        os.close(fd)
+        try:
+            await self._netlink(ifindex, fd, flags)
+        finally:
+            os.close(fd)
         try:
             yield
         finally:
-            await self._netlink(ifindex, -1)
+            await self._netlink(ifindex, -1, flags)
