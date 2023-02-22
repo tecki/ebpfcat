@@ -16,7 +16,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """The high-level API for EtherCAT loops"""
-from asyncio import ensure_future, gather, wait_for, TimeoutError
+from asyncio import ensure_future, gather, sleep, wait_for, TimeoutError
 from contextlib import asynccontextmanager, contextmanager
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
@@ -220,12 +220,13 @@ class EBPFTerminal(Terminal):
         if (self.compatibility is not None and
                 (self.vendorId, self.productCode) not in self.compatibility):
             raise RuntimeError(
-                f"Incompatible Terminal: {self.vendorId}:{self.productCode} "
-                f"({relative}, {absolute})")
-        await self.to_operational()
+                f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
+        await self.to_operational(2)
         self.pdos = {}
-        if self.has_mailbox():
-            await self.parse_pdos()
+        outbits, inbits = await self.parse_pdos()
+        self.pdo_out_sz = int((outbits + 7) // 8)
+        self.pdo_in_sz = int((inbits + 7) // 8)
+        await self.write_pdo_sm()
 
     def allocate(self, packet, readonly):
         """allocate space in packet for the pdos of this terminal
@@ -350,6 +351,8 @@ class FastEtherCat(SimpleEtherCat):
 class SyncGroupBase:
     missed_counter = 0
 
+    current_data = None
+
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
         self.ec = ec
@@ -362,6 +365,9 @@ class SyncGroupBase:
         # sorting is only necessary for test stability
         self.terminals = {t: None for t in
                           sorted(terminals, key=lambda t: t.position)}
+
+    async def to_operational(self):
+        await gather(*[t.to_operational() for t in self.terminals])
 
     async def run(self):
         data = self.asm_packet
@@ -393,7 +399,9 @@ class SyncGroup(SyncGroupBase):
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index)
-        return ensure_future(self.run())
+        ret = ensure_future(self.run())
+        ensure_future(self.to_operational())
+        return ret
 
     def allocate(self):
         self.packet = Packet()
@@ -403,8 +411,6 @@ class SyncGroup(SyncGroupBase):
 
 class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
-
-    current_data = None
 
     properties = ArrayMap()
 
@@ -443,6 +449,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
     def start(self):
         self.allocate()
         self.task = ensure_future(self.run())
+        ensure_future(self.to_operational())
         return self.task
 
     def cancel(self):

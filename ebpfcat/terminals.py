@@ -123,3 +123,22 @@ class EL7041(EBPFTerminal):
     status = ProcessDesc(0x6000, 1, "H")
     low_switch = ProcessDesc(0x6010, 0xc)
     high_switch = ProcessDesc(0x6010, 0xd)
+
+
+class TurboVac(EBPFTerminal):
+    compatibility = {(0x723, 0xb5)}
+    pump_on = ProcessDesc(0x20D3, 0, 0)
+    stand_by = ProcessDesc(0x20D3, 0, 5)
+    reset = ProcessDesc(0x20D3, 0, 7)
+    error_status = ProcessDesc(0x20CA, 0)
+    speed_status = ProcessDesc(0x20CB, 0)
+    pump_is_on = ProcessDesc(0x20CC, 0, 0)
+    pump_warning = ProcessDesc(0x20CC, 0, 2)
+    pump_alarm = ProcessDesc(0x20CC, 0, 3)
+    speed = ProcessDesc(0x20CD, 0, "H")
+    current = ProcessDesc(0x20D1, 0, "H")
+
+
+class Inficon(EBPFTerminal):
+    compatibility = {(0x644, 0x21)}
+    value = ProcessDesc(0xF640, 0x11, "f")
