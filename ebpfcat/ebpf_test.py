@@ -23,7 +23,7 @@ from .ebpf import (
     AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
     SubProgram, ktime)
 from .hashmap import HashMap
-from .xdp import XDP
+from .xdp import XDP, PacketVar
 from .bpf import ProgType, prog_test_run
 
 
@@ -903,8 +903,10 @@ class Tests(TestCase):
         class P(XDP):
             minimumPacketSize = 100
 
+            pv = PacketVar(20, "H")
+
             def program(self):
-                self.r3 = self.pH[22]
+                self.pv = self.pH[22]
 
         p = P(license="GPL")
         p.assemble()
@@ -913,8 +915,9 @@ class Tests(TestCase):
             Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
             Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
             Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
-            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=1, imm=0),
-            Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
+            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=2, imm=0),
+            Instruction(opcode=O.REG+O.LD, dst=0, src=9, off=22, imm=0),
+            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=20, imm=0),
             Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
         ])

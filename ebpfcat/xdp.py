@@ -24,7 +24,7 @@ from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
 
-from .ebpf import EBPF
+from .ebpf import EBPF, MemoryDesc
 from .bpf import ProgType
 from .util import sub
 
@@ -150,6 +150,17 @@ class PacketSize:
 
     def __ge__(self, value):
         return self > value - 1
+
+
+class PacketVar(MemoryDesc):
+    base_register = 9
+
+    def __init__(self, address, fmt):
+        self.address = address
+        self.fmt = fmt
+
+    def fmt_addr(self, instance):
+        return self.fmt, self.address
 
 
 class XDP(EBPF):
