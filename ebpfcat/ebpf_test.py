@@ -632,7 +632,9 @@ class Tests(TestCase):
             Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=878082192),
             Instruction(opcode=O.W, dst=0, src=0, off=0, imm=18),
             Instruction(opcode=O.LONG+O.REG+O.ADD, dst=3, src=0, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=2415919104),
+            Instruction(opcode=O.DW, dst=3, src=0, off=0, imm=2415919104),
+            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=0),
+
         ])
 
     def test_simple_binary(self):
