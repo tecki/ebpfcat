@@ -126,6 +126,21 @@ packets::
                 self.count += 1
         self.exit(XDPExitCode.PASS)
 
+as a simplification, if the class attribute ``minimumPacketSize`` is set,
+the ``program`` is called within a ``with`` statement like above, and all
+the packet variables appear as variables of the object. The class
+attribute ``defaultExitCode`` then gives the exit code in case the packet
+is too small (by default ``XDPExitCode.PASS``). So the above example becomes::
+
+    class Program(XDP):
+        minimumPacketSize = 16
+        userspace = HashMap()
+        count = userspace.globalVar()
+
+        def program(self):
+            with self.pH[12] == 8:
+                self.count += 1
+
 Maps
 ----
 

@@ -899,6 +899,27 @@ class Tests(TestCase):
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77)])
 
+    def test_xdp_minsize(self):
+        class P(XDP):
+            minimumPacketSize = 100
+
+            def program(self):
+                self.r3 = self.pH[22]
+
+        p = P(license="GPL")
+        p.assemble()
+        self.assertEqual(p.opcodes, [
+            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
+            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=1, imm=0),
+            Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
+        ])
+
+
 class KernelTests(TestCase):
     def test_hashmap(self):
         class Global(EBPF):
