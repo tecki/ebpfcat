@@ -270,15 +270,15 @@ class AssembleError(Exception):
 
 def comparison(uposop, unegop, sposop, snegop):
     def ret(self, value):
-        valuefixed, value = fixedvalue(value)
+        value = ensure_expression(self.ebpf, value)
         myself = self
-        if self.fixed != valuefixed:
+        if self.fixed != value.fixed:
             if self.fixed:
-                value = value * self.FIXED_BASE
+                value *= self.FIXED_BASE
             else:
-                myself = self * self.FIXED_BASE
+                myself *= self.FIXED_BASE
 
-        if self.signed or issigned(value):
+        if self.signed or value.signed:
             return SimpleComparison(self.ebpf, myself, value, (sposop, snegop))
         else:
             return SimpleComparison(self.ebpf, myself, value, (uposop, unegop))
@@ -370,7 +370,7 @@ class SimpleComparison(Comparison):
     def compare(self, negative):
         with self.left.calculate(None, None) as (self.dst, _):
             with ExitStack() as exitStack:
-                if isinstance(self.right, Expression):
+                if not (isinstance(self.right, Constant) and self.right.small):
                     self.src, _ = exitStack.enter_context(
                         self.right.calculate(None, None))
                 self.origin = len(self.ebpf.opcodes)
@@ -383,14 +383,15 @@ class SimpleComparison(Comparison):
         if self.opcode == Opcode.JMP:
             inst = Instruction(Opcode.JMP, 0, 0,
                                len(self.ebpf.opcodes) - self.origin - 1, 0)
-        elif isinstance(self.right, Expression):
+        elif isinstance(self.right, Constant) and self.right.small:
+            inst = Instruction(
+                self.opcode, self.dst, 0,
+                len(self.ebpf.opcodes) - self.origin - 1,
+                int(self.right.value))
+        else:
             inst = Instruction(
                 self.opcode + Opcode.REG, self.dst, self.src,
                 len(self.ebpf.opcodes) - self.origin - 1, 0)
-        else:
-            inst = Instruction(
-                self.opcode, self.dst, 0,
-                len(self.ebpf.opcodes) - self.origin - 1, self.right)
         self.ebpf.opcodes[self.origin] = inst
         if not retarget:
             self.ebpf.owners, self.owners = \
@@ -432,21 +433,11 @@ class InvertComparison(Comparison):
         self.value.target(retarget)
 
 
-def issigned(value):
+def ensure_expression(ebpf, value):
     if isinstance(value, Expression):
-        return value.signed
+        return value
     else:
-        return value < 0
-
-
-def fixedvalue(value):
-    try:
-        return False, index(value)
-    except TypeError:
-        try:
-            return True, int(float(value) * Expression.FIXED_BASE)
-        except TypeError:
-            return value.fixed, value
+        return Constant(ebpf, value)
 
 
 class Expression:
@@ -455,8 +446,9 @@ class Expression:
     FIXED_BASE = 100000
 
     def _binary(self, value, opcode):
+        value = ensure_expression(self.ebpf, value)
         return Binary(self.ebpf, self, value, opcode,
-                      self.signed or issigned(value), False)
+                      self.signed or value.signed, False)
 
     __ror__ = __or__ = lambda self, value: self._binary(value, Opcode.OR)
     __lshift__ = lambda self, value: self._binary(value, Opcode.LSH)
@@ -466,31 +458,32 @@ class Expression:
     __ge__ = comparison(Opcode.JGE, Opcode.JLT, Opcode.JSGE, Opcode.JSLT)
     __lt__ = comparison(Opcode.JLT, Opcode.JGE, Opcode.JSLT, Opcode.JSGE)
     __le__ = comparison(Opcode.JLE, Opcode.JGT, Opcode.JSLE, Opcode.JSGT)
+    __ne__ = comparison(Opcode.JNE, Opcode.JEQ, Opcode.JNE, Opcode.JEQ)
 
     def _sum(self, value, opcode):
-        valuefixed, value = fixedvalue(value)
+        value = ensure_expression(self.ebpf, value)
         myself = self
-        if self.fixed != valuefixed:
+        if self.fixed != value.fixed:
             if self.fixed:
-                value = value * self.FIXED_BASE
+                value *= self.FIXED_BASE
             else:
-                myself = self * self.FIXED_BASE
+                myself *= self.FIXED_BASE
 
         return Binary(self.ebpf, myself, value, opcode,
-                      self.signed or issigned(value), self.fixed or valuefixed)
+                      self.signed or value.signed, self.fixed or value.fixed)
 
     def _rsum(self, value, opcode):
-        valuefixed, value = fixedvalue(value)
+        value = ensure_expression(self.ebpf, value)
         myself = self
-        if self.fixed != valuefixed:
+        if self.fixed != value.fixed:
             if self.fixed:
-                value = value * self.FIXED_BASE
+                value *= self.FIXED_BASE
             else:
-                myself = self * self.FIXED_BASE
+                myself *= self.FIXED_BASE
 
         return ReverseBinary(
             self.ebpf, value, myself, opcode,
-            self.signed or issigned(value), self.fixed or valuefixed)
+            self.signed or value.signed, self.fixed or value.fixed)
 
     __radd__ = __add__ = lambda self, value: self._sum(value, Opcode.ADD)
     __sub__ = lambda self, value: self._sum(value, Opcode.SUB)
@@ -499,70 +492,69 @@ class Expression:
     __rmod__ = lambda self, value: self._rsum(value, Opcode.MOD)
 
     def __mul__(self, value):
-        valuefixed, value = fixedvalue(value)
+        value = ensure_expression(self.ebpf, value)
         ret = Binary(self.ebpf, self, value, Opcode.MUL,
-                     self.signed or issigned(value), self.fixed or valuefixed)
-        if self.fixed and valuefixed:
-            ret = ret / self.FIXED_BASE
+                     self.signed or value.signed, self.fixed or value.fixed)
+        if self.fixed and value.fixed:
+            ret /= self.FIXED_BASE
         return ret
     __rmul__ = __mul__
 
     def __truediv__(self, value):
-        valuefixed, value = fixedvalue(value)
+        value = ensure_expression(self.ebpf, value)
         myself = self
-        if not self.fixed and valuefixed:
-            myself = myself * self.FIXED_BASE ** 2
-        elif self.fixed == valuefixed:
-            myself = myself * self.FIXED_BASE
+        if not self.fixed and value.fixed:
+            myself *= self.FIXED_BASE ** 2
+        elif self.fixed == value.fixed:
+            myself *= self.FIXED_BASE
 
         return Binary(self.ebpf, myself, value, Opcode.DIV,
-                      self.signed or issigned(value), True)
+                      self.signed or value.signed, True)
 
     def __rtruediv__(self, value):
+        value = ensure_expression(self.ebpf, value)
         if self.fixed:
-            value = int(value * self.FIXED_BASE ** 2)
+            value *= self.FIXED_BASE ** 2
         else:
-            value = int(value * self.FIXED_BASE)
+            value *= self.FIXED_BASE
         return ReverseBinary(self.ebpf, value, self, Opcode.DIV,
-                             self.signed or issigned(value), True)
+                             self.signed or value.signed, True)
 
     def __floordiv__(self, value):
-        valuefixed, value = fixedvalue(value)
+        value = ensure_expression(self.ebpf, value)
         myself = self
-        if not self.fixed and valuefixed:
-            myself = myself * self.FIXED_BASE
-        elif self.fixed and not valuefixed:
-            value = value * self.FIXED_BASE
+        if not self.fixed and value.fixed:
+            myself *= self.FIXED_BASE
+        elif self.fixed and not value.fixed:
+            value *= self.FIXED_BASE
 
         return Binary(self.ebpf, myself, value, Opcode.DIV,
-                      self.signed or issigned(value), False)
+                      self.signed or value.signed, False)
 
     def __rfloordiv__(self, value):
+        value = ensure_expression(self.ebpf, value)
         if self.fixed:
-            value = int(value * self.FIXED_BASE)
-        else:
-            value = int(value)
+            value *= self.FIXED_BASE
         return ReverseBinary(self.ebpf, value, self, Opcode.DIV,
-                             self.signed or issigned(value), False)
+                             self.signed or value.signed, False)
 
     def __rshift__(self, value):
         opcode = Opcode.ARSH if self.signed else Opcode.RSH
-        return Binary(self.ebpf, self, value, opcode, self.signed, False)
+        return Binary(self.ebpf, self, ensure_expression(self.ebpf, value),
+                      opcode, self.signed, False)
 
     def __rrshift__(self, value):
         opcode = Opcode.ARSH if value < 0 else Opcode.RSH
-        return ReverseBinary(self.ebpf, value, self, opcode, value < 0, False)
+        return ReverseBinary(self.ebpf, Constant(self.ebpf, value), self,
+                             opcode, value < 0, False)
 
     def __rlshift__(self, value):
-        return ReverseBinary(self.ebpf, value, self, Opcode.LSH,
-                             value < 0, False)
+        return ReverseBinary(self.ebpf, Constant(self.ebpf, value), self,
+                             Opcode.LSH, value < 0, False)
 
     def __and__(self, value):
-        return AndExpression(self.ebpf, self, value)
-
-    def __ne__(self, value):
-        return SimpleComparison(self.ebpf, self, value,
-                                (Opcode.JNE, Opcode.JEQ))
+        return AndExpression(self.ebpf, self,
+                             ensure_expression(self.ebpf, value))
 
     def __eq__(self, value):
         return ~(self != value)
@@ -612,7 +604,7 @@ class Expression:
         """
         with self.ebpf.get_free_register(dst) as dst:
             with self.get_address(dst, long) as (src, fmt):
-                self.ebpf.append(Opcode.LD + Memory.fmt_to_opcode[fmt],
+                self.ebpf.append(Opcode.LD + fmt_to_opcode(fmt),
                                  dst, src, 0, 0)
                 yield dst, long
 
@@ -658,21 +650,15 @@ class Binary(Expression):
             with self.left.calculate(dst, long, True) as (dst, l_long):
                 if long is None:
                     long = l_long
-            if isinstance(self.right, Expression):
+            if isinstance(self.right, Constant) and self.right.small:
+                self.ebpf.append(self.operator + Opcode.LONG * long,
+                                 dst, 0, 0, int(self.right.value))
+            else:
                 with self.right.calculate(None, long) as (src, r_long):
                     self.ebpf.append(
                         self.operator + Opcode.REG
                         + Opcode.LONG * ((r_long or l_long)
                                          if long is None else long),
-                        dst, src, 0, 0)
-            elif -0x80000000 <= self.right < 0x80000000:
-                self.ebpf.append(self.operator + Opcode.LONG * long,
-                                 dst, 0, 0, self.right)
-            else:
-                with self.ebpf.get_free_register(None) as src:
-                    self.ebpf._load_value(src, self.right)
-                    self.ebpf.append(
-                        self.operator + Opcode.REG + Opcode.LONG,
                         dst, src, 0, 0)
             if orig_dst is None or orig_dst == dst:
                 yield dst, long
@@ -696,8 +682,7 @@ class ReverseBinary(Expression):
 
     @contextmanager
     def calculate(self, dst, long, force=False):
-        with self.ebpf.get_free_register(dst) as dst:
-            self.ebpf._load_value(dst, self.left)
+        with self.left.calculate(dst, long) as (dst, _):
             with self.right.calculate(None, long) as (src, long):
                 self.ebpf.append(self.operator + Opcode.LONG * long
                                  + Opcode.REG, dst, src, 0, 0)
@@ -747,11 +732,11 @@ class Sum(Binary):
     this is used to optimize memory addressing code.
     """
     def __init__(self, ebpf, left, right):
-        super().__init__(ebpf, left, right, Opcode.ADD, right < 0, False)
+        super().__init__(ebpf, left, right, Opcode.ADD, right.value < 0, False)
 
     def __add__(self, value):
         try:
-            return Sum(self.ebpf, self.left, self.right + index(value))
+            self.right.value += index(value)
         except TypeError:
             return super().__add__(value)
 
@@ -759,7 +744,7 @@ class Sum(Binary):
 
     def __sub__(self, value):
         try:
-            return Sum(self.ebpf, self.left, self.right - index(value))
+            self.right.value -= index(value)
         except TypeError:
             return super().__add__(value)
 
@@ -817,6 +802,37 @@ class AndComparison(SimpleComparison):
         self.ebpf.opcodes.append(None)
         return self
 
+class Constant(Expression):
+    def __init__(self, ebpf, value):
+        try:
+            self.value = index(value)
+            self.fixed = False
+        except TypeError:
+            self.value = float(value) * Expression.FIXED_BASE
+            self.fixed = True
+        self.ebpf = ebpf
+        self.signed = value < 0
+
+    @property
+    def small(self):
+        return -0x80000000 <= self.value < 0x80000000
+
+    def __imul__(self, value):
+        self.value *= value
+        return self
+
+    @contextmanager
+    def calculate(self, dst, long, force=False):
+        value = int(self.value)
+        with self.ebpf.get_free_register(dst) as dst:
+            if self.small:
+                self.ebpf.append(Opcode.MOV + Opcode.LONG, dst, 0, 0, value)
+            else:
+                self.ebpf.append(Opcode.DW, dst, 0, 0, value & 0xffffffff)
+                self.ebpf.append(Opcode.W, 0, 0, 0, value >> 32)
+            yield dst, not (-0x80000000 <= value < 0x100000000)
+
+
 class Register(Expression):
     """represent one EBPF register"""
     offset = 0
@@ -831,7 +847,7 @@ class Register(Expression):
     def __add__(self, value):
         if self.long and not self.fixed:
             try:
-                return Sum(self.ebpf, self, index(value))
+                return Sum(self.ebpf, self, Constant(self.ebpf, index(value)))
             except TypeError:
                 pass
         return super().__add__(value)
@@ -841,7 +857,7 @@ class Register(Expression):
     def __sub__(self, value):
         if self.long and not self.fixed:
             try:
-                return Sum(self.ebpf, self, -index(value))
+                return Sum(self.ebpf, self, Constant(self.ebpf, -index(value)))
             except TypeError:
                 pass
         return super().__sub__(value)
@@ -863,15 +879,24 @@ class Register(Expression):
 
 class IAdd:
     """represent an in-place addition"""
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, ebpf, value):
+        if isinstance(value, Expression):
+            self.value = value
+        else:
+            self.value = Constant(ebpf, value)
 
 
-class Memory(Expression):
-    bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
+def fmt_to_opcode(fmt):
     fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
                      'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW,
                      'A': Opcode.W, 'x': Opcode.DW}
+    if isinstance(fmt, str):
+        return fmt_to_opcode[fmt[-1]]
+    else:
+        return Opcode.B
+
+class Memory(Expression):
+    bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
 
     def __init__(self, ebpf, fmt, address):
         self.ebpf = ebpf
@@ -880,13 +905,13 @@ class Memory(Expression):
 
     def __iadd__(self, value):
         if self.fmt in "qQiI":
-            return IAdd(value)
+            return IAdd(self.ebpf, value)
         else:
             return NotImplemented
 
     def __isub__(self, value):
         if self.fmt in "qQiI":
-            return IAdd(-value)
+            return IAdd(self.ebpf, -value)
         else:
             return NotImplemented
 
@@ -895,9 +920,9 @@ class Memory(Expression):
         with ExitStack() as exitStack:
             if isinstance(self.address, Sum):
                 dst = exitStack.enter_context(self.ebpf.get_free_register(dst))
-                self.ebpf.append(
-                    Opcode.LD + self.fmt_to_opcode.get(self.fmt, Opcode.B),
-                    dst, self.address.left.no, self.address.right, 0)
+                opcode = fmt_to_opcode(self.fmt)
+                self.ebpf.append(Opcode.LD + opcode, dst, self.address.left.no,
+                                 self.address.right.value, 0)
             else:
                 dst, _ = exitStack.enter_context(
                     super().calculate(dst, long, force))
@@ -945,6 +970,9 @@ class MemoryDesc:
     defined by the member variable `base_register` in deriving
     classes.
     """
+
+    fixed = False  # only selected memory can have fixe value vars
+
     def __get__(self, instance, owner):
         if instance is None:
             return self
@@ -955,7 +983,7 @@ class MemoryDesc:
     def __set__(self, instance, value):
         ebpf = instance.ebpf
         fmt, addr = self.fmt_addr(instance)
-        bits = Memory.fmt_to_opcode.get(fmt, Opcode.B)
+        opcode = Opcode.STX
         if isinstance(fmt, tuple):
             before = Memory(ebpf, "B", ebpf.r[self.base_register] + addr)
             if fmt[1] == 1:
@@ -973,33 +1001,23 @@ class MemoryDesc:
             else:
                 mask = ((1 << fmt[1]) - 1) << fmt[0]
                 value = (mask & (value << self.fmt[0]) | ~mask & before)
-            opcode = Opcode.STX
-        elif isinstance(value, IAdd):
+        elif isinstance(value, IAdd) and len(fmt) == 1:
             value = value.value
-            if not isinstance(value, Expression):
-                if self.fixed:
-                    value = int(value * self.FIXED_BASE)
-                with ebpf.get_free_register(None) as src:
-                    ebpf.r[src] = value
-                    ebpf.append(Opcode.XADD + bits, self.base_register,
-                                src, addr, 0)
-                return
             opcode = Opcode.XADD
-        elif isinstance(value, Expression):
-            opcode = Opcode.STX
-        else:
-            if self.fixed:
-                value = int(value * Expression.FIXED_BASE)
-            ebpf.append(Opcode.ST + bits, self.base_register, 0,
-                        addr, value)
-            return
+        elif not isinstance(value, Expression):
+            value = Constant(ebpf, value)
         if self.fmt == "x" and not value.fixed:
-            value = value * Expression.FIXED_BASE
+            value *= Expression.FIXED_BASE
         elif self.fmt != "x" and value.fixed:
-            value = value / Expression.FIXED_BASE
-        with value.calculate(None, isinstance(fmt, str) and fmt in 'qQx'
+            value /= Expression.FIXED_BASE
+        if isinstance(value, Constant) and value.small and opcode == Opcode.STX:
+            ebpf.append(Opcode.ST + fmt_to_opcode(fmt), self.base_register, 0,
+                    addr, int(value.value))
+            return
+        with value.calculate(None, isinstance(fmt, str) and fmt[-1] in 'qQx'
                             ) as (src, _):
-            ebpf.append(opcode + bits, self.base_register, src, addr, 0)
+            ebpf.append(opcode + fmt_to_opcode(fmt), self.base_register,
+                        src, addr, 0)
 
 
 class LocalVar(MemoryDesc):
@@ -1038,7 +1056,7 @@ class MemoryMap:
         with ExitStack() as exitStack:
             if isinstance(addr, Sum):
                 dst = addr.left.no
-                offset = addr.right
+                offset = addr.right.value
             else:
                 dst, _ = exitStack.enter_context(addr.calculate(None, True))
                 offset = 0
@@ -1050,20 +1068,22 @@ class MemoryMap:
                     with self.ebpf.get_free_register(None) as src:
                         self.ebpf.r[src] = value
                         self.ebpf.append(
-                            Opcode.XADD + Memory.fmt_to_opcode[self.fmt],
+                            Opcode.XADD + fmt_to_opcode(self.fmt),
                             dst, src, offset, 0)
                     return
                 opcode = Opcode.XADD
             elif isinstance(value, Expression):
                 opcode = Opcode.STX
             else:
-                if self.fmt == "x":
-                    value = int(value * self.FIXED_BASE)
-                self.ebpf.append(Opcode.ST + Memory.fmt_to_opcode[self.fmt],
-                                 dst, 0, offset, value)
-                return
+                value = Constant(self.ebpf, value)
+                if value.small:
+                    if self.fmt == "x":
+                        value *= self.FIXED_BASE
+                    self.ebpf.append(Opcode.ST + fmt_to_opcode(self.fmt), dst, 0,
+                                     offset, int(value.value))
+                    return
             with value.calculate(None, None) as (src, _):
-                self.ebpf.append(opcode + Memory.fmt_to_opcode[self.fmt],
+                self.ebpf.append(opcode + fmt_to_opcode(self.fmt),
                                  dst, src, offset, 0)
 
     def __getitem__(self, addr):
@@ -1152,17 +1172,13 @@ class RegisterArray:
 
     def __setitem__(self, no, value):
         self.ebpf.owners.add(no)
-        if isinstance(value, Expression):
-            if self.fixed and not value.fixed:
-                value = value * Expression.FIXED_BASE
-            if not self.fixed and value.fixed:
-                value = value / Expression.FIXED_BASE
-            with value.calculate(no, self.long, True):
-                pass
-        else:
-            if self.fixed:
-                value = int(value * Expression.FIXED_BASE)
-            self.ebpf._load_value(no, value)
+        value = ensure_expression(self.ebpf, value)
+        if self.fixed and not value.fixed:
+            value *= Expression.FIXED_BASE
+        elif not self.fixed and value.fixed:
+            value /= Expression.FIXED_BASE
+        with value.calculate(no, self.long, True):
+            pass
 
     def __getitem__(self, no):
         return Register(no, self.ebpf, self.long, self.signed, self.fixed)
@@ -1330,13 +1346,6 @@ class EBPF:
                 self.owners.discard(i)
                 return
         raise AssembleError("not enough registers")
-
-    def _load_value(self, no, value):
-        if -0x80000000 <= value < 0x80000000:
-            self.append(Opcode.MOV + Opcode.LONG, no, 0, 0, value)
-        else:
-            self.append(Opcode.DW, no, 0, 0, value & 0xffffffff)
-            self.append(Opcode.W, 0, 0, 0, value >> 32)
 
     @contextmanager
     def save_registers(self, registers):

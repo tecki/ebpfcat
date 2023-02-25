@@ -192,7 +192,6 @@ class Tests(TestCase):
         e.r1 = e.r2 // e.x3
         e.x4 = e.x5 // e.x6
 
-        self.maxDiff = None
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
            Instruction(opcode=O.ADD+O.LONG, dst=1, src=0, off=0, imm=3),
