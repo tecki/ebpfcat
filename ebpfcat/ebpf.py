@@ -230,6 +230,8 @@ class Opcode(Enum):
     ST = 0x62
     STX = 0x63
     XADD = 0xc3
+    LE = 0xd4
+    BE = 0xdc
 
     def __mul__(self, value):
         if value:
@@ -606,6 +608,7 @@ class Expression:
             with self.get_address(dst, long) as (src, fmt):
                 self.ebpf.append(Opcode.LD + fmt_to_opcode(fmt),
                                  dst, src, 0, 0)
+                self.ebpf.append_endian(fmt, dst)
                 yield dst, long
 
     @contextmanager
@@ -923,6 +926,7 @@ class Memory(Expression):
                 opcode = fmt_to_opcode(self.fmt)
                 self.ebpf.append(Opcode.LD + opcode, dst, self.address.left.no,
                                  self.address.right.value, 0)
+                self.ebpf.append_endian(self.fmt, dst)
             else:
                 dst, _ = exitStack.enter_context(
                     super().calculate(dst, long, force))
@@ -1005,7 +1009,10 @@ class MemoryDesc:
             value = value.value
             opcode = Opcode.XADD
         elif not isinstance(value, Expression):
-            value = Constant(ebpf, value)
+            if fmt == "x":
+                value = Constant(ebpf, value)
+            else:
+                value = Constant(ebpf, *unpack(fmt, pack(fmt[-1], value)))
         if self.fmt == "x" and not value.fixed:
             value *= Expression.FIXED_BASE
         elif self.fmt != "x" and value.fixed:
@@ -1016,6 +1023,8 @@ class MemoryDesc:
             return
         with value.calculate(None, isinstance(fmt, str) and fmt[-1] in 'qQx'
                             ) as (src, _):
+            if not isinstance(value, Constant):
+                ebpf.append_endian(fmt, src)
             ebpf.append(opcode + fmt_to_opcode(fmt), self.base_register,
                         src, addr, 0)
 
@@ -1083,6 +1092,8 @@ class MemoryMap:
                                      offset, int(value.value))
                     return
             with value.calculate(None, None) as (src, _):
+                if not isinstance(value, Constant):
+                    self.ebpf.append_endian(self.fmt, src)
                 self.ebpf.append(opcode + fmt_to_opcode(self.fmt),
                                  dst, src, offset, 0)
 
@@ -1278,6 +1289,16 @@ class EBPF:
 
     def append(self, opcode, dst, src, off, imm):
         self.opcodes.append(Instruction(opcode, dst, src, off, imm))
+
+    def append_endian(self, fmt, dst):
+        if not isinstance(fmt, str) or len(fmt) != 2:
+            return
+        endian, size = fmt
+        if endian == "<":
+            opcode = Opcode.LE
+        elif endian in ">!":
+            opcode = Opcode.BE
+        self.append(opcode, dst, 0, 0, calcsize(fmt) * 8)
 
     def assemble(self):
         """return the assembled program"""

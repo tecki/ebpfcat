@@ -900,6 +900,57 @@ class Tests(TestCase):
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77)])
 
+    def test_endian(self):
+        class P(XDP):
+            minimumPacketSize = 100
+
+            ph = PacketVar(20, "<H")
+            pi = PacketVar(28, ">i")
+            pq = PacketVar(36, "!q")
+
+            pp = PacketVar(100, "Q")
+
+            def program(self):
+                self.ph = 3
+                self.pi = 5
+                self.pq = 7
+
+                self.ph += 3
+                self.pi += 5
+                self.pq = self.ph
+
+        e = P(license="GPL")
+        e.assemble()
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
+            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=19, imm=0),
+            Instruction(opcode=O.ST+O.REG, dst=9, src=0, off=20, imm=3),
+            Instruction(opcode=O.W+O.ST, dst=9, src=0, off=28, imm=83886080),
+            Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=0),
+            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=117440512),
+            Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
+            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
+            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
+            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
+            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=20, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=0, src=9, off=28, imm=0),
+            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=32),
+            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=5),
+            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=32),
+            Instruction(opcode=O.W+O.STX, dst=9, src=0, off=28, imm=0),
+            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
+            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
+            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=64),
+            Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
+        ])
+
+
     def test_xdp_minsize(self):
         class P(XDP):
             minimumPacketSize = 100
