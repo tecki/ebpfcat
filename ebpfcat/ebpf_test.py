@@ -316,6 +316,8 @@ class Tests(TestCase):
         with e.b:
             e.a = 0
 
+        e.a = e.b
+
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=32),
@@ -343,6 +345,14 @@ class Tests(TestCase):
             Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
             Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
+            Instruction(opcode=O.STX+O.B, dst=10, src=0, off=-1, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-2, imm=0),
+            Instruction(opcode=O.JSET, dst=2, src=0, off=3, imm=120),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
             Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0)])
 
     def test_local_subprog(self):

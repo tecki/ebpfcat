@@ -968,38 +968,40 @@ class Memory(Expression):
 
     def _set(self, value):
         opcode = Opcode.STX
-        if isinstance(self.fmt, tuple):
-            pos, bits = self.fmt
-            self.fmt = "B"
-            if bits == 1:
-                try:
-                    if value:
-                        value = self | (1 << pos)
-                    else:
-                        value = self & ~(1 << pos)
-                except AssembleError:
-                    with ebpf.wtmp:
-                        with value as Else:
-                            ebpf.wtmp = self | (1 << pos)
-                        with Else:
-                            ebpf.wtmp = self & ~(1 << pos)
-            else:
-                mask = ((1 << bits) - 1) << pos
-                value = (mask & (value << pos) | ~mask & self)
-        elif isinstance(value, IAdd) and len(self.fmt) == 1:
-            value = value.value
-            opcode = Opcode.XADD
-        elif not isinstance(value, Expression):
-            if self.fmt == "x":
-                value = Constant(self.ebpf, value)
-            else:
-                value = Constant(self.ebpf,
-                                 *unpack(self.fmt, pack(self.fmt[-1], value)))
-        if self.fmt == "x" and not value.fixed:
-            value *= Expression.FIXED_BASE
-        elif self.fmt != "x" and value.fixed:
-            value /= Expression.FIXED_BASE
         with ExitStack() as exitStack:
+            if isinstance(self.fmt, tuple):
+                pos, bits = self.fmt
+                self.fmt = "B"
+                if bits == 1:
+                    try:
+                        if value:
+                            value = self | (1 << pos)
+                        else:
+                            value = self & ~(1 << pos)
+                    except AssembleError:
+                        exitStack.enter_context(self.ebpf.wtmp)
+                        with value as Else:
+                            self.ebpf.wtmp = self | (1 << pos)
+                        with Else:
+                            self.ebpf.wtmp = self & ~(1 << pos)
+                        value = self.ebpf.wtmp
+                else:
+                    mask = ((1 << bits) - 1) << pos
+                    value = (mask & (value << pos) | ~mask & self)
+            elif isinstance(value, IAdd) and len(self.fmt) == 1:
+                value = value.value
+                opcode = Opcode.XADD
+            elif not isinstance(value, Expression):
+                if self.fmt == "x":
+                    value = Constant(self.ebpf, value)
+                else:
+                    value = Constant(
+                        self.ebpf,
+                        *unpack(self.fmt, pack(self.fmt[-1], value)))
+            if self.fmt == "x" and not value.fixed:
+                value *= Expression.FIXED_BASE
+            elif self.fmt != "x" and value.fixed:
+                value /= Expression.FIXED_BASE
             if isinstance(self.address, Sum):
                 dst = self.address.left.no
                 offset = self.address.right.value
