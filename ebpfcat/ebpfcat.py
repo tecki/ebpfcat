@@ -24,7 +24,7 @@ from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import ECCmd, EtherCat, Packet, Terminal
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
-from .xdp import XDP, XDPExitCode
+from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
     ProgType, MapType, create_map, delete_elem, update_elem, prog_test_run,
     lookup_elem)
@@ -255,42 +255,44 @@ class EBPFTerminal(Terminal):
 
 class EtherXDP(XDP):
     license = "GPL"
+    minimumPacketSize = 30
 
     variables = ArrayMap()
     dropcounter = variables.globalVar("I")
     counters = variables.globalVar("64I")
 
     rate = 0
+
     DATA0 = 26
 
-    def program(self):
-        ETHERTYPE = 12
-        CMD0 = 16
-        ADDR0 = 18
+    ethertype = XDPPacketVar(12, "!H")
+    addr0 = XDPPacketVar(18, "I")
+    cmd0 = XDPPacketVar(16, "B")
+    data0 = XDPPacketVar(DATA0, "H")
 
+    def program(self):
         with prandom(self.ebpf) & 0xffff < self.rate:
             self.dropcounter += 1
             self.ebpf.exit(XDPExitCode.DROP)
-        with self.packetSize > 30 as p, p.pH[ETHERTYPE] == 0xA488, \
-                p.pB[CMD0] == 0:
-            self.r3 = p.pI[ADDR0]  # use r3 for tail_call
+        with self.ethertype == 0x88A4, self.cmd0 == 0:
+            self.r3 = self.addr0  # use r3 for tail_call
             with self.counters.get_address(None, False, False) as (dst, _), \
                     self.r3 < FastEtherCat.MAX_PROGS:
                 self.r[dst] += 4 * self.r3
                 self.r4 = self.mH[self.r[dst]]
                 # we lost a packet
-                with p.pH[self.DATA0] == self.r4 as Else:
+                with self.data0 == self.r4 as Else:
                     self.mI[self.r[dst]] += 1 + (self.r4 & 1)
                 # normal case: two packets on the wire
-                with Else, ((p.pH[self.DATA0] + 1 & 0xffff) == self.r4) \
-                           | (p.pH[self.DATA0] == 0) as Else:
+                with Else, ((self.data0 + 1 & 0xffff) == self.r4) \
+                           | (self.data0 == 0) as Else:
                     self.mI[self.r[dst]] += 1
                     with self.r4 & 1:  # last one was active
-                        p.pH[self.DATA0] = self.mH[self.r[dst]]
+                        self.data0 = self.mH[self.r[dst]]
                         self.exit(XDPExitCode.TX)
                 with Else:
                     self.exit(XDPExitCode.PASS)
-                p.pH[self.DATA0] = self.mH[self.r[dst]]
+                self.data0 = self.mH[self.r[dst]]
                 self.r2 = self.get_fd(self.programs)
                 self.call(FuncId.tail_call)
         self.exit(XDPExitCode.PASS)

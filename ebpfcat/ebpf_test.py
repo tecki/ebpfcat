@@ -23,7 +23,7 @@ from .ebpf import (
     AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
     SubProgram, ktime)
 from .hashmap import HashMap
-from .xdp import XDP
+from .xdp import XDP, PacketVar
 from .bpf import ProgType, prog_test_run
 
 
@@ -192,7 +192,17 @@ class Tests(TestCase):
         e.r1 = e.r2 // e.x3
         e.x4 = e.x5 // e.x6
 
-        self.maxDiff = None
+        e.x1 = 3 / e.r2
+        e.x3 = 3.5 / e.r4
+        e.x5 = 3 / e.x6
+        e.x4 = 4.5 / e.x6
+
+        e.x1 = 3 // e.r2
+        e.x3 = 3.5 // e.r4
+        e.x5 = 3 // e.x6
+        e.x4 = 4.5 // e.x6
+
+
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
            Instruction(opcode=O.ADD+O.LONG, dst=1, src=0, off=0, imm=3),
@@ -269,7 +279,30 @@ class Tests(TestCase):
            Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=4, src=5, off=0, imm=0),
            Instruction(opcode=O.DIV+O.LONG+O.REG, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=4, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.MUL, dst=4, src=0, off=0, imm=100000),
+
+           Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=300000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=350000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.DW, dst=5, src=0, off=0, imm=4230196224),
+           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=6),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.DW, dst=4, src=0, off=0, imm=2050327040),
+           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=10),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=3),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=3),
+           Instruction(opcode=O.REG+O.LONG+O.DIV, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=3, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.MOV, dst=5, src=0, off=0, imm=300000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=5, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.MOV, dst=4, src=0, off=0, imm=450000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=4, src=0, off=0, imm=100000),
         ])
 
     def test_local(self):
@@ -317,6 +350,8 @@ class Tests(TestCase):
         with e.b:
             e.a = 0
 
+        e.a = e.b
+
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=32),
@@ -344,6 +379,14 @@ class Tests(TestCase):
             Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
             Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
+            Instruction(opcode=O.STX+O.B, dst=10, src=0, off=-1, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-2, imm=0),
+            Instruction(opcode=O.JSET, dst=2, src=0, off=3, imm=120),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
             Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0)])
 
     def test_local_subprog(self):
@@ -374,6 +417,7 @@ class Tests(TestCase):
             a = LocalVar('I')
             b = LocalVar('q')
             c = LocalVar('h')
+            d = LocalVar('x')
 
         e = Local(ProgType.XDP, "GPL")
         e.a += 3
@@ -385,6 +429,9 @@ class Tests(TestCase):
         # do not generate XADD for bytes and words
         e.c += 3
         e.mB[e.r1] += e.r1
+
+        e.d -= 5
+        e.d += e.r1
 
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
@@ -400,7 +447,13 @@ class Tests(TestCase):
            Instruction(opcode=O.STX+O.REG, dst=10, src=0, off=-18, imm=0),
            Instruction(opcode=O.B+O.LD, dst=0, src=1, off=0, imm=0),
            Instruction(opcode=O.ADD+O.REG, dst=0, src=1, off=0, imm=0),
-           Instruction(opcode=O.STX+O.B, dst=1, src=0, off=0, imm=0)])
+           Instruction(opcode=O.STX+O.B, dst=1, src=0, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=-500000),
+           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
+           Instruction(opcode=O.REG+O.LONG+O.MOV, dst=0, src=1, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=0, src=0, off=0, imm=100000),
+           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
+        ])
 
 
     def test_jump(self):
@@ -632,7 +685,9 @@ class Tests(TestCase):
             Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=878082192),
             Instruction(opcode=O.W, dst=0, src=0, off=0, imm=18),
             Instruction(opcode=O.LONG+O.REG+O.ADD, dst=3, src=0, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=2415919104),
+            Instruction(opcode=O.DW, dst=3, src=0, off=0, imm=2415919104),
+            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=0),
+
         ])
 
     def test_simple_binary(self):
@@ -809,12 +864,12 @@ class Tests(TestCase):
             Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=31, dst=3, src=0, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=O.MUL+O.LONG, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.MUL, dst=0, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=10, src=0, off=-10, imm=0),
             Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
             Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=191, dst=2, src=3, off=0, imm=0),
-            Instruction(opcode=O.MUL+O.LONG, dst=2, src=0, off=0, imm=2),
+            Instruction(opcode=O.MUL, dst=2, src=0, off=0, imm=2),
             Instruction(opcode=107, dst=0, src=2, off=0, imm=0),
 
             Instruction(opcode=191, dst=5, src=10, off=0, imm=0),
@@ -898,6 +953,81 @@ class Tests(TestCase):
             Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77)])
+
+    def test_endian(self):
+        class P(XDP):
+            minimumPacketSize = 100
+
+            ph = PacketVar(20, "<H")
+            pi = PacketVar(28, ">i")
+            pq = PacketVar(36, "!q")
+
+            pp = PacketVar(100, "Q")
+
+            def program(self):
+                self.ph = 3
+                self.pi = 5
+                self.pq = 7
+
+                self.ph += 3
+                self.pi += 5
+                self.pq = self.ph
+
+        e = P(license="GPL")
+        e.assemble()
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
+            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=19, imm=0),
+            Instruction(opcode=O.ST+O.REG, dst=9, src=0, off=20, imm=3),
+            Instruction(opcode=O.W+O.ST, dst=9, src=0, off=28, imm=83886080),
+            Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=0),
+            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=117440512),
+            Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
+            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
+            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
+            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
+            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=20, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=0, src=9, off=28, imm=0),
+            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=32),
+            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=5),
+            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=32),
+            Instruction(opcode=O.W+O.STX, dst=9, src=0, off=28, imm=0),
+            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
+            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
+            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=64),
+            Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
+        ])
+
+
+    def test_xdp_minsize(self):
+        class P(XDP):
+            minimumPacketSize = 100
+
+            pv = PacketVar(20, "H")
+
+            def program(self):
+                self.pv = self.pH[22]
+
+        p = P(license="GPL")
+        p.assemble()
+        self.assertEqual(p.opcodes, [
+            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
+            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=2, imm=0),
+            Instruction(opcode=O.REG+O.LD, dst=0, src=9, off=22, imm=0),
+            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=20, imm=0),
+            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
+            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
+        ])
+
 
 class KernelTests(TestCase):
     def test_hashmap(self):

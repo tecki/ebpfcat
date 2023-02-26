@@ -24,8 +24,9 @@ from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
 from struct import pack, unpack
 
-from .ebpf import EBPF
+from .ebpf import EBPF, MemoryDesc
 from .bpf import ProgType
+from .util import sub
 
 
 class XDPExitCode(Enum):
@@ -151,12 +152,38 @@ class PacketSize:
         return self > value - 1
 
 
+class PacketVar(MemoryDesc):
+    base_register = 9
+
+    def __init__(self, address, fmt):
+        self.address = address
+        self.fmt = fmt
+
+    def fmt_addr(self, instance):
+        return self.fmt, self.address
+
+
 class XDP(EBPF):
     """the base class for XDP programs"""
+    minimumPacketSize = None
+    defaultExitCode = XDPExitCode.PASS
+
     def __init__(self, **kwargs):
         super().__init__(prog_type=ProgType.XDP, **kwargs)
 
         self.packetSize = PacketSize(self)
+
+    def program(self):
+        if self.minimumPacketSize is None:
+            sub(XDP, self).program()
+        else:
+            with self.packetSize > self.minimumPacketSize as packet:
+                self.pB = packet.pB
+                self.pH = packet.pH
+                self.pI = packet.pI
+                self.pQ = packet.pQ
+                sub(XDP, self).program()
+            self.exit(self.defaultExitCode)
 
     async def _netlink(self, ifindex, fd, flags):
         future = Future()
