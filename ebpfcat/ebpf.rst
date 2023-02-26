@@ -20,13 +20,13 @@ incoming packages.
 We start with declaring the variables that we want to see both in the
 XDP program and in user space::
 
-   from ebpfcat.hashmap import HashMap
+   from ebpfcat.arraymap import ArrayMap
    from ebpfcat.xdp import XDP, XDPExitCode
 
    class Count(XDP):
        license = "GPL"  # the Linux kernel wants to know that...
 
-       userspace = HashMap()
+       userspace = ArrayMap()
        count = userspace.globalVar()  # declare a variable in the map
 
 Next comes the program that we want to run in the kernel. Note that this
@@ -73,28 +73,48 @@ For reference, this is the full example:
 
 .. literalinclude:: /examples/count.py
 
-Conditional statements
-----------------------
+Maps
+----
 
-During code generation, all code needs to be executed. This means that
-we cannot use a Python ``if`` statement, as then the code actually does not
-get executed, so no code would be generated. So we replace ``if`` statements
-by Python ``with`` statements like so::
+Maps are used to communicate to the outside world. They look like instance
+variables. They may be used from within the EBPF program, and once it is
+loaded also from everywhere else. There are two flavors: `arraymap.ArrayMap`
+and `hashmap.HashMap`. They have different use cases:
 
-    with self.some_variable > 6 as Else:
-        do_someting
-    with Else:
-        do_something_else
+Array Maps
+~~~~~~~~~~
 
-certainly an ``Else`` statement may be omitted if not needed.
+Array maps are share memory between EBPF programs and user space. All programs
+as well as user space are accessing the memory at the same time, so concurrent
+access may lead to problems. An exception is the in-place addition operator
+`+=`, which works under a lock, but only if the variable is of 4 or 8
+bytes size.
 
-No loops
---------
+Otherwise variables may be declared in all sizes. The declaration is like so::
 
-There is no way to declare a loop, simply because EBPF does not allow it.
-You may simply write a ``for`` loop in Python as long as everything can
-be calculated at generation time, but this just means that the code will show
-up in the EPBF as often as the loop is iterated at generation time.
+   class MyProgram(EBPF):
+       array_map = ArrayMap()
+       a_byte_variable = array_map.globalVar("B")
+       an_integer_variable = array_map.globalVar("i")
+
+those variables can be accessed both from within the ebpf program, as from
+outside. Both sides are actually accessing the same memory, so be aware of
+race conditions.
+
+Hash Maps
+~~~~~~~~~
+
+all hash map variables have a fixed size of 8 bytes. Accessing them is
+rather slow, but is done with proper locking: concurrent access is possible.
+When accessing them from user space, they are read from the kernel each time
+anew. They are declared as follows::
+
+   class MyProgram(EBPF):
+       hash_map = HashMap()
+       a_variable = hash_map.globalVar()
+
+They are used as normal variables, like in `self.a_variable = 5`, both
+in EBPF and from user space once loaded.
 
 Accessing the packet
 --------------------
@@ -134,7 +154,7 @@ is too small (by default ``XDPExitCode.PASS``). So the above example becomes::
 
     class Program(XDP):
         minimumPacketSize = 16
-        userspace = HashMap()
+        userspace = ArrayMap()
         count = userspace.globalVar()
 
         def program(self):
@@ -149,7 +169,7 @@ example simplifies to::
 
     class Program(XDP):
         minimumPacketSize = 16
-        userspace = HashMap()
+        userspace = ArrayMap()
         count = userspace.globalVar()
         etherType = PacketVar(12, "!H")  # use network byte order
 
@@ -157,48 +177,55 @@ example simplifies to::
             with self.etherType == 0x800:
                 self.count += 1
 
+Programming
+-----------
 
-Maps
-----
+The actual XDP program is a class that inherits from ``XDP``. The class body
+contains all variable declarations, and a method ``program`` which is the
+program proper. It is executed by Python, and while executing an EPBF program
+is created, which can then be loaded into the linux kernel.
 
-Maps are used to communicate to the outside world. They look like instance
-variables. They may be used from within the EBPF program, and once it is
-loaded also from everywhere else. There are two flavors: `hashmap.HashMap`
-and `arraymap.ArrayMap`. They have different use cases:
+Expressions
+~~~~~~~~~~~
 
-Hash Maps
-~~~~~~~~~
+Once a variable is declared, it can be used very close to normal Python syntax.
+Standard arithmetic works, like ``self.distance = self.speed * self.time``,
+given that all are declared variables. Note that you cannot use usual Python
+variables, as accessing them does not generate any EBPF code. Use local
+variables for that.
 
-all hash map variables have a fixed size of 8 bytes. Accessing them is
-rather slow, but is done with proper locking: concurrent access is possible.
-When accessing them from user space, they are read from the kernel each time
-anew. They are declared as follows::
+Local variables
+~~~~~~~~~~~~~~~
 
-   class MyProgram(EBPF):
-       hash_map = HashMap()
-       a_variable = hash_map.globalVar()
+local variables are seen only by one EBPF program, they cannot be seen by
+other programs or user space. They are declared in the class body like this::
 
-They are used as normal variables, like in `self.a_variable = 5`, both
-in EBPF and from user space once loaded.
+    class Program(XDP):
+        local_variable = LocalVar("I")
 
-Array Maps
-~~~~~~~~~~
+Conditional statements
+~~~~~~~~~~~~~~~~~~~~~~
 
-from an EBPF program's perspective, all EPBF programs are accessing the same
-variables at the same time. So concurrent access may lead to problems. An
-exception is the in-place addition operator `+=`, which works under a lock,
-but only if the variable is of 4 or 8 bytes size.
+During code generation, all code needs to be executed. This means that
+we cannot use a Python ``if`` statement, as then the code actually does not
+get executed, so no code would be generated. So we replace ``if`` statements
+by Python ``with`` statements like so::
 
-Otherwise variables may be declared in all sizes. The declaration is like so::
+    with self.some_variable > 6 as Else:
+        do_someting
+    with Else:
+        do_something_else
 
-   class MyProgram(EBPF):
-       array_map = ArrayMap()
-       a_byte_variable = array_map.globalVar("B")
-       an_integer_variable = array_map.globalVar("i")
+certainly an ``Else`` statement may be omitted if not needed.
 
-those variables can be accessed both from within the ebpf program, as from
-outside. Both sides are actually accessing the same memory, so be aware of
-race conditions.
+No loops
+~~~~~~~~
+
+There is no way to declare a loop, simply because EBPF does not allow it.
+You may simply write a ``for`` loop in Python as long as everything can
+be calculated at generation time, but this just means that the code will show
+up in the EPBF as often as the loop is iterated at generation time.
+
 
 Fixed-point arithmetic
 ~~~~~~~~~~~~~~~~~~~~~~

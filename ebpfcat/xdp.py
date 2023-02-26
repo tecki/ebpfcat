@@ -153,6 +153,17 @@ class PacketSize:
 
 
 class PacketVar(MemoryDesc):
+    """descriptor to access packet data from an XDP program
+
+    Declare packet variables as such::
+
+        class Program(XDP):
+            etherType = PacketVar(12, "!H")
+
+    :param address: the start address within the packet
+    :param fmt: the data type of the variable, following the
+       conventions from the :module:`struct` module.
+    """
     base_register = 9
 
     def __init__(self, address, fmt):
@@ -164,7 +175,34 @@ class PacketVar(MemoryDesc):
 
 
 class XDP(EBPF):
-    """the base class for XDP programs"""
+    """the base class for XDP programs
+
+    XDP programs inherit from this class and define a :meth:`program`
+    which contains the actual EBPF program. In the class body, variables
+    are declared using :class:`ebpf.LocalVar`, :class:`PacketVar` and
+    :class:`arraymap.ArrayMap`.
+
+    .. attribute:: minimumPacketSize
+
+       set this to an integer value to declare the minimum size of
+       a packet. You will only be able to access that many bytes in
+       the packet. If you need something dynamic, use :var:`packetSize`
+       instead.
+
+    .. attribute:: defaultExitCode
+
+       The default exit code should the packet be smaller than
+       ``minimumPacketSize``. Defaults to ``XDPExitCode.PASS``.
+
+    .. attribute:: packetSize
+
+       compare this value to a number in your program to allow at
+       least that many bytes being read. As an example, to assure
+       at least 20 bytes may be read one would write::
+
+           with self.packetSize > 20:
+               pass
+    """
     minimumPacketSize = None
     defaultExitCode = XDPExitCode.PASS
 
@@ -196,22 +234,34 @@ class XDP(EBPF):
             transport.get_extra_info("socket").close()
 
     async def attach(self, network, flags=XDPFlags.SKB_MODE):
-        """attach this program to a `network`"""
+        """attach this program to a ``network``
+
+        :param network: the name of the network interface,
+           like ``"eth0"``
+        :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
         fd, _ = self.load(log_level=1)
         await self._netlink(ifindex, fd, flags)
 
     async def detach(self, network, flags=XDPFlags.SKB_MODE):
-        """attach this program from a `network`"""
+        """attach this program from a ``network``
+
+        :param network: the name of the network interface,
+           like ``"eth0"``
+        :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
         await self._netlink(ifindex, -1)
 
     @asynccontextmanager
     async def run(self, network, flags=XDPFlags.SKB_MODE):
-        """attach this program to a `network` during context
+        """attach this program to a ``network`` during context
 
-        attach this program to the `network` while the context
-        manager is running, and detach it afterwards."""
+        attach this program to the ``network`` while the context
+        manager is running, and detach it afterwards.
+
+        :param network: the name of the network interface,
+           like ``"eth0"``
+        :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
         fd, _ = self.load(log_level=1)
         try:
