@@ -192,6 +192,17 @@ class Tests(TestCase):
         e.r1 = e.r2 // e.x3
         e.x4 = e.x5 // e.x6
 
+        e.x1 = 3 / e.r2
+        e.x3 = 3.5 / e.r4
+        e.x5 = 3 / e.x6
+        e.x4 = 4.5 / e.x6
+
+        e.x1 = 3 // e.r2
+        e.x3 = 3.5 // e.r4
+        e.x5 = 3 // e.x6
+        e.x4 = 4.5 // e.x6
+
+
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
            Instruction(opcode=O.ADD+O.LONG, dst=1, src=0, off=0, imm=3),
@@ -268,7 +279,30 @@ class Tests(TestCase):
            Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=4, src=5, off=0, imm=0),
            Instruction(opcode=O.DIV+O.LONG+O.REG, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=4, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.MUL, dst=4, src=0, off=0, imm=100000),
+
+           Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=300000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=350000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.DW, dst=5, src=0, off=0, imm=4230196224),
+           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=6),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.DW, dst=4, src=0, off=0, imm=2050327040),
+           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=10),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=3),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
+           Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=3),
+           Instruction(opcode=O.REG+O.LONG+O.DIV, dst=3, src=4, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=3, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.MOV, dst=5, src=0, off=0, imm=300000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=5, src=0, off=0, imm=100000),
+           Instruction(opcode=O.LONG+O.MOV, dst=4, src=0, off=0, imm=450000),
+           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MUL, dst=4, src=0, off=0, imm=100000),
         ])
 
     def test_local(self):
