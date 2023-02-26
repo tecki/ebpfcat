@@ -372,7 +372,7 @@ class SimpleComparison(Comparison):
     def compare(self, negative):
         with self.left.calculate(None, None) as (self.dst, _):
             with ExitStack() as exitStack:
-                if not (isinstance(self.right, Constant) and self.right.small):
+                if not self.right.small_constant:
                     self.src, _ = exitStack.enter_context(
                         self.right.calculate(None, None))
                 self.origin = len(self.ebpf.opcodes)
@@ -385,7 +385,7 @@ class SimpleComparison(Comparison):
         if self.opcode == Opcode.JMP:
             inst = Instruction(Opcode.JMP, 0, 0,
                                len(self.ebpf.opcodes) - self.origin - 1, 0)
-        elif isinstance(self.right, Constant) and self.right.small:
+        elif self.right.small_constant:
             inst = Instruction(
                 self.opcode, self.dst, 0,
                 len(self.ebpf.opcodes) - self.origin - 1,
@@ -446,6 +446,7 @@ class Expression:
     """the base class for all numerical expressions"""
 
     FIXED_BASE = 100000
+    small_constant = False
 
     def _binary(self, value, opcode):
         value = ensure_expression(self.ebpf, value)
@@ -634,7 +635,7 @@ class Binary(Expression):
             with self.left.calculate(dst, long, True) as (dst, l_long):
                 if long is None:
                     long = l_long
-            if isinstance(self.right, Constant) and self.right.small:
+            if self.right.small_constant:
                 self.ebpf.append(self.operator + Opcode.LONG * long,
                                  dst, 0, 0, int(self.right.value))
             else:
@@ -777,7 +778,7 @@ class Constant(Expression):
         self.signed = value < 0
 
     @property
-    def small(self):
+    def small_constant(self):
         return -0x80000000 <= self.value < 0x80000000
 
     def __imul__(self, value):
@@ -788,7 +789,7 @@ class Constant(Expression):
     def calculate(self, dst, long, force=False):
         value = int(self.value)
         with self.ebpf.get_free_register(dst) as dst:
-            if self.small:
+            if self.small_constant:
                 self.ebpf.append(Opcode.MOV + Opcode.LONG, dst, 0, 0, value)
             else:
                 self.ebpf.append(Opcode.DW, dst, 0, 0, value & 0xffffffff)
@@ -969,8 +970,7 @@ class Memory(Expression):
                 dst, _ = exitStack.enter_context(
                     self.address.calculate(None, True))
                 offset = 0
-            if isinstance(value, Constant) and value.small \
-                    and opcode == Opcode.STX:
+            if value.small_constant and opcode == Opcode.STX:
                 self.ebpf.append(Opcode.ST + fmt_to_opcode(self.fmt), dst, 0,
                                  offset, int(value.value))
                 return
