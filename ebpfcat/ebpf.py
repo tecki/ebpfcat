@@ -867,13 +867,13 @@ class Memory(Expression):
         self.address = address
 
     def __iadd__(self, value):
-        if self.fmt in "qQiI":
+        if self.fmt in "qQiIx":
             return IAdd(self.ebpf, value)
         else:
             return NotImplemented
 
     def __isub__(self, value):
-        if self.fmt in "qQiI":
+        if self.fmt in "qQiIx":
             return IAdd(self.ebpf, -value)
         else:
             return NotImplemented
@@ -948,7 +948,7 @@ class Memory(Expression):
                 else:
                     mask = ((1 << bits) - 1) << pos
                     value = (mask & (value << pos) | ~mask & self)
-            elif isinstance(value, IAdd) and len(self.fmt) == 1:
+            elif isinstance(value, IAdd):
                 value = value.value
                 opcode = Opcode.XADD
             elif not isinstance(value, Expression):

@@ -417,6 +417,7 @@ class Tests(TestCase):
             a = LocalVar('I')
             b = LocalVar('q')
             c = LocalVar('h')
+            d = LocalVar('x')
 
         e = Local(ProgType.XDP, "GPL")
         e.a += 3
@@ -428,6 +429,9 @@ class Tests(TestCase):
         # do not generate XADD for bytes and words
         e.c += 3
         e.mB[e.r1] += e.r1
+
+        e.d -= 5
+        e.d += e.r1
 
         self.assertEqual(e.opcodes, [
            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
@@ -443,7 +447,13 @@ class Tests(TestCase):
            Instruction(opcode=O.STX+O.REG, dst=10, src=0, off=-18, imm=0),
            Instruction(opcode=O.B+O.LD, dst=0, src=1, off=0, imm=0),
            Instruction(opcode=O.ADD+O.REG, dst=0, src=1, off=0, imm=0),
-           Instruction(opcode=O.STX+O.B, dst=1, src=0, off=0, imm=0)])
+           Instruction(opcode=O.STX+O.B, dst=1, src=0, off=0, imm=0),
+           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=-500000),
+           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
+           Instruction(opcode=O.REG+O.LONG+O.MOV, dst=0, src=1, off=0, imm=0),
+           Instruction(opcode=O.MUL+O.LONG, dst=0, src=0, off=0, imm=100000),
+           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
+        ])
 
 
     def test_jump(self):
