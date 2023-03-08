@@ -1,7 +1,7 @@
 """example program to count IPv4 and IPv6 packets"""
 
 from asyncio import get_event_loop, sleep
-from ebpfcat.hashmap import HashMap
+from ebpfcat.arraymap import ArrayMap
 from ebpfcat.xdp import PacketVar, XDP, XDPExitCode, XDPFlags
 
 class IPCount(XDP):
@@ -9,7 +9,7 @@ class IPCount(XDP):
 
     minimumPacketSize = 14
 
-    userspace = HashMap()
+    userspace = ArrayMap()
     ipv4count = userspace.globalVar()
     ipv6count = userspace.globalVar()
     ethertype = PacketVar(12, "!H")

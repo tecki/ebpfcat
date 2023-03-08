@@ -1,11 +1,11 @@
 from asyncio import get_event_loop, sleep
-from ebpfcat.hashmap import HashMap
+from ebpfcat.arraymap import ArrayMap
 from ebpfcat.xdp import XDP, XDPExitCode, XDPFlags
 
 class Count(XDP):
     license = "GPL"
 
-    userspace = HashMap()
+    userspace = ArrayMap()
     count = userspace.globalVar()
 
     def program(self):
