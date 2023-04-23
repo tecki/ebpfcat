@@ -244,13 +244,13 @@ class XDP(EBPF):
         await self._netlink(ifindex, fd, flags)
 
     async def detach(self, network, flags=XDPFlags.SKB_MODE):
-        """attach this program from a ``network``
+        """detach this program from a ``network``
 
         :param network: the name of the network interface,
            like ``"eth0"``
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
-        await self._netlink(ifindex, -1)
+        await self._netlink(ifindex, -1, flags)
 
     @asynccontextmanager
     async def run(self, network, flags=XDPFlags.SKB_MODE):
