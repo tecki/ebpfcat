@@ -1222,9 +1222,9 @@ class EBPF:
     in which case you can just issue the program before it is loaded.
 
     After a program is loaded, its maps may be written to a bpf file system
-    using `pin_maps`. Those maps may be used at a later time, especially also
-    in a different task, if the parameter `load_maps` is given, in which case
-    we assume the program has already been loaded.
+    using :meth:`pin_maps`. Those maps may be used at a later time, especially
+    also in a different task, if the parameter `load_maps` is given, in which
+    case we assume the program has already been loaded.
 
     :param load_maps: a prefix to load pinned maps from. Must be existing in a
         bpf file system, and usually ends in a "/".

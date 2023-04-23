@@ -51,9 +51,10 @@ arrives on the interface. We can read the result in a loop::
         await sleep(0.1)
         print("packets arrived so far:", c.count)
 
-With ``attach`` the program is attached indefinitely on the interface,
-even beyond the end of the program. Use ``detach`` to detach it, or you
-may use the async contextmanager ``run`` to detach automatically, as in::
+With :meth:`xdp.XDP.attach` the program is attached indefinitely on the
+interface, even beyond the end of the program. Use :meth:`xdp.XDP.detach` to
+detach it, or you may use the async contextmanager :meth:`xdp.XDP.run` to
+detach automatically, as in::
 
    async with c.run("eth0"):
         await sleep(1)
@@ -64,10 +65,11 @@ While generating EBPF, the code generator knows it needs to write out
 commands to access that variable from EBPF, once accessed outside of
 generation context, we access it from the user side.
 
-Both ``attach`` and ``detach`` have an additional parameter ``flags`` to
-choose in which mode to attach the program, use ``XDPFlags.SKB_MODE`` (the
-default) to use the generic kernel driver, or ``XDPFlags.DRV_MODE`` to let
-the interface device driver run the program.
+Both :meth:`xdp.XDP.attach` and :meth:`xdp.XDP.detach` have an additional
+parameter ``flags`` to choose in which mode to attach the program, use
+:attr:`xdp.XDPFlags.SKB_MODE` (the default) to use the generic kernel driver,
+or :attr:`xdp.XDPFlags.DRV_MODE` to let the interface device driver run the
+program.
 
 For reference, this is the full example:
 
@@ -78,8 +80,11 @@ Maps
 
 Maps are used to communicate to the outside world. They look like instance
 variables. They may be used from within the EBPF program, and once it is
-loaded also from everywhere else. There are two flavors: `arraymap.ArrayMap`
-and `hashmap.HashMap`. They have different use cases:
+loaded also from Python code. It is possible to write out the maps to a
+bpf file system using :meth:`
+
+There are two flavors: :class:`arraymap.ArrayMap`
+and :class:`hashmap.HashMap`. They have different use cases:
 
 Array Maps
 ~~~~~~~~~~
@@ -113,7 +118,7 @@ anew. They are declared as follows::
        hash_map = HashMap()
        a_variable = hash_map.globalVar()
 
-They are used as normal variables, like in `self.a_variable = 5`, both
+They are used as normal variables, like in ``self.a_variable = 5``, both
 in EBPF and from user space once loaded.
 
 Accessing the packet
@@ -133,7 +138,7 @@ generate code that the static code checker understands, like so::
 in this code, the variable ``p`` returned by the ``with`` statement also
 allows to access the content of the packet. There are six access modes
 to access different sizes in the packet, whose naming follows the Python
-``struct`` module, indicated by the letters "BHIQiq".
+:mod:`struct` module, indicated by the letters "BHIQiq".
 
 Knowing this, we can modify the above example code to only count IP
 packets::
@@ -164,7 +169,7 @@ is too small (by default ``XDPExitCode.PASS``). So the above example becomes::
 With the ``PacketVar`` descriptor it is possible to declare certain positions
 in the packet as variables. As parameters it takes the position within the
 packet, and the data format, following the conventions from the Python
-``struct`` package, including the endianness markers ``<>!``. So the above
+:mod:`struct`` package, including the endianness markers ``<>!``. So the above
 example simplifies to::
 
     class Program(XDP):
@@ -180,10 +185,10 @@ example simplifies to::
 Programming
 -----------
 
-The actual XDP program is a class that inherits from ``XDP``. The class body
-contains all variable declarations, and a method ``program`` which is the
-program proper. It is executed by Python, and while executing an EPBF program
-is created, which can then be loaded into the linux kernel.
+The actual XDP program is a class that inherits from :class:`xdp.XDP`. The
+class body contains all variable declarations, and a method ``program`` which
+is the program proper. It is executed by Python, and while executing an EPBF
+program is created, which can then be loaded into the linux kernel.
 
 Expressions
 ~~~~~~~~~~~
