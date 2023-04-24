@@ -1,5 +1,6 @@
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
 ]
 
 templates_path = ['_templates']
@@ -20,3 +21,5 @@ todo_include_todos = False
 html_theme = 'alabaster'
 html_static_path = ['_static']
 htmlhelp_basename = 'EBPFCat'
+
+intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
