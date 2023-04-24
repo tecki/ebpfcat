@@ -16,6 +16,9 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """support for XDP programs"""
+
+__all__ = ["XDPExitCode", "XDPFlags", "PacketVar",  "XDP"]
+
 from asyncio import DatagramProtocol, Future, get_event_loop
 from enum import Enum
 from contextlib import asynccontextmanager, contextmanager

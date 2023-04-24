@@ -15,6 +15,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+"""The ``ebpf`` module contains the core ebpf code generation"""
+
+__all__ = ["EBPF", "LocalVar", "prandom", "ktime"]
+
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack

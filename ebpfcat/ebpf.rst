@@ -251,3 +251,15 @@ floor divisions ``//`` result in a standard integer. Some examples::
             self.normal_var = self.fixed_var  # automatically truncated
             self.fixed_var = self.normal_var / 5  # keep decimals
             self.fixed_var = self.normal_var // 5  # floor division
+
+Reference Documentation
+-----------------------
+
+.. automodule:: ebpfcat.ebpf
+   :members:
+
+.. automodule:: ebpfcat.xdp
+   :members:
+
+.. automodule:: ebpfcat.arraymap
+   :members:
