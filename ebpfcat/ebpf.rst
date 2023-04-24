@@ -1,3 +1,5 @@
+.. currentmodule:: ebpfcat
+
 A Python-base EBPF code generator
 =================================
 
@@ -37,7 +39,7 @@ Instead it generates EBPF code that we can later load into the kernel::
         self.count += 1
         self.exit(XDPExitCode.PASS)  # pass packet on to network stack
 
-Now we can attach this program to a network interface. We use ``asyncio``
+Now we can attach this program to a network interface. We use :mod:`asyncio`
 for synchronization::
 
    async def main():
@@ -166,11 +168,11 @@ is too small (by default ``XDPExitCode.PASS``). So the above example becomes::
             with self.pH[12] == 8:
                 self.count += 1
 
-With the ``PacketVar`` descriptor it is possible to declare certain positions
-in the packet as variables. As parameters it takes the position within the
-packet, and the data format, following the conventions from the Python
-:mod:`struct`` package, including the endianness markers ``<>!``. So the above
-example simplifies to::
+With the :class:`xdp.PacketVar`` descriptor it is possible to declare certain
+positions in the packet as variables. As parameters it takes the position
+within the packet, and the data format, following the conventions from the
+Python :mod:`struct` package, including the endianness markers ``<>!``. So the
+above example simplifies to::
 
     class Program(XDP):
         minimumPacketSize = 16
