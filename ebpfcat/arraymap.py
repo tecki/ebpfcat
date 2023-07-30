@@ -15,6 +15,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+"""The ``arraymap`` module defines array maps, usually used for global
+variables in EBPF programs"""
+
+__all__ = ["ArrayMap"]
+
 from itertools import chain
 from mmap import mmap
 from struct import pack_into, unpack_from, calcsize
@@ -70,8 +75,9 @@ class ArrayGlobalVarDesc(MemoryDesc):
 
 class ArrayMapAccess:
     """This is the array map proper"""
-    def __init__(self, data, size):
-        self.data = data
+    def __init__(self, fd, size):
+        self.data = mmap(fd, size)
+        self.fd = fd
         self.size = size
 
 
@@ -99,14 +105,14 @@ class ArrayMap(Map):
     def __set_name__(self, owner, name):
         self.name = name
 
-    def init(self, ebpf):
+    def init(self, ebpf, fd):
         setattr(ebpf, self.name, 0)
         size = self.collect(ebpf)
         if not size:  # nobody is actually using the map
             return
-        fd = create_map(MapType.ARRAY, 4, size, 1, MapFlags.MMAPABLE)
-        data = mmap(fd, size)
-        setattr(ebpf, self.name, ArrayMapAccess(data, size))
+        if fd is None:
+            fd = create_map(MapType.ARRAY, 4, size, 1, MapFlags.MMAPABLE)
+        setattr(ebpf, self.name, ArrayMapAccess(fd, size))
         with ebpf.save_registers(list(range(6))), ebpf.get_stack(4) as stack:
             ebpf.mI[ebpf.r10 + stack] = 0
             ebpf.r1 = ebpf.get_fd(fd)

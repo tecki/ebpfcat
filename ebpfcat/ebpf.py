@@ -15,6 +15,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+"""The ``ebpf`` module contains the core ebpf code generation"""
+
+__all__ = ["EBPF", "LocalVar", "prandom", "ktime"]
+
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
@@ -1082,6 +1086,9 @@ class MemoryMap:
 
 class Map(ABC):
     """The base class for all maps"""
+    def __set_name__(self, owner, name):
+        self.filename = name
+
     @abstractmethod
     def init(self, ebpf):
         """create the map and initialize its values"""
@@ -1213,15 +1220,25 @@ class TemporaryDesc(RegisterDesc):
 class EBPF:
     """The base class for all EBPF programs
 
-    This class may even be instantiated directly, in which case you
-    can just issue the program before the it is loaded.
+    Usually this class is sub-classed, and the actual program is defined
+    in the overwritten `program` method. Then the program may be loaded into
+    the kernel. Alternatively, this class may even be instantiated directly,
+    in which case you can just issue the program before it is loaded.
+
+    After a program is loaded, its maps may be written to a bpf file system
+    using :meth:`pin_maps`. Those maps may be used at a later time, especially
+    also in a different task, if the parameter `load_maps` is given, in which
+    case we assume the program has already been loaded.
+
+    :param load_maps: a prefix to load pinned maps from. Must be existing in a
+        bpf file system, and usually ends in a "/".
     """
     stack = 0
     name = None
     license = None
 
     def __init__(self, prog_type=0, license=None, kern_version=0,
-                 name=None, subprograms=()):
+                 name=None, load_maps=None, subprograms=()):
         self.opcodes = []
         self.prog_type = prog_type
         if license is not None:
@@ -1232,7 +1249,7 @@ class EBPF:
                 self.name = self.__class__.__name__[:16]
         else:
             self.name = name
-        self.loaded = False
+        self.loaded = load_maps is not None
 
         self.mB = MemoryMap(self, "B")
         self.mH = MemoryMap(self, "H")
@@ -1257,9 +1274,23 @@ class EBPF:
         for p in subprograms:
             p.ebpf = self
 
-        for v in self.__class__.__dict__.values():
+        for k, v in self.__class__.__dict__.items():
             if isinstance(v, Map):
-                v.init(self)
+                if load_maps is None:
+                    v.init(self, None)
+                else:
+                    v.init(self, bpf.obj_get(load_maps + k))
+
+    def pin_maps(self, path):
+        """pin the maps of this program to files with prefix `path`
+
+        This path must be in a bpf file system, and all parent
+        directories must already exist, while the individual files
+        must not exist.
+        """
+        for k, v in self.__class__.__dict__.items():
+            if isinstance(v, Map):
+                bpf.obj_pin(path + k, getattr(self, v.name).fd)
 
     def program(self):
         """overwrite this method with your program while subclassing"""

@@ -99,8 +99,9 @@ class HashMap(Map):
         self.vars.append(ret)
         return ret
 
-    def init(self, ebpf):
-        fd = create_map(MapType.HASH, 1, 8, self.count)
+    def init(self, ebpf, fd):
+        if fd is None:
+            fd = create_map(MapType.HASH, 1, 8, self.count)
         for v in self.vars:
             getattr(ebpf, v.name).fd = fd
 

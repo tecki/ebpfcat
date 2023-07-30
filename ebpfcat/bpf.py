@@ -150,6 +150,15 @@ def prog_load(prog_type, insns, license,
     else:
         return fd
 
+def obj_pin(pathname, fd):
+    pn = pathname.encode("utf8")
+    bpf(6, "QI", addrof(pn), fd)
+
+def obj_get(pathname):
+    pn = pathname.encode("utf8")
+    fd, _ = bpf(7, "Q", addrof(pn))
+    return fd
+
 def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
                   repeat=1):
     if isinstance(data_in, int):
