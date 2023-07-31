@@ -28,7 +28,7 @@ from .terminals import EL4104, EL3164, EK1814, Skip
 from .ethercat import ECCmd, Terminal
 from .ebpfcat import (
     FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc,
-    EtherCatBase)
+    EtherCatBase, SterilePacket)
 from .ebpf import Instruction, Opcode as O
 
 
@@ -394,6 +394,23 @@ class Tests(TestCase):
         self.maxDiff = None
         self.assertEqual(sg.opcodes, [])
 
+
+class UnitTests(TestCase):
+    def test_sterile(self):
+        p = SterilePacket()
+        p.append(ECCmd.LRD, b"asdf", 0x33, 0x654321)
+        p.append_writer(ECCmd.FPRD, b"fdsa", 0x44, 0x55, 0x66)
+        self.assertEqual(p.assemble(0x77),
+                         H("2e10"
+                           "0000770000000280000000000000"
+                           "0a332143650004800000617364660000"
+                           "04445500660004000000666473610000"))
+        self.assertEqual(p.sterile(0x77),
+                         H("2e10"
+                           "0000770000000280000000000000"
+                           "0a332143650004800000617364660000"
+                           "00445500660004000000666473610000"))
+        self.assertEqual(p.on_the_fly, [(32, ECCmd.FPRD)])
 
 if __name__ == "__main__":
     main()

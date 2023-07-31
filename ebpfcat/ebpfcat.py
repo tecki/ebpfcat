@@ -264,9 +264,8 @@ class EBPFTerminal(Terminal):
                           self.position, self.pdo_in_off)
         if readwrite and self.pdo_out_sz:
             bases[2] = packet.size + packet.DATAGRAM_HEADER
-            packet.on_the_fly.append((packet.size, ECCmd.FPWR))
-            packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
-                          self.position, self.pdo_out_off)
+            packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
+                                 self.position, self.pdo_out_off)
         return bases
 
     def update(self, data):
@@ -376,6 +375,26 @@ class FastEtherCat(SimpleEtherCat):
                     v.cancel()
 
 
+class SterilePacket(Packet):
+    """a sterile packet has all its sets exchanges by NOPs"""
+    def __init__(self):
+        super().__init__()
+        self.on_the_fly = []  # list of sterilized positions
+
+    def append_writer(self, cmd, *args):
+        self.on_the_fly.append((self.size, cmd))
+        super().append(cmd, *args)
+
+    def sterile(self, index):
+        ret = bytearray(self.assemble(index))
+        for pos, cmd in self.on_the_fly:
+            ret[pos] = ECCmd.NOP.value
+        return ret
+
+    def activate(self, ebpf):
+        for pos, cmd in self.on_the_fly:
+            ebpf.pB[pos + self.ETHERNET_HEADER] = cmd.value
+
 class SyncGroupBase:
     missed_counter = 0
 
@@ -413,8 +432,7 @@ class SyncGroupBase:
             data = self.update_devices(data)
 
     def allocate(self):
-        self.packet = Packet()
-        self.packet.on_the_fly = []
+        self.packet = SterilePacket()
         self.terminals = {t: t.allocate(self.packet, rw)
                           for t, rw in self.terminals.items()}
 
@@ -450,18 +468,14 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     def program(self):
         with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as p:
-            for pos, cmd in self.packet.on_the_fly:
-                p.pB[pos + Packet.ETHERNET_HEADER] = cmd.value
+            self.packet.activate(p)
             for dev in self.devices:
                 dev.program()
         self.exit(XDPExitCode.TX)
 
     async def run(self):
         with self.ec.register_sync_group(self) as self.packet_index:
-            self.asm_packet = bytearray(
-                self.packet.assemble(self.packet_index))
-            for pos, cmd in self.packet.on_the_fly:
-                self.asm_packet[pos] = ECCmd.NOP.value
+            self.asm_packet = self.packet.sterile(self.packet_index)
             # prime the pump: two packets to get things going
             self.ec.send_packet(self.asm_packet)
             self.ec.send_packet(self.asm_packet)
