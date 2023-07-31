@@ -17,6 +17,7 @@
 
 """The high-level API for EtherCAT loops"""
 from asyncio import ensure_future, gather, sleep, wait_for, TimeoutError
+from collections import defaultdict
 from contextlib import asynccontextmanager, contextmanager
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
@@ -219,10 +220,15 @@ class Device(SubProgram):
     to serve a common goal. A terminal may be used by several
     devices. """
     def get_terminals(self):
-        ret = set()
+        """return the terminals used by this device
+
+        return a dictionary of terminal vs. a boolean indicating
+        whether access is read-write.
+        """
+        ret = defaultdict(lambda: False)
         for pv in self.__dict__.values():
             if isinstance(pv, (PacketVar, Struct)):
-                ret.add(pv.terminal)
+                ret[pv.terminal] |= pv.sm == 2
         return ret
 
     def fast_update(self):
@@ -246,7 +252,7 @@ class EBPFTerminal(Terminal):
         self.pdo_in_sz = int((inbits + 7) // 8)
         await self.write_pdo_sm()
 
-    def allocate(self, packet, readonly):
+    def allocate(self, packet, readwrite):
         """allocate space in packet for the pdos of this terminal
 
         return a dict that contains the starting offset for each
@@ -256,15 +262,11 @@ class EBPFTerminal(Terminal):
             bases[3] = packet.size + packet.DATAGRAM_HEADER
             packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
                           self.position, self.pdo_in_off)
-        if self.pdo_out_sz:
+        if readwrite and self.pdo_out_sz:
             bases[2] = packet.size + packet.DATAGRAM_HEADER
-            if readonly:
-                packet.on_the_fly.append((packet.size, ECCmd.FPWR))
-                packet.append(ECCmd.NOP, b"\0" * self.pdo_out_sz, 0,
-                              self.position, self.pdo_out_off)
-            else:
-                packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
-                              self.position, self.pdo_out_off)
+            packet.on_the_fly.append((packet.size, ECCmd.FPWR))
+            packet.append(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
+                          self.position, self.pdo_out_off)
         return bases
 
     def update(self, data):
@@ -316,7 +318,8 @@ class EtherXDP(XDP):
         self.exit(XDPExitCode.PASS)
 
 
-class SimpleEtherCat(EtherCat):
+class EtherCatBase:
+    # this class exists only to allow for testing
     def __init__(self, network, terminals):
         super().__init__(network)
         self.terminals = terminals
@@ -325,7 +328,12 @@ class SimpleEtherCat(EtherCat):
 
     async def scan_bus(self):
         await gather(*[t.initialize(-i, i + 1)
-                     for (i, t) in enumerate(self.terminals)])
+                       for (i, t) in enumerate(self.terminals)])
+
+
+class SimpleEtherCat(EtherCatBase, EtherCat):
+    pass
+
 
 class FastEtherCat(SimpleEtherCat):
     MAX_PROGS = 64
@@ -378,13 +386,15 @@ class SyncGroupBase:
         self.ec = ec
         self.devices = devices
 
-        terminals = set()
+        terminals = defaultdict(lambda: False)
         for dev in self.devices:
-            terminals.update(dev.get_terminals())
+            for t, rw in dev.get_terminals().items():
+                terminals[t] |= rw
             dev.sync_group = self
         # sorting is only necessary for test stability
-        self.terminals = {t: None for t in
-                          sorted(terminals, key=lambda t: t.position)}
+        self.terminals = {t: rw for t, rw in
+                          sorted(terminals.items(),
+                                 key=lambda item: item[0].position)}
 
     async def to_operational(self):
         await gather(*[t.to_operational() for t in self.terminals])
@@ -395,12 +405,18 @@ class SyncGroupBase:
             self.ec.send_packet(data)
             try:
                 data = await wait_for(self.ec.receive_index(self.packet_index),
-                                      timeout=0.01)
+                                      timeout=0.1)
             except TimeoutError:
                 self.missed_counter += 1
                 print("didn't receive in time", self.missed_counter)
                 continue
             data = self.update_devices(data)
+
+    def allocate(self):
+        self.packet = Packet()
+        self.packet.on_the_fly = []
+        self.terminals = {t: t.allocate(self.packet, rw)
+                          for t, rw in self.terminals.items()}
 
 
 class SyncGroup(SyncGroupBase):
@@ -423,11 +439,6 @@ class SyncGroup(SyncGroupBase):
         ensure_future(self.to_operational())
         return ret
 
-    def allocate(self):
-        self.packet = Packet()
-        self.terminals = {t: t.allocate(self.packet, False)
-                          for t in self.terminals}
-
 
 class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
@@ -447,7 +458,11 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     async def run(self):
         with self.ec.register_sync_group(self) as self.packet_index:
-            self.asm_packet = self.packet.assemble(self.packet_index)
+            self.asm_packet = bytearray(
+                self.packet.assemble(self.packet_index))
+            for pos, cmd in self.packet.on_the_fly:
+                self.asm_packet[pos] = ECCmd.NOP.value
+            # prime the pump: two packets to get things going
             self.ec.send_packet(self.asm_packet)
             self.ec.send_packet(self.asm_packet)
             await super().run()
@@ -469,9 +484,3 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     def cancel(self):
         self.task.cancel()
-
-    def allocate(self):
-        self.packet = Packet()
-        self.packet.on_the_fly = []
-        self.terminals = {t: t.allocate(self.packet, True)
-                          for t in self.terminals}
