@@ -76,14 +76,14 @@ class EK1101(EBPFTerminal):
 
 
 class EK1814(EBPFTerminal):
-    ch1 = PacketDesc(3, 0, 0)
-    ch2 = PacketDesc(3, 0, 1)
-    ch3 = PacketDesc(3, 0, 2)
-    ch4 = PacketDesc(3, 0, 3)
-    ch5 = PacketDesc(2, 0, 0)
-    ch6 = PacketDesc(2, 0, 1)
-    ch7 = PacketDesc(2, 0, 2)
-    ch8 = PacketDesc(2, 0, 3)
+    channel1 = ProcessDesc(0x6000, 1)
+    channel2 = ProcessDesc(0x6010, 1)
+    channel3 = ProcessDesc(0x6020, 1)
+    channel4 = ProcessDesc(0x6030, 1)
+    channel5 = ProcessDesc(0x7080, 1)
+    channel6 = ProcessDesc(0x7090, 1)
+    channel7 = ProcessDesc(0x70A0, 1)
+    channel8 = ProcessDesc(0x70B0, 1)
 
 
 class EL5042(EBPFTerminal):

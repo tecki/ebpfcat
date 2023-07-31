@@ -471,9 +471,8 @@ class Terminal:
                 idx, e, sm, u1, u2, u3 = unpack_from("<HBbBBH", s, i)
                 i += 8
                 for er in range(e):
-                    idx, subidx, k1, k2, bits, = unpack("<HBBBB2x", s[i:i+8])
-                    if sm > 0:
-                        yield idx, subidx, sm, bits
+                    idx, subidx, k1, k2, bits, = unpack_from("<HBBBB2x", s, i)
+                    yield idx, subidx, sm + 2, bits
                     i += 8
 
         async def parse_sdo(index, sm):
