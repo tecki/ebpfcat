@@ -54,6 +54,18 @@ class PacketDesc:
 
 
 class ProcessDesc:
+    """A process variable as described in the current mapping
+
+    This describes a process variable as found in the current
+    PDO mapping read from the terminal.
+
+    :param index: the index of the process variable, usually found
+        in the terminal's documentation
+    :param subindex: the subindex, also found in the documentation
+    :param size: usually the size is taken from the PDO mapping. A
+        different size as in a `struct` definition may be given here,
+        or the number of a bit for a bit field.
+    """
     def __init__(self, index, subindex, size=None):
         self.index = index
         self.subindex = subindex
@@ -129,6 +141,12 @@ class PacketVar(MemoryDesc):
 
 
 class Struct:
+    """Define repetitive structures in a PDO
+
+    Some terminals, especially multi-channel terminals,
+    have repetitive structures in their PDO. Use this to group
+    them.
+    """
     device = None
 
     def __new__(cls, *args):
