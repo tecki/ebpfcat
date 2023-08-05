@@ -278,41 +278,48 @@ class Tests(TestCase):
         sg.program()
         self.maxDiff = None
         self.assertEqual(sg.opcodes, [
-            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=2, src=0, off=0, imm=83),
-            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=23, imm=0),
-            Instruction(opcode=O.ST+O.B, dst=9, src=0, off=41, imm=5),
-            Instruction(opcode=O.ST+O.B, dst=9, src=0, off=54, imm=5),
-
-            Instruction(opcode=O.B+O.LD, dst=0, src=9, off=51, imm=0),
+            Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),
+            Instruction(opcode=O.LD+O.W, dst=0, src=1, off=4, imm=0),
+            Instruction(opcode=O.LD+O.W, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=103),
+            Instruction(opcode=O.REG+O.JLE, dst=0, src=2, off=24, imm=0),
+            Instruction(opcode=O.ST+O.B, dst=9, src=0, off=43, imm=5),
+            Instruction(opcode=O.ST+O.B, dst=9, src=0, off=84, imm=5),
+            # self.do = False
+            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=53, imm=0),
             Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-2),
-            Instruction(opcode=O.STX+O.B, dst=9, src=0, off=51, imm=0),
-            Instruction(opcode=O.B+O.LD, dst=0, src=9, off=51, imm=0),
+            Instruction(opcode=O.B+O.STX, dst=9, src=0, off=53, imm=0),
+            # self.do = True
+            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=53, imm=0),
             Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=1),
-            Instruction(opcode=O.STX+O.B, dst=9, src=0, off=51, imm=0),
-
-            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=51, imm=0),
-            Instruction(opcode=O.REG+O.LD, dst=2, src=9, off=80, imm=0),
-            Instruction(opcode=O.JEQ, dst=2, src=0, off=2, imm=0),
+            Instruction(opcode=O.B+O.STX, dst=9, src=0, off=53, imm=0),
+            # self.do = self.ai
+            Instruction(opcode=O.LD+O.REG, dst=2, src=9, off=68, imm=0),
+            Instruction(opcode=O.JEQ, dst=2, src=0, off=3, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=53, imm=0),
             Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=1),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=53, imm=0),
             Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-2),
-            Instruction(opcode=O.STX+O.B, dst=9, src=0, off=51, imm=0),
-
-            Instruction(opcode=O.B+O.LD, dst=0, src=9, off=38, imm=0),
-            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=1),
-            Instruction(opcode=O.STX+O.REG, dst=9, src=0, off=64, imm=0),
-
-            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=38, imm=0),
+            Instruction(opcode=O.B+O.STX, dst=9, src=0, off=53, imm=0),
+            # self.ao = self.di
+            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=40, imm=0),
+            Instruction(opcode=O.LONG+O.AND, dst=0, src=0, off=0, imm=1),
+            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=94, imm=0),
+            # with self.di:
+            Instruction(opcode=O.LD+O.B, dst=0, src=9, off=40, imm=0),
             Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=1),
             Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
-            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=80, imm=0),
-            Instruction(opcode=O.STX+O.REG, dst=9, src=0, off=64, imm=0),
+            # self.ao = self.ai
+            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=68, imm=0),
+            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=94, imm=0),
 
-            Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0)])
+            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0)
+            ])
+        self.task.cancel()
+        with self.assertRaises(CancelledError):
+            await self.task
 
     @skip
     def tet_two(self):
