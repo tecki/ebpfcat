@@ -18,7 +18,7 @@
 """The high-level API for EtherCAT loops"""
 from asyncio import ensure_future, gather, sleep, wait_for, TimeoutError
 from collections import defaultdict
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
@@ -238,6 +238,7 @@ class Device(SubProgram):
 class EBPFTerminal(Terminal):
     compatibility = None
     position_offset = {2: 0, 3: 0}
+    use_fmmu = True
 
     async def apply_eeprom(self):
         await super().apply_eeprom()
@@ -255,17 +256,28 @@ class EBPFTerminal(Terminal):
     def allocate(self, packet, readwrite):
         """allocate space in packet for the pdos of this terminal
 
-        return a dict that contains the starting offset for each
-        sync manager"""
+        return a dict that contains the datagram number and
+        starting offset therein for each sync manager.
+
+        Negative datagram numbers are for the future FMMU
+        datagrams."""
         bases = {}
-        if self.pdo_in_sz:
-            bases[3] = packet.size + packet.DATAGRAM_HEADER
-            packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
-                          self.position, self.pdo_in_off)
-        if readwrite and self.pdo_out_sz:
-            bases[2] = packet.size + packet.DATAGRAM_HEADER
-            packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
-                                 self.position, self.pdo_out_off)
+        if self.use_fmmu:
+            if self.pdo_in_sz:
+                bases[3] = (1, packet.fmmu_in_size)
+                packet.fmmu_in_size += self.pdo_in_sz
+            if readwrite and self.pdo_out_sz:
+                bases[2] = (2, packet.fmmu_out_size)
+                packet.fmmu_out_size += self.pdo_out_sz
+        else:
+            if self.pdo_in_sz:
+                bases[3] = (0, packet.size)
+                packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
+                              self.position, self.pdo_in_off)
+            if readwrite and self.pdo_out_sz:
+                bases[2] = (0, packet.size)
+                packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
+                                     self.position, self.pdo_out_off)
         return bases
 
     def update(self, data):
@@ -377,9 +389,13 @@ class FastEtherCat(SimpleEtherCat):
 
 class SterilePacket(Packet):
     """a sterile packet has all its sets exchanges by NOPs"""
+    next_logical_addr = 0  # global for all packets
+    logical_addr_inc = 0x800
+
     def __init__(self):
         super().__init__()
         self.on_the_fly = []  # list of sterilized positions
+        self.fmmu_out_size = self.fmmu_in_size = 0
 
     def append_writer(self, cmd, *args):
         self.on_the_fly.append((self.size, cmd))
@@ -391,6 +407,19 @@ class SterilePacket(Packet):
             ret[pos] = ECCmd.NOP.value
         return ret
 
+    def append_fmmu(self):
+        SterilePacket.next_logical_addr += 2 * self.logical_addr_inc
+        fmmu_in_pos = self.size
+        if self.fmmu_in_size:
+            self.append(ECCmd.LRD, b"\0" * self.fmmu_in_size, 0,
+                        self.next_logical_addr)
+        fmmu_out_pos = self.size
+        if self.fmmu_out_size:
+            self.append_writer(ECCmd.LWR, b"\0" * self.fmmu_out_size, 0,
+                               self.next_logical_addr + self.logical_addr_inc)
+        return (fmmu_in_pos, fmmu_out_pos, self.next_logical_addr,
+                self.next_logical_addr + self.logical_addr_inc)
+
     def activate(self, ebpf):
         for pos, cmd in self.on_the_fly:
             ebpf.pB[pos + self.ETHERNET_HEADER] = cmd.value
@@ -399,6 +428,7 @@ class SyncGroupBase:
     missed_counter = 0
 
     current_data = None
+    logical_in = logical_out = None
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
@@ -418,23 +448,49 @@ class SyncGroupBase:
     async def to_operational(self):
         await gather(*[t.to_operational() for t in self.terminals])
 
+    @asynccontextmanager
+    async def map_fmmu(self):
+        async with AsyncExitStack() as stack:
+            for terminal, bases in self.fmmu_maps.items():
+                base = bases.get(2)
+                if base is not None:
+                    await stack.enter_async_context(
+                            terminal.map_fmmu(base, True))
+                base = bases.get(3)
+                if base is not None:
+                    await stack.enter_async_context(
+                            terminal.map_fmmu(base, False))
+            yield
+
     async def run(self):
         data = self.asm_packet
-        while True:
-            self.ec.send_packet(data)
-            try:
-                data = await wait_for(self.ec.receive_index(self.packet_index),
-                                      timeout=0.1)
-            except TimeoutError:
-                self.missed_counter += 1
-                print("didn't receive in time", self.missed_counter)
-                continue
-            data = self.update_devices(data)
+        async with self.map_fmmu():
+            ensure_future(self.to_operational())
+            while True:
+                self.ec.send_packet(data)
+                try:
+                    data = await wait_for(
+                            self.ec.receive_index(self.packet_index),
+                            timeout=0.1)
+                except TimeoutError:
+                    self.missed_counter += 1
+                    print("didn't receive in time", self.missed_counter)
+                    continue
+                data = self.update_devices(data)
 
     def allocate(self):
         self.packet = SterilePacket()
-        self.terminals = {t: t.allocate(self.packet, rw)
-                          for t, rw in self.terminals.items()}
+        terminals = {t: t.allocate(self.packet, rw)
+                     for t, rw in self.terminals.items()}
+        in_pos, out_pos, logical_in, logical_out = self.packet.append_fmmu()
+        offsets = (0, in_pos, out_pos)
+        self.terminals = {t: {sm: offsets[base] + off + Packet.DATAGRAM_HEADER
+                              for sm, (base, off) in d.items()}
+                          for t, d in terminals.items()}
+        offsets = (None, logical_in, logical_out)
+        self.fmmu_maps = {t: {sm: offsets[base] + off
+                              for sm, (base, off) in d.items() if base != 0}
+                          for t, d in terminals.items()}
 
 
 class SyncGroup(SyncGroupBase):
@@ -453,9 +509,7 @@ class SyncGroup(SyncGroupBase):
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index)
-        ret = ensure_future(self.run())
-        ensure_future(self.to_operational())
-        return ret
+        return ensure_future(self.run())
 
 
 class FastSyncGroup(SyncGroupBase, XDP):
@@ -493,7 +547,6 @@ class FastSyncGroup(SyncGroupBase, XDP):
     def start(self):
         self.allocate()
         self.task = ensure_future(self.run())
-        ensure_future(self.to_operational())
         return self.task
 
     def cancel(self):

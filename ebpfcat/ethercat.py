@@ -26,7 +26,10 @@ Low-level access to EtherCAT
 
 this modules contains the code to actually talk to EtherCAT terminals.
 """
-from asyncio import ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue, Lock
+from asyncio import (
+    ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue,
+    Lock)
+from contextlib import asynccontextmanager
 from enum import Enum
 from itertools import count
 from random import randint
@@ -411,6 +414,8 @@ class Terminal:
         await self.set_state(0x11)
         await self.set_state(1)
 
+        self.fmmu_used = [None] * (await self.read(4, "B"))[0]
+
         self.mbx_cnt = 1
         self.mbx_lock = Lock()
 
@@ -609,7 +614,7 @@ class Terminal:
         return data[:4] + data2
 
     async def eeprom_write_one(self, start, data):
-        """read 2 bytes from the eeprom at `start`"""
+        """write 2 bytes to the eeprom at `start`"""
         while (await self.read(0x502, "H"))[0] & 0x8000:
             pass
         busy = 0x1000
@@ -837,3 +842,30 @@ class Terminal:
                 oe.name = data[8:].decode("utf8")
                 od.entries[i] = oe
         return ret
+
+    @asynccontextmanager
+    async def map_fmmu(self, logical, write):
+        """map the pdo to `logical` address.
+
+        :param write: a boolean indicating whether this is to be used
+            for writing (instead of reading).
+        """
+        if write:
+            offset = self.pdo_out_off
+            size = self.pdo_out_sz
+            start = 1
+        else:
+            offset = self.pdo_in_off
+            size = self.pdo_in_sz
+            start = len(self.fmmu_used)
+
+        index = start - self.fmmu_used[start::-1].index(None) - 1
+
+        self.fmmu_used[index] = logical
+        try:
+            await self.write(0x600 + 0x10 * index, "IHBBHBBB3x", logical, size,
+                             0, 7, offset, 0, 2 if write else 1, 1)
+            yield index
+            await self.write(0x60c + 0x10 * index, "B", 0)
+        finally:
+            self.fmmu_used[index] = None
