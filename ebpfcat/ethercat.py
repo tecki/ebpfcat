@@ -546,9 +546,10 @@ class Terminal:
         return ret
 
     async def get_state(self):
-        """get the current state"""
-        ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
-        return ret
+        """get the current state and error flags"""
+        state, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
+                                               0x0130, "H2xH")
+        return state, error
 
     async def to_operational(self, target=8):
         """try to bring the terminal to operational state

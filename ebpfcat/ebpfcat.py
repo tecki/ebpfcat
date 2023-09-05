@@ -504,6 +504,22 @@ class SyncGroup(SyncGroupBase):
             dev.update()
         return self.current_data
 
+    async def to_operational(self):
+        try:
+            r = await gather(*[t.to_operational() for t in self.terminals])
+
+            while True:
+                for t in self.terminals:
+                    state, error = await t.get_state()
+                    if state != 8:  # operational
+                        print(f"ERROR AL register {error}")
+                    await t.to_operational()
+                await sleep(1)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            raise
+
     def start(self):
         self.allocate()
         self.packet_index = SyncGroup.packet_index
