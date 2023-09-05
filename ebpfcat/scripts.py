@@ -90,6 +90,7 @@ async def info():
                                 print(f"        {r:10} {r:8X}")
                             else:
                                 print(f"        {r}")
+                                print(f"        {r!r}")
         if args.pdo:
             await t.to_operational(2)
             await t.parse_pdos()
