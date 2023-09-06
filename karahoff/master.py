@@ -1,4 +1,4 @@
-from asyncio import gather, sleep, Event
+from asyncio import gather, sleep, Event, get_event_loop
 from struct import pack, unpack
 
 from karabo.middlelayer import (
@@ -34,6 +34,9 @@ class EtherCATMasterBase(Device):
 
 
     async def onInitialization(self):
+        loop = get_event_loop()
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.01
         self.instances[self.deviceId] = self
         terms = [getattr(terminals, t, terminals.Generic)
                  for t in self.terminals]
@@ -70,6 +73,7 @@ class EtherCATSyncGroupBase(Device):
         self.ethercat = EtherCATMaster.instances[self.master]
         self.status = "waiting for devices"
         devs = await gather(*[getDevice(d) for d in self.devices])
+        self.status = "waiting for master to go to ON state"
         with master:
             await waitUntil(lambda: master.state == State.ON)
         self.devs = [EtherCATDevice.instances[d] for d in self.devices]
