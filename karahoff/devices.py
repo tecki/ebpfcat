@@ -263,3 +263,23 @@ class TurboVac(EtherCATDevice):
         self.device.pump_is_on = self.pump_term.pump_is_on
         self.device.speed = self.pump_term.speed
         self.device.current = self.pump_term.current
+
+
+class InficonDevice(Device):
+    value = TerminalVar()
+
+    def update(self):
+        pass
+
+class Inficon(EtherCATDevice):
+    gauge = String(accessMode=AccessMode.INITONLY)
+    value = Float(accessMode=AccessMode.READONLY)
+
+    @Slot()
+    async def join(self):
+        self.device = InficonDevice()
+        self.gauge_term = self.find_channel(self.gauge)
+        self.device.value = self.gauge_term.value
+
+    def update_properties(self):
+        self.value = self.device.value
