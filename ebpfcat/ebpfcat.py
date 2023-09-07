@@ -342,15 +342,15 @@ class EtherCatBase:
                        for (i, t) in enumerate(self.terminals)])
 
 
-class SimpleEtherCat(EtherCatBase, EtherCat):
+class SimpleEtherCat(EtherCat):
     pass
 
 
 class FastEtherCat(SimpleEtherCat):
     MAX_PROGS = 64
 
-    def __init__(self, network, terminals):
-        super().__init__(network, terminals)
+    def __init__(self, network):
+        super().__init__(network)
         self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 

@@ -52,8 +52,7 @@ async def info():
                                for i, t in zip(terminals, terms)))
     else:
         free = await ec.find_free_address()
-        term = Terminal()
-        term.ec = ec
+        term = Terminal(ec)
         await term.initialize(-args.terminal, free)
         terms = [term]
 
@@ -128,8 +127,7 @@ async def eeprom():
         await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
         terminals = [args.terminal]
 
-    t = Terminal()
-    t.ec = ec
+    t = Terminal(ec)
     await t.initialize(-args.terminal, 7)
 
     if args.read or args.check is not None:

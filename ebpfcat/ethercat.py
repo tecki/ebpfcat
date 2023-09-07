@@ -413,6 +413,8 @@ class EtherCat(Protocol):
 
 class Terminal:
     """Represent one terminal ("slave") in the loop"""
+    def __init__(self, ethercat):
+        self.ec = ethercat
 
     async def initialize(self, relative, absolute):
         """Initialize the terminal
