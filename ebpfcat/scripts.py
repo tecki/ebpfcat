@@ -124,7 +124,12 @@ async def eeprom():
     else:
         # former terminal: don't listen!
         # this does not work with all terminals, dunno why
-        await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
+        try:
+            await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
+        except EtherCatError:
+            print('fine: no not used yet')
+        else:
+            print('had to silence former listener')
         terminals = [args.terminal]
 
     t = Terminal(ec)
