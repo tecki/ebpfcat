@@ -375,7 +375,7 @@ class EtherCat(Protocol):
         p = Packet()
         p.append(ECCmd.APRD, b"\0\0", 0, 0, 0x10)
         ret = await self.roundtrip_packet(p)
-        no, = unpack("<h", ret[16:18])  # number of terminals
+        no, = unpack_from("<h", ret, 18)  # number of terminals
         return no
 
     async def find_free_address(self):
