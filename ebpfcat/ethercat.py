@@ -30,7 +30,7 @@ from asyncio import (
     ensure_future, Event, Future, gather, get_event_loop, Protocol, Queue,
     Lock)
 from contextlib import asynccontextmanager
-from enum import Enum
+from enum import Enum, IntEnum
 from itertools import count
 from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
@@ -128,6 +128,11 @@ class ODCmd(Enum):
    SEG_UP_REQ = 0x60
    ABORT = 0x80
 
+class EEPROM(IntEnum):
+    VENDOR_ID = 8
+    PRODUCT_CODE = 10
+    REVISION = 12
+    SERIAL_NO = 14
 
 class ObjectDescription:
     def __init__(self, terminal):
@@ -346,7 +351,7 @@ class EtherCat(Protocol):
         fmt = "<" + "".join(arg for arg in args[:-1] if isinstance(arg, str))
         out = pack(fmt, *[arg for arg in args if not isinstance(arg, str)])
         if args and isinstance(args[-1], str):
-            out += b"\0" * calcsize(args[-1])
+            out += b"\0" * calcsize("<" + args[-1])
             fmt += args[-1]
         if isinstance(data, int):
             out += b"\0" * data
@@ -381,6 +386,18 @@ class EtherCat(Protocol):
                 await self.roundtrip(ECCmd.FPRD, i, 0x10, "H", 0)
             except EtherCatError:
                 return i  # this address is not in use
+
+    async def eeprom_read(self, position, start):
+        """read 4 bytes from the eeprom of terminal `position` at `start`"""
+        while (await self.roundtrip(ECCmd.APRD, position,
+                                    0x502, "H"))[0] & 0x8000:
+            pass
+        await self.roundtrip(ECCmd.APWR, position, 0x502, "HI", 0x100, start)
+        busy = 0x8000
+        while busy & 0x8000:
+            busy, data = await self.roundtrip(ECCmd.APRD, position,
+                                              0x502, "H4xI")
+        return data
 
     def connection_made(self, transport):
         """start the send loop once the connection is made"""
@@ -425,8 +442,10 @@ class Terminal:
         async def read_eeprom(no, fmt):
             return unpack(fmt, await self._eeprom_read_one(no))
 
-        self.vendorId, self.productCode = await read_eeprom(8, "<II")
-        self.revisionNo, self.serialNo = await read_eeprom(0xc, "<II")
+        self.vendorId, self.productCode = \
+                await read_eeprom(EEPROM.VENDOR_ID, "<II")
+        self.revisionNo, self.serialNo = \
+                await read_eeprom(EEPROM.REVISION, "<II")
         # this reads the mailbox configuration from the EEPROM header.
         # weirdly this does not match with the later EEPROM SM configuration
         # self.mbx_in_off, self.mbx_in_sz, self.mbx_out_off, self.mbx_out_sz = \

@@ -22,7 +22,7 @@ async def scanbus():
     no = await ec.count()
     for i in range(no):
         r, = await ec.roundtrip(ECCmd.APRD, -i, 0x10, "H", 44)
-        print(i, r)
+        print(i, r, await ec.eeprom_read(-i, 0xa))
 
 @entrypoint
 async def info():
