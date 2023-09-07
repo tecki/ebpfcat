@@ -23,7 +23,7 @@ import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
-from .ethercat import ECCmd, EtherCat, Packet, Terminal
+from .ethercat import ECCmd, EtherCat, Packet, Terminal, EtherCatError
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
 from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
@@ -244,7 +244,7 @@ class EBPFTerminal(Terminal):
         await super().apply_eeprom()
         if (self.compatibility is not None and
                 (self.vendorId, self.productCode) not in self.compatibility):
-            raise RuntimeError(
+            raise EtherCatError(
                 f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
         await self.to_operational(2)
         self.pdos = {}
