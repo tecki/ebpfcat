@@ -380,8 +380,8 @@ class EtherCat(Protocol):
 
     async def find_free_address(self):
         """Find an absolute address currently not in use"""
-        no = await self.count()
-        for i in count(no):
+        while True:
+            i = randint(1000, 30000)
             try:
                 await self.roundtrip(ECCmd.FPRD, i, 0x10, "H", 0)
             except EtherCatError:
