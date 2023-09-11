@@ -28,7 +28,7 @@ from .terminals import EL4104, EL3164, EK1814, Skip
 from .ethercat import ECCmd, Terminal
 from .ebpfcat import (
     FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc,
-    EtherCatBase, SterilePacket)
+    SterilePacket)
 from .ebpf import Instruction, Opcode as O
 
 
@@ -42,7 +42,7 @@ class MockEtherCatBase:
             self.test_data = literal_eval(fin.read())
 
 
-class MockEtherCat(EtherCatBase, MockEtherCatBase):
+class MockEtherCat(MockEtherCatBase):
     async def roundtrip(self, *args, data=None):
         if self.expected is None:
             return
@@ -115,10 +115,10 @@ def mockAsync(f):
     return wrapper
 
 
-def mockTerminal(cls):
+def mockTerminal(ec, cls):
     class Mocked(MockTerminal, cls):
         pass
-    return Mocked()
+    return Mocked(ec)
 
 
 class Tests(TestCase):
@@ -129,10 +129,10 @@ class Tests(TestCase):
 
     @mockAsync
     async def test_input(self):
-        ti = mockTerminal(EL3164)
-        ec = MockEtherCat(self, [Skip(), ti])
-        ec.expected = [
-            (ECCmd.FPWR, 2, 0x800, 0x80),
+        ec = MockEtherCat(self)
+        ti = mockTerminal(ec, EL3164)
+        terms = [Skip(ec), ti]
+        ec.expected = [ (ECCmd.FPWR, 2, 0x800, 0x80),
             (ECCmd.FPWR, 2, 0x800, H('00108000260001018010800022000102'
                                      '00110000040000038011100020000104')),
             (ECCmd.FPWR, 2, 2070, 'B', 0),  # disable sync manager
@@ -143,7 +143,8 @@ class Tests(TestCase):
             (ECCmd.FPWR, 2, 2078, 'B', True),  # enable sync manager
         ]
         ec.results = [None, None, None, None, None, None, None, None]
-        await ec.scan_bus()
+        await gather(*[t.initialize(-i, i + 1)
+                       for (i, t) in enumerate(terms)])
         ai = AnalogInput(ti.channel1.value)
         SyncGroup.packet_index = 0x66554433
         sg = SyncGroup(ec, [ai])
@@ -182,8 +183,9 @@ class Tests(TestCase):
 
     @mockAsync
     async def test_output(self):
-        ti = mockTerminal(EL4104)
-        ec = MockEtherCat(self, [Skip(), Skip(), ti])
+        ec = MockEtherCat(self)
+        ti = mockTerminal(ec, EL4104)
+        terms = [Skip(ec), Skip(ec), ti]
         ec.expected = [
             (ECCmd.FPWR, 3, 0x800, 0x80),
             (ECCmd.FPWR, 3, 0x800, H('0010800026000101801080002200010'
@@ -196,7 +198,8 @@ class Tests(TestCase):
             (ECCmd.FPWR, 3, 2078, 'B', False),  # disable 0-length sync manager
         ]
         ec.results = [None, None, None, None, None, None, None, None]
-        await ec.scan_bus()
+        await gather(*[t.initialize(-i, i + 1)
+                       for (i, t) in enumerate(terms)])
         ao = AnalogOutput(ti.ch1_value)
         SyncGroup.packet_index = 0x55443322
         sg = SyncGroup(ec, [ao])
@@ -232,10 +235,6 @@ class Tests(TestCase):
 
     @mockAsync
     async def test_ebpf(self):
-        ti = mockTerminal(EL3164)
-        to = mockTerminal(EL4104)
-        td = mockTerminal(EK1814)
-
         class D(Device):
             ai = TerminalVar()
             ao = TerminalVar()
@@ -252,9 +251,16 @@ class Tests(TestCase):
 
         d = D()
 
-        ec = MockEtherCat(self, [td, ti, to])
+        terms = [td, ti, to]
+        ec = MockEtherCat(self)
         ec.expected = None
-        await ec.scan_bus()
+
+        ti = mockTerminal(ec, EL3164)
+        to = mockTerminal(ec, EL4104)
+        td = mockTerminal(ec, EK1814)
+
+        await gather(*[t.initialize(-i, i + 1)
+                       for (i, t) in enumerate(terms)])
         d.ai = ti.channel1.value
         d.ao = to.ch1_value
         d.di = td.channel1

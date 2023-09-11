@@ -329,19 +329,6 @@ class EtherXDP(XDP):
         self.exit(XDPExitCode.PASS)
 
 
-class EtherCatBase:
-    # this class exists only to allow for testing
-    def __init__(self, network, terminals):
-        super().__init__(network)
-        self.terminals = terminals
-        for t in terminals:
-            t.ec = self
-
-    async def scan_bus(self):
-        await gather(*[t.initialize(-i, i + 1)
-                       for (i, t) in enumerate(self.terminals)])
-
-
 class SimpleEtherCat(EtherCat):
     pass
 
