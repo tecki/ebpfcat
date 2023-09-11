@@ -1,5 +1,5 @@
 from struct import pack, unpack
-from time import time
+from time import time, monotonic
 
 from karabo.middlelayer import (
     AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32,
@@ -283,3 +283,62 @@ class Inficon(EtherCATDevice):
 
     def update_properties(self):
         self.value = self.device.value
+
+
+class ValveDevice(Device):
+    coil = TerminalVar()
+    openSwitch = TerminalVar()
+    closeSwitch = TerminalVar()
+
+    def update(self):
+        if (self.openSwitch != self.closeSwitch) \
+                and (self.openSwitch if self.coil else self.closeSwitch):
+            self.lastGood = monotonic()
+            self.coil = self.target
+        elif time() - self.lastGood < self.movingTime:
+            self.coil = self.target
+        else:
+            self.coil = self.target = self.safeState
+
+    def reset(self):
+        self.lastGood = monotonic()
+
+
+class Valve(EtherCATDevice):
+    coil = String(accessMode=AccessMode.INITONLY)
+    openSwitch = String(accessMode=AccessMode.INITONLY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY)
+    safeState = Bool(accessMode=AccessMode.INITONLY)
+    movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND)
+
+    @Slot()
+    async def join(self):
+        self.device = ValveDevice()
+        self.device.reset()
+        self.device.coil = self.find_channel(self.coil)
+        self.device.openSwitch = self.find_channel(self.openSwitch)
+        self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        self.device.movingTime = self.movingTime.value
+        self.device.target = self.device.safeState = self.safeState.value
+
+    @Slot()
+    async def open(self):
+        self.device.target = True
+
+    @Slot()
+    async def close(self):
+        self.device.target = False
+
+    @Slot()
+    async def reset(self):
+        self.device.reset()
+
+    def update_properties(self):
+        if self.device.openSwitch:
+            self.state = State.OPENED
+        elif self.device.closeSwitch:
+            self.state = State.CLOSED
+        elif self.device.coil:
+            self.state = State.OPENING
+        else:
+            self.state = State.CLOSING
