@@ -131,13 +131,13 @@ class MotorDevice(Device):
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
-            with self.low_switch | (self.ebpf.stmp < 0) as cond:
+            with (self.low_switch == 0) | (self.ebpf.stmp < 0) as Else:
                 pass
-            with cond.Else():
+            with Else:
                 self.ebpf.stmp = 0
-            with self.high_switch | (self.ebpf.stmp > 0) as cond:
+            with (self.high_switch == 0) | (self.ebpf.stmp > 0) as Else:
                 pass
-            with cond.Else():
+            with Else:
                 self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
 
@@ -174,8 +174,8 @@ class Motor(EtherCATDevice):
     high_switch = Bool(accessMode=AccessMode.READONLY)
     low_switch = Bool(accessMode=AccessMode.READONLY)
 
-    max_current = Int16(alias="M:8010:1")
-    max_voltage = Int16(alias="M:8010:3")
+    max_current = UInt16(alias="M:8010:1")
+    max_voltage = UInt16(alias="M:8010:3")
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 

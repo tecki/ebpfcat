@@ -3,9 +3,10 @@ from struct import pack, unpack
 
 from karabo.middlelayer import (
     Device, getDevice, String, AccessMode, VectorString, Slot, State,
-    waitUntil, Float, background, Simple, isSet)
+    waitUntil, Float, background, Simple, isSet, VectorHash, Assignment)
 from karabo import middlelayer as ml
 
+from ebpfcat.ethercat import EEPROM, EtherCatError
 from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat, Struct
 from ebpfcat import terminals, devices
 
@@ -24,32 +25,59 @@ formats = {
 }
 
 
+class TerminalTable(ml.Configurable):
+    name = ml.String()
+    classId = ml.String()
+    serialNo = ml.Int64()
+    vendorId = ml.Int32(displayType='hex')
+    productCode = ml.Int32(displayType='hex')
+
 
 class EtherCATMasterBase(Device):
     instances = {}
 
-    interface = String(accessMode=AccessMode.INITONLY)
-    terminals = VectorString(accessMode=AccessMode.INITONLY)
-    names = VectorString(accessMode=AccessMode.INITONLY)
+    interface = String(accessMode=AccessMode.INITONLY,
+                       assignment=Assignment.MANDATORY)
+    terminals = VectorHash(accessMode=AccessMode.INITONLY, rows=TerminalTable)
 
 
     async def onInitialization(self):
-        loop = get_event_loop()
-        loop.set_debug(True)
-        loop.slow_callback_duration = 0.01
+        #loop = get_event_loop()
+        #loop.set_debug(True)
+        #loop.slow_callback_duration = 0.01
         self.instances[self.deviceId] = self
-        terms = [getattr(terminals, t, terminals.Generic)
-                 for t in self.terminals]
-        self.terminals = [t.__name__ for t in terms]
-        self.the_terminals = [t() for t in terms]
-        for t, n in zip(self.the_terminals, self.names):
-            t.name = n
-        self.term_by_name = {k: v for k, v in
-                             zip(self.names, self.the_terminals)}
-        self.ethercat = self.EtherCat(self.interface, self.the_terminals)
+
+        term_by_serial = {row['serialNo']: row for row in self.terminals}
+        self.ethercat = self.EtherCat(self.interface)
         await self.ethercat.connect()
         self.state = State.INIT
-        await self.ethercat.scan_bus()
+        count = await self.ethercat.count()
+        terms = []
+        self.term_by_name = {}
+        for i in range(count):
+            serialNo = await self.ethercat.eeprom_read(-i, EEPROM.SERIAL_NO)
+            if serialNo == 0:
+                serialNo = -i
+            term = term_by_serial.get(serialNo)
+            vendor = await self.ethercat.eeprom_read(-i, EEPROM.VENDOR_ID)
+            code = await self.ethercat.eeprom_read(-i, EEPROM.PRODUCT_CODE)
+            if term is None:
+                terms.append(("", "", serialNo, vendor, code))
+            else:
+                t = getattr(terminals, term['classId'], terminals.Generic)(self.ethercat)
+                position = await self.ethercat.find_free_address()
+                try:
+                    await t.initialize(-i, position)
+                except EtherCatError:
+                    terms.append(
+                        (term['name'], "Incompatible", term['serialNo'],
+                         vendor, code))
+                else:
+                    terms.append(
+                        (term['name'], term['classId'], term['serialNo'],
+                         vendor, code))
+                    self.term_by_name[term['name']] = t
+        self.terminals = terms
         self.state = State.ON
 
 
@@ -145,7 +173,7 @@ class EtherCATDevice(Device):
                     term = term.terminal
                 else:
                     idx = attr.idx
-                state = await term.get_state()
+                state, error = await term.get_state()
                 if state < 2:
                     await term.set_state(2)
                 await term.sdo_write(pack(formats[type(attr)], value),
@@ -166,11 +194,9 @@ class EtherCATDevice(Device):
                     term = term.terminal
                 else:
                     idx = attr.idx
-                print("get state")
-                state = await term.get_state()
+                state, error = await term.get_state()
                 if state < 2:
                     await term.set_state(2)
-                print("set state")
                 ret = await term.sdo_read(idx, attr.subidx)
                 setattr(self, attr.key, *unpack(formats[type(attr)], ret))
 
