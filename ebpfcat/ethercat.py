@@ -535,10 +535,10 @@ class Terminal:
                     await parse(parse_sdo(0x1c13, 3)))
         else:
             return (
-                await parse(parse_eeprom(self.eeprom[50]))
-                if 50 in self.eeprom else 0,
                 await parse(parse_eeprom(self.eeprom[51]))
-                if 51 in self.eeprom else 0)
+                if 51 in self.eeprom else 0,
+                await parse(parse_eeprom(self.eeprom[50]))
+                if 50 in self.eeprom else 0)
 
     async def parse_pdo(self, index, sm):
         assignment = await self.sdo_read(index)
@@ -880,6 +880,8 @@ class Terminal:
             offset = self.pdo_in_off
             size = self.pdo_in_sz
             start = len(self.fmmu_used)
+        assert size is not None
+        assert offset is not None
 
         index = start - self.fmmu_used[start::-1].index(None) - 1
 

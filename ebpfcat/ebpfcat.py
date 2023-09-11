@@ -250,7 +250,9 @@ class EBPFTerminal(Terminal):
         self.pdos = {}
         outbits, inbits = await self.parse_pdos()
         self.pdo_out_sz = int((outbits + 7) // 8)
+        assert not self.pdo_out_sz or self.pdo_out_off
         self.pdo_in_sz = int((inbits + 7) // 8)
+        assert not self.pdo_in_sz or self.pdo_in_off
         await self.write_pdo_sm()
 
     def allocate(self, packet, readwrite):
