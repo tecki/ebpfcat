@@ -16,7 +16,8 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """The high-level API for EtherCAT loops"""
-from asyncio import ensure_future, gather, sleep, wait_for, TimeoutError
+from asyncio import (
+    CancelledError, ensure_future, gather, sleep, wait_for, TimeoutError)
 from collections import defaultdict
 from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
 import os
@@ -454,18 +455,25 @@ class SyncGroupBase:
     async def run(self):
         data = self.asm_packet
         async with self.map_fmmu():
-            ensure_future(self.to_operational())
-            while True:
-                self.ec.send_packet(data)
+            task = ensure_future(self.to_operational())
+            try:
+                while True:
+                    self.ec.send_packet(data)
+                    try:
+                        data = await wait_for(
+                                self.ec.receive_index(self.packet_index),
+                                timeout=0.1)
+                    except TimeoutError:
+                        self.missed_counter += 1
+                        print("didn't receive in time", self.missed_counter)
+                        continue
+                    data = self.update_devices(data)
+            finally:
+                task.cancel()
                 try:
-                    data = await wait_for(
-                            self.ec.receive_index(self.packet_index),
-                            timeout=0.1)
-                except TimeoutError:
-                    self.missed_counter += 1
-                    print("didn't receive in time", self.missed_counter)
-                    continue
-                data = self.update_devices(data)
+                    await task  # should be done quickly, just here to not forget
+                except CancelledError:
+                    pass
 
     def allocate(self):
         self.packet = SterilePacket()
@@ -494,20 +502,15 @@ class SyncGroup(SyncGroupBase):
         return self.current_data
 
     async def to_operational(self):
-        try:
-            r = await gather(*[t.to_operational() for t in self.terminals])
+        r = await gather(*[t.to_operational() for t in self.terminals])
 
-            while True:
-                for t in self.terminals:
-                    state, error = await t.get_state()
-                    if state != 8:  # operational
-                        print(f"ERROR AL register {error}")
-                    await t.to_operational()
-                await sleep(1)
-        except Exception:
-            import traceback
-            traceback.print_exc()
-            raise
+        while True:
+            for t in self.terminals:
+                state, error = await t.get_state()
+                if state != 8:  # operational
+                    print(f"ERROR AL register {error}")
+                await t.to_operational()
+            await sleep(1)
 
     def start(self):
         self.allocate()

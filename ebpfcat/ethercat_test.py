@@ -49,7 +49,7 @@ class MockEtherCat(MockEtherCatBase):
         if data is not None:
             args += data,
         if not self.expected:
-            self.test.fail(f"missing {args}")
+            self.test.fail(f"unexpected {args}")
         self.test.assertEqual(args, self.expected.pop(0))
         return self.results.pop(0)
 
@@ -131,6 +131,7 @@ class Tests(TestCase):
     async def test_input(self):
         ec = MockEtherCat(self)
         ti = mockTerminal(ec, EL3164)
+        ti.use_fmmu = False
         terms = [Skip(ec), ti]
         ec.expected = [ (ECCmd.FPWR, 2, 0x800, 0x80),
             (ECCmd.FPWR, 2, 0x800, H('00108000260001018010800022000102'
@@ -161,6 +162,7 @@ class Tests(TestCase):
               # in datagram
               "04000400801110000000123456780000000000000000000000000000"
               "3333"),  # padding
+            (ECCmd.FPRD, 2, 304, 'H2xH'),  # get_state
             0x66554433, # index
             ]
         ec.results = [
@@ -169,6 +171,7 @@ class Tests(TestCase):
               # in datagram
               "04000400801110000000123456780000000000000000000000000000"
               "3333"), # padding
+            (8, 0),  # return state 8, no error
             H("2a10"  # EtherCAT Header, length & type
               "0000334455660280000000000000"  # ID datagram
               # in datagram
@@ -176,6 +179,7 @@ class Tests(TestCase):
               "3333"), # padding
             ]
         await self.new_data()
+        self.assertFalse(ec.expected or ec.results)
         self.assertEqual(ai.value, 0x7856)
         self.task.cancel()
         with self.assertRaises(CancelledError):
@@ -185,6 +189,7 @@ class Tests(TestCase):
     async def test_output(self):
         ec = MockEtherCat(self)
         ti = mockTerminal(ec, EL4104)
+        ti.use_fmmu = False
         terms = [Skip(ec), Skip(ec), ti]
         ec.expected = [
             (ECCmd.FPWR, 3, 0x800, 0x80),
@@ -204,31 +209,30 @@ class Tests(TestCase):
         SyncGroup.packet_index = 0x55443322
         sg = SyncGroup(ec, [ao])
         self.task = sg.start()
+        self.assertFalse(ec.expected or ec.results)
         ec.expected = [
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
               "0500030000110800000000000000000000000000" # out datagram
               "33333333333333333333"), # padding
             0x55443322,  # index
-            ]
-        ec.results = [
-            (8, 0),  # return state 8, no error
-            ]
-        ao.value = 0x9876
-        await self.new_data()
-        ec.expected = [
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
-              "0500070000110800000076980000000000000000" # out datagram
+              "0500030000110800000076980000000000000000" # out datagram
               "33333333333333333333"), # padding
+            (ECCmd.FPRD, 3, 304, 'H2xH'),  # get_state
             0x55443322,  # index
             ]
         ec.results = [
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
-              "0500070000110800000076980000000000000000" # out datagram
+              "0500030000110800000000000000000000000000" # out datagram
               "33333333333333333333"), # padding
+            (8, 0),  # return state 8, no error
             ]
+        ao.value = 0x9876
+        await self.new_data()
+        self.assertFalse(ec.expected or ec.results)
         self.task.cancel()
         with self.assertRaises(CancelledError):
             await self.task
@@ -251,14 +255,17 @@ class Tests(TestCase):
 
         d = D()
 
-        terms = [td, ti, to]
         ec = MockEtherCat(self)
         ec.expected = None
 
         ti = mockTerminal(ec, EL3164)
         to = mockTerminal(ec, EL4104)
         td = mockTerminal(ec, EK1814)
+        ti.use_fmmu = False
+        to.use_fmmu = False
+        td.use_fmmu = False
 
+        terms = [td, ti, to]
         await gather(*[t.initialize(-i, i + 1)
                        for (i, t) in enumerate(terms)])
         d.ai = ti.channel1.value
@@ -280,6 +287,7 @@ class Tests(TestCase):
             ]
         self.task = sg.start()
         await self.new_data()
+        self.assertFalse(ec.expected or ec.results)
         self.assertEqual(ec.rsg, sg)
         sg.program()
         self.maxDiff = None
