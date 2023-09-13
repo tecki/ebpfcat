@@ -6,36 +6,21 @@ from karabo.middlelayer import (
     Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, MetricPrefix, Bool)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
-
-
-class AnalogInputDevice(Device):
-    value = TerminalVar()
-
-    current_value = DeviceVar()
-
-    def update(self):
-        self.i += 1
-        if self.i == 100:
-            self.i = 0
-            self.owner.value = self.value
-
-    def program(self):
-        self.current_value = self.value
+from ebpfcat.devices import AnalogInput as AnalogInputDevice
 
 
 class AnalogInput(EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY)
 
-    value = Int32(accessMode=AccessMode.READONLY)
+    value = Double(accessMode=AccessMode.READONLY)
 
     def update_properties(self):
-        self.value = self.device.current_value
+        self.value = self.device.value * self.the_channel.factor + self.the_channel.offset
 
     @Slot()
     async def join(self):
-        self.device = AnalogInputDevice()
-        self.device.owner = self
-        self.device.value = self.find_channel(self.channel)
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogInputDevice(self.the_channel.value)
         self.state = State.ON
 
 
