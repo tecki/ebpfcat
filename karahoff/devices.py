@@ -2,8 +2,9 @@ from struct import pack, unpack
 from time import time, monotonic
 
 from karabo.middlelayer import (
-    AccessMode, String, Int16, Slot, isSet, background, State, Float, Int32,
-    Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, MetricPrefix, Bool)
+    AccessMode, Assignment, String, Int16, Slot, isSet, background, State,
+    Float, Int32, Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, unit,
+    MetricPrefix, Bool)
 from .master import EtherCATDevice
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
@@ -16,6 +17,25 @@ class AnalogInput(EtherCATDevice):
 
     def update_properties(self):
         self.value = self.device.value * self.the_channel.factor + self.the_channel.offset
+
+    @Slot()
+    async def join(self):
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogInputDevice(self.the_channel.value)
+        self.state = State.ON
+
+
+class PressureGauge(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY)
+
+    value = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.BAR,
+                   metricPrefixSymbol=MetricPrefix.MILLI)
+    factor = Double(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
+    offset = Double(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
+
+    def update_properties(self):
+        semiRaw = self.device.value * self.the_channel.factor + self.the_channel.offset
+        self.value = 10 ** (semiRaw * self.factor + self.offset) * unit.mbar
 
     @Slot()
     async def join(self):
