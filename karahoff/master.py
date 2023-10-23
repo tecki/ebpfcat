@@ -109,7 +109,7 @@ class EtherCATSyncGroupBase(Device):
             d.syncGroup = self
             d.ethercat = self.ethercat
         self.status = "waiting for devices to join"
-        await gather(*[d.join() for d in devs])
+        await gather(*[d.join() for d in self.devs])
         self.status = "ready"
 
     @Slot(allowedStates={State.OFF})

@@ -18,7 +18,6 @@ class AnalogInput(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.value * self.the_channel.factor + self.the_channel.offset
 
-    @Slot()
     async def join(self):
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
@@ -37,7 +36,6 @@ class PressureGauge(EtherCATDevice):
         semiRaw = self.device.value * self.the_channel.factor + self.the_channel.offset
         self.value = 10 ** (semiRaw * self.factor + self.offset) * unit.mbar
 
-    @Slot()
     async def join(self):
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
@@ -68,7 +66,6 @@ class AnalogOutput(EtherCATDevice):
         self.device.set_value = int(value)
         self.value = value
 
-    @Slot()
     async def join(self):
         self.device = AnalogOutputDevice()
         self.device.owner = self
@@ -90,7 +87,6 @@ class Counter(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.current_value
 
-    @Slot()
     async def join(self):
         self.state = State.ON
         self.device = CounterDevice()
@@ -187,7 +183,6 @@ class Motor(EtherCATDevice):
     target = Double(unitSymbol=Unit.METER,
                     metricPrefixSymbol=MetricPrefix.MILLI)
 
-    @Slot()
     async def join(self):
         self.device = MotorDevice()
         self.motor_term = self.find_channel(self.motor)
@@ -259,7 +254,6 @@ class TurboVac(EtherCATDevice):
         self.current = self.device.current
         self.speed = self.device.speed
 
-    @Slot()
     async def join(self):
         self.device = TurboVacDevice()
         self.pump_term = self.find_channel(self.pump)
@@ -280,7 +274,6 @@ class Inficon(EtherCATDevice):
     gauge = String(accessMode=AccessMode.INITONLY)
     value = Float(accessMode=AccessMode.READONLY)
 
-    @Slot()
     async def join(self):
         self.device = InficonDevice()
         self.gauge_term = self.find_channel(self.gauge)
@@ -316,7 +309,6 @@ class Valve(EtherCATDevice):
     safeState = Bool(accessMode=AccessMode.INITONLY)
     movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND)
 
-    @Slot()
     async def join(self):
         self.device = ValveDevice()
         self.device.reset()
