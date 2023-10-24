@@ -90,12 +90,12 @@ class Counter(EtherCATDevice):
     async def join(self):
         self.state = State.ON
         self.device = CounterDevice()
-        self.lasttime = time()
+        self.lasttime = monotonic()
 
     def update_properties(self):
         lc = self.counter
         self.counter = self.device.counter
-        t1 = time()
+        t1 = monotonic()
         self.frequency = (self.counter - lc) / (t1 - self.lasttime)
         self.lasttime = t1
 
