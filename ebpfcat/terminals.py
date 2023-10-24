@@ -64,6 +64,8 @@ class EL3164(EBPFTerminal):
     class Channel(Struct):
         attrs = ProcessDesc(0x6000, 1, 'H')
         value = ProcessDesc(0x6000, 0x11)
+        factor = 10/32767
+        offset = 0
 
     channel1 = Channel(0)
     channel2 = Channel(0x10)

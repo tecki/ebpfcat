@@ -37,6 +37,7 @@ class AnalogInput(Device):
     data = TerminalVar()
 
     def __init__(self, data):
+        super().__init__()
         self.data = data
 
     def program(self):

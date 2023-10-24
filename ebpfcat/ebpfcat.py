@@ -517,7 +517,8 @@ class SyncGroup(SyncGroupBase):
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index)
-        return ensure_future(self.run())
+        self.task = ensure_future(self.run())
+        return self.task
 
 
 class FastSyncGroup(SyncGroupBase, XDP):
