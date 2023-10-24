@@ -287,18 +287,21 @@ class ValveDevice(Device):
     coil = TerminalVar()
     openSwitch = TerminalVar()
     closeSwitch = TerminalVar()
+    error = False
 
     def update(self):
         if (self.openSwitch != self.closeSwitch) \
                 and (self.openSwitch if self.coil else self.closeSwitch):
             self.lastGood = monotonic()
             self.coil = self.target
-        elif time() - self.lastGood < self.movingTime:
+        elif monotonic() - self.lastGood < self.movingTime:
             self.coil = self.target
         else:
+            self.error = True
             self.coil = self.target = self.safeState
 
     def reset(self):
+        self.error = False
         self.lastGood = monotonic()
 
 
@@ -318,20 +321,22 @@ class Valve(EtherCATDevice):
         self.device.movingTime = self.movingTime.value
         self.device.target = self.device.safeState = self.safeState.value
 
-    @Slot()
+    @Slot(allowedStates={State.CLOSED, State.CLOSING})
     async def open(self):
         self.device.target = True
 
-    @Slot()
+    @Slot(allowedStates={State.OPENED, State.OPENING})
     async def close(self):
         self.device.target = False
 
-    @Slot()
+    @Slot(allowedStates={State.ERROR})
     async def reset(self):
         self.device.reset()
 
     def update_properties(self):
-        if self.device.openSwitch:
+        if self.device.error:
+            self.state = State.ERROR
+        elif self.device.openSwitch:
             self.state = State.OPENED
         elif self.device.closeSwitch:
             self.state = State.CLOSED
