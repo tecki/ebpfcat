@@ -177,6 +177,8 @@ class Motor(EtherCATDevice):
 
     max_current = UInt16(alias="M:8010:1")
     max_voltage = UInt16(alias="M:8010:3")
+    coil_resistance = UInt16(alias="M:8010:4")
+    motor_emf = UInt16(alias="M:8010:5")
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 
@@ -206,7 +208,8 @@ class Motor(EtherCATDevice):
         self.state = State.OFF
 
     def update_properties(self):
-        self.current_position = self.device.current_position * self.stepSize.value
+        self.current_position = \
+            self.device.current_position * self.stepSize.value
         self.current_velocity = self.device.velocity
         self.qstatus = self.device.qstatus
         self.low_switch = self.device.low_switch
