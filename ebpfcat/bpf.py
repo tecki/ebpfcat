@@ -29,6 +29,7 @@ try:
     SYS_BPF = {
         "armv7l": 386,
         "x86_64": 321,
+        "aarch64": 280,
         }[machine()]
 except KeyError:
     print("Unknown platform:", machine())
