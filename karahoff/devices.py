@@ -6,6 +6,7 @@ from karabo.middlelayer import (
     Float, Int32, Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, unit,
     MetricPrefix, Bool)
 from .master import EtherCATDevice
+from ebpfcat.ebpf import ktime
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
 
@@ -75,14 +76,22 @@ class AnalogOutput(EtherCATDevice):
 
 class CounterDevice(Device):
     counter = DeviceVar()
+    maxtime = DeviceVar(size='Q')
+    lasttime = DeviceVar(size='Q')
 
     def program(self):
         self.counter += 1
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            with self.ebpf.tmp - self.lasttime > self.maxtime:
+                self.maxtime = self.ebpf.tmp - self.lasttime
+            self.lasttime = self.ebpf.tmp
 
 
 class Counter(EtherCATDevice):
     counter = Int32(accessMode=AccessMode.READONLY, defaultValue=0)
     frequency = Float(accessMode=AccessMode.READONLY)
+    maxtime = Int32(displayedName='laber', accessMode=AccessMode.READONLY)
 
     def update_properties(self):
         self.value = self.device.current_value
@@ -94,10 +103,16 @@ class Counter(EtherCATDevice):
 
     def update_properties(self):
         lc = self.counter
-        self.counter = self.device.counter
         t1 = monotonic()
+        if t1 - self.lasttime < 0.1:
+            return
+        self.counter = self.device.counter
         self.frequency = (self.counter - lc) / (t1 - self.lasttime)
         self.lasttime = t1
+
+        if self.device.maxtime < 1000000000:
+            self.maxtime = self.device.maxtime
+        self.device.maxtime = 0
 
 
 class MotorDevice(Device):
