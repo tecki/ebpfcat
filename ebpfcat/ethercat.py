@@ -714,7 +714,7 @@ class Terminal:
                         print(f"expected CoE package, got {type}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
-                    raise EtherCatError(f"expected {odcmd.value}, got {odcmd}")
+                    raise EtherCatError(f"expected {odcmd.value}, got {rodcmd}")
                 ret.append(data[offset:])
                 offset = 6
             return b"".join(ret)
@@ -849,11 +849,15 @@ class Terminal:
         for od in ret.values():
             od.entries = {}
             for i in range(1 if od.maxSub > 0 else 0, od.maxSub + 1):
-                data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
-                                              "HBB", od.index, i, 7)
+                try:
+                    data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
+                                                  "HBB", od.index, i, 7)
+                except EtherCatError as e:
+                    print(f"problems reading SDO {od.index:x}:{i:x}:", e)
+                    continue
                 oe = ObjectEntry(od)
                 oe.valueInfo, dataType, oe.bitLength, oe.objectAccess = \
-                        unpack("<HHHH", data[:8])
+                        unpack("<BxHHH", data[:8])
                 if dataType == 0:
                     continue
                 assert i == oe.valueInfo
