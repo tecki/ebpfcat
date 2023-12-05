@@ -251,6 +251,76 @@ class Motor(EtherCATDevice):
         self.device.target = int(self.target // self.stepSize)
 
 
+class BronkhorstDevice(Device):
+    setpoint = TerminalVar()
+    current_value = TerminalVar()
+    controller_output = TerminalVar()
+    control_byte = TerminalVar()
+    status_word = TerminalVar()
+    set_setpoint = 0
+
+    def update(self):
+        self.setpoint = self.set_setpoint
+        self.control_byte = 1
+
+
+class Bronkhorst(EtherCATDevice):
+    terminal = String(accessMode=AccessMode.INITONLY)
+    setpoint = UInt16()
+    current_value = UInt16(accessMode=AccessMode.READONLY)
+    controller_output = Int16(accessMode=AccessMode.READONLY)
+
+    @Int16()
+    async def setpoint(self, value):
+        if not isSet(value):
+            return
+        self.device.set_setpoint = int(value)
+        self.setpoint = value
+
+    def update_properties(self):
+        self.current_value = self.device.current_value
+        self.controller_output = self.device.controller_output
+
+    async def join(self):
+        self.the_terminal = self.find_channel(self.terminal)
+        self.device = BronkhorstDevice()
+        self.device.owner = self
+        self.device.setpoint = self.the_terminal.setpoint
+        self.device.current_value = self.the_terminal.current_value
+        self.device.controller_output = self.the_terminal.controller_output
+        self.device.control_byte = self.the_terminal.control_byte
+        self.device.status_word = self.the_terminal.status_word
+        await self.set_mode(None)
+
+    async def set_mode(self, mode):
+        if mode is not None:
+            await self.the_terminal.sdo_write(pack('B', mode), 0x6423, 1)
+        mode, = unpack('B', await self.the_terminal.sdo_read(0x6423, 1))
+        print('mode is', mode)
+        self.state = {
+                0x80: State.RUNNING,
+                0x83: State.CLOSED,
+                0x84: State.OFF,
+                0x88: State.OPENED
+                }.get(mode, State.UNKNOWN)
+
+    @Slot()
+    async def start(self):
+        await self.set_mode(0x80)
+
+    @Slot()
+    async def stop(self):
+        await self.set_mode(0x84)
+
+    @Slot()
+    async def open(self):
+        await self.set_mode(0x88)
+
+    @Slot()
+    async def close(self):
+        await self.set_mode(0x83)
+
+
 class TurboVacDevice(Device):
     pump_on = TerminalVar()
     reset = TerminalVar()
