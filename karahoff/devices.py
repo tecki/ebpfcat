@@ -11,6 +11,19 @@ from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
 
 
+class GenericInput(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY)
+    value = Double(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        self.value = self.device.value
+
+    async def join(self):
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogInputDevice(self.the_channel)
+        self.state = State.ON
+
+
 class AnalogInput(EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY)
 
@@ -61,7 +74,7 @@ class AnalogOutput(EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY)
 
     @Int16()
-    def value(self, value):
+    async def value(self, value):
         if not isSet(value):
             return
         self.device.set_value = int(value)
