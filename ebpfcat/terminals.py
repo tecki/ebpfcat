@@ -41,7 +41,7 @@ class EL1808(EBPFTerminal):
 
 
 class EL2808(EBPFTerminal):
-    compatibility = {(2, 184037458)}
+    compatibility = {(2, 184037458), (2, 0x7D83052)}
 
     ch1 = PacketDesc(2, 0, 0)
     ch2 = PacketDesc(2, 0, 1)
