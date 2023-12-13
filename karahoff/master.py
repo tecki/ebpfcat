@@ -47,7 +47,7 @@ class EtherCATMasterBase(Device):
         #loop.slow_callback_duration = 0.01
         self.instances[self.deviceId] = self
 
-        term_by_serial = {row['serialNo']: row for row in self.terminals}
+        term_by_serial = {row['serialNo'].value: row for row in self.terminals}
         self.ethercat = self.EtherCat(self.interface)
         await self.ethercat.connect()
         self.state = State.INIT
@@ -127,7 +127,7 @@ class EtherCATSyncGroupBase(Device):
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
                         d.update_properties()
-                await sleep(self.interval)
+                await sleep(self.interval.value)
             self.syncGroup.task.result()  # raises error if problem
         except Exception as e:
             self.status = str(e)
