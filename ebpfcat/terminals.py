@@ -122,7 +122,8 @@ class EL7041(EBPFTerminal):
     compatibility = {(2, 461451346), (2, 461455442), (2, 460795986)}
     velocity = ProcessDesc(0x7010, 0x21, "h")
     enable = ProcessDesc(0x7010, 1)
-    status = ProcessDesc(0x6000, 1, "H")
+    reduced_current = ProcessDesc(0x7010, 3)
+    status = ProcessDesc(0x6010, 1, "H")
     low_switch = ProcessDesc(0x6010, 0xc)
     high_switch = ProcessDesc(0x6010, 0xd)
 
