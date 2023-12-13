@@ -134,62 +134,53 @@ class MotorDevice(Device):
     low_switch = TerminalVar()
     high_switch = TerminalVar()
     enable = TerminalVar()
+    reduced_current = TerminalVar()
 
     tstatus = TerminalVar()
 
-    current_position = DeviceVar('q')
-    set_enable = DeviceVar('B', write=True)
-    max_velocity = DeviceVar('i', write=True)
-    max_acceleration = DeviceVar('i', write=True)
-    target = DeviceVar('q', write=True)
-    proportional = DeviceVar('q', write=True)
-    current_velocity = DeviceVar('q')
-    qstatus = DeviceVar('H')
+    set_enable = DeviceVar('B')
+    deadband_exceeded = DeviceVar('b')
+    max_velocity = DeviceVar('i')
+    max_acceleration = DeviceVar('i')
+    deadband = DeviceVar('q')
+    target = DeviceVar('q')
+    proportional = DeviceVar('q')
 
     def program(self):
         self.enable = self.set_enable
-        self.current_position = self.encoder
-        self.qstatus = self.tstatus
+        with abs(self.target - self.encoder) < self.deadband as Else:
+            self.reduced_current = True
+        with Else:
+            self.reduced_current = False
+            self.deadband_exceeded = 1
         with self.ebpf.stmp:
-            self.ebpf.stmp = (self.proportional * (self.target - self.encoder)) >> 16
-            #with self.ebpf.tmp > self.velocity + self.max_acceleration:
-            #    self.ebpf.tmp = self.velocity + self.max_acceleration
-            #with self.ebpf.tmp + self.max_acceleration < self.velocity:
-            #    self.ebpf.tmp = self.velocity - self.max_acceleration
+            self.ebpf.stmp = (self.proportional
+                              * (self.target - self.encoder)) >> 16
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
-            with (self.low_switch == 0) | (self.ebpf.stmp < 0) as Else:
-                pass
-            with Else:
-                self.ebpf.stmp = 0
-            with (self.high_switch == 0) | (self.ebpf.stmp > 0) as Else:
-                pass
-            with Else:
+            with (((self.low_switch != 0) & (self.ebpf.stmp < 0))
+                  |  ((self.high_switch != 0) & (self.ebpf.stmp > 0))):
                 self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
-
-    def whatever(self):
-        with self.low_switch, self.velocity < 0:
-            self.velocity = 0
-        with self.high_switch, self.velocity > 0:
-            self.velocity = 0
 
 
 class Motor(EtherCATDevice):
     motor = String(accessMode=AccessMode.INITONLY)
     encoder = String(accessMode=AccessMode.INITONLY)
     proportional = Float(accessMode=AccessMode.INITONLY)
-    max_velocity = Int16()
-    stepSize = Double(
+    stepSize = Float(
         accessMode=AccessMode.INITONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    deadband = Float(
+        defaultValue=1e-3,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
-    current_position = Double(
+    actualPosition = Float(
         accessMode=AccessMode.READONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-    current_velocity = Int32(accessMode=AccessMode.READONLY)
+    actualVelocity = Int32(accessMode=AccessMode.READONLY)
 
     motor_term = encoder_term = None
 
@@ -200,8 +191,8 @@ class Motor(EtherCATDevice):
     frequency = UInt8(alias="E:8008:13", defaultValue=0)
     polynomial = UInt32(alias="E:8008:11", defaultValue=67)
 
-    high_switch = Bool(accessMode=AccessMode.READONLY)
-    low_switch = Bool(accessMode=AccessMode.READONLY)
+    isCWLimit = Bool(accessMode=AccessMode.READONLY)
+    isCCWLimit = Bool(accessMode=AccessMode.READONLY)
 
     max_current = UInt16(alias="M:8010:1")
     max_voltage = UInt16(alias="M:8010:3")
@@ -210,8 +201,9 @@ class Motor(EtherCATDevice):
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 
-    target = Double(unitSymbol=Unit.METER,
-                    metricPrefixSymbol=MetricPrefix.MILLI)
+    targetVelocity = Int32(defaultValue=1000)
+    targetPosition = Float(unitSymbol=Unit.METER,
+                           metricPrefixSymbol=MetricPrefix.MILLI)
 
     async def join(self):
         self.device = MotorDevice()
@@ -223,32 +215,41 @@ class Motor(EtherCATDevice):
         self.device.tstatus = self.motor_term.status
         self.device.encoder = self.encoder_term.position
         self.device.enable = self.motor_term.enable
+        self.device.reduced_current = self.motor_term.reduced_current
         self.terminals = dict(M=self.motor_term, E=self.encoder_term)
         await self.sdo_set()
 
     @Slot()
-    async def on(self):
-        if isSet(self.target):
-            self.state = State.ON
+    async def move(self):
+        self.device.target = int(self.targetPosition // self.stepSize)
+        self.device.set_enable = True
+
+    @Slot()
+    async def stop(self):
+        self.device.target = self.device.encoder
 
     @Slot()
     async def off(self):
-        self.state = State.OFF
+        self.device.set_enable = False
 
     def update_properties(self):
-        self.current_position = \
-            self.device.current_position * self.stepSize.value
-        self.current_velocity = self.device.velocity
-        self.qstatus = self.device.qstatus
-        self.low_switch = self.device.low_switch
-        self.high_switch = self.device.high_switch
+        self.actualPosition = self.device.encoder * self.stepSize.value
+        self.actualVelocity = self.device.velocity
+        self.qstatus = self.device.tstatus
+        self.isCCWLimit = self.device.low_switch
+        self.isCWLimit = self.device.high_switch
 
-        self.device.set_enable = bool(self.state == State.ON)
-        if self.state != State.ON:
-            return
-        self.device.max_velocity = self.max_velocity
+        if not self.device.enable:
+            self.state = State.OFF
+        elif self.device.velocity != 0 and self.device.deadband_exceeded:
+            self.state = State.MOVING
+        else:
+            self.state = State.ON
+        self.device.deadband_exceeded = 0
+
+        self.device.max_velocity = self.targetVelocity
         self.device.proportional = int(self.proportional * (1 << 16))
-        self.device.target = int(self.target // self.stepSize)
+        self.device.deadband = int(self.deadband // self.stepSize)
 
 
 class BronkhorstDevice(Device):
