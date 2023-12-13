@@ -145,3 +145,12 @@ class TurboVac(EBPFTerminal):
 class Inficon(EBPFTerminal):
     compatibility = {(0x644, 0x21)}
     value = ProcessDesc(0xF640, 0x11, "f")
+
+
+class Bronkhorst(EBPFTerminal):
+    compatibility = {(0x56B, 7)}
+    setpoint = ProcessDesc(0x7402, 1)
+    current_value = ProcessDesc(0x7400, 1)
+    controller_output = ProcessDesc(0x6410, 1)
+    control_byte = ProcessDesc(0x6425, 1)
+    status_word = ProcessDesc(0x6427, 1)
