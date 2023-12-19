@@ -53,6 +53,15 @@ class EL2808(EBPFTerminal):
     channel8 = ProcessDesc(0x7070, 1)
 
 
+class EL2624(EBPFTerminal):
+    compatibility = {(2, 171978834)}
+
+    channel1 = ProcessDesc(0x7000, 1)
+    channel2 = ProcessDesc(0x7010, 1)
+    channel3 = ProcessDesc(0x7020, 1)
+    channel4 = ProcessDesc(0x7030, 1)
+
+
 class EL4104(EBPFTerminal):
     ch1_value = ProcessDesc(0x7000, 1)
     ch2_value = ProcessDesc(0x7010, 1)
