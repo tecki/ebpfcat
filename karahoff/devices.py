@@ -12,7 +12,8 @@ from ebpfcat.devices import AnalogInput as AnalogInputDevice
 
 
 class GenericInput(EtherCATDevice):
-    channel = String(accessMode=AccessMode.INITONLY)
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
     value = Double(accessMode=AccessMode.READONLY)
 
     def update_properties(self):
@@ -25,7 +26,8 @@ class GenericInput(EtherCATDevice):
 
 
 class AnalogInput(EtherCATDevice):
-    channel = String(accessMode=AccessMode.INITONLY)
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
 
     value = Double(accessMode=AccessMode.READONLY)
 
@@ -39,12 +41,15 @@ class AnalogInput(EtherCATDevice):
 
 
 class PressureGauge(EtherCATDevice):
-    channel = String(accessMode=AccessMode.INITONLY)
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
 
     value = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.BAR,
                    metricPrefixSymbol=MetricPrefix.MILLI)
-    factor = Double(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
-    offset = Double(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
+    factor = Double(accessMode=AccessMode.INITONLY,
+                    assignment=Assignment.MANDATORY)
+    offset = Double(accessMode=AccessMode.INITONLY,
+                    assignment=Assignment.MANDATORY)
 
     def update_properties(self):
         semiRaw = self.device.value * self.the_channel.factor + self.the_channel.offset
@@ -66,12 +71,12 @@ class AnalogOutputDevice(Device):
         self.value = int(self.owner.value)
 
     def program(self):
-        print("programmed")
         self.value = self.set_value
 
 
 class AnalogOutput(EtherCATDevice):
-    channel = String(accessMode=AccessMode.INITONLY)
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
 
     @Int16()
     async def value(self, value):
@@ -167,8 +172,10 @@ class MotorDevice(Device):
 
 
 class Motor(EtherCATDevice):
-    motor = String(accessMode=AccessMode.INITONLY)
-    encoder = String(accessMode=AccessMode.INITONLY)
+    motor = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    encoder = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
     proportional = Float(accessMode=AccessMode.INITONLY)
     stepSize = Float(
         accessMode=AccessMode.INITONLY,
@@ -266,7 +273,8 @@ class BronkhorstDevice(Device):
 
 
 class Bronkhorst(EtherCATDevice):
-    terminal = String(accessMode=AccessMode.INITONLY)
+    terminal = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
     setpoint = UInt16()
     current_value = UInt16(accessMode=AccessMode.READONLY)
     controller_output = Int16(accessMode=AccessMode.READONLY)
@@ -336,7 +344,8 @@ class TurboVacDevice(Device):
 
 
 class TurboVac(EtherCATDevice):
-    pump = String(accessMode=AccessMode.INITONLY)
+    pump = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
     speed = UInt16(accessMode=AccessMode.READONLY)
     current = UInt16(accessMode=AccessMode.READONLY)
 
@@ -373,7 +382,8 @@ class InficonDevice(Device):
         pass
 
 class Inficon(EtherCATDevice):
-    gauge = String(accessMode=AccessMode.INITONLY)
+    gauge = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
     value = Float(accessMode=AccessMode.READONLY)
 
     async def join(self):
@@ -408,11 +418,15 @@ class ValveDevice(Device):
 
 
 class Valve(EtherCATDevice):
-    coil = String(accessMode=AccessMode.INITONLY)
-    openSwitch = String(accessMode=AccessMode.INITONLY)
-    closeSwitch = String(accessMode=AccessMode.INITONLY)
-    safeState = Bool(accessMode=AccessMode.INITONLY)
-    movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND)
+    coil = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY,
+                        assignment=Assignment.MANDATORY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY,
+                         assignment=Assignment.MANDATORY)
+    safeState = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
+    movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
+                       defaultValue=3)
 
     async def join(self):
         self.device = ValveDevice()
