@@ -20,6 +20,7 @@ from asyncio import (
     CancelledError, ensure_future, gather, sleep, wait_for, TimeoutError)
 from collections import defaultdict
 from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
+from enum import Enum
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
@@ -267,18 +268,18 @@ class EBPFTerminal(Terminal):
         bases = {}
         if self.use_fmmu:
             if self.pdo_in_sz:
-                bases[3] = (1, packet.fmmu_in_size)
+                bases[3] = (BaseType.FMMU_IN, packet.fmmu_in_size)
                 packet.fmmu_in_size += self.pdo_in_sz
             if readwrite and self.pdo_out_sz:
-                bases[2] = (2, packet.fmmu_out_size)
+                bases[2] = (BaseType.FMMU_OUT, packet.fmmu_out_size)
                 packet.fmmu_out_size += self.pdo_out_sz
         else:
             if self.pdo_in_sz:
-                bases[3] = (0, packet.size)
+                bases[3] = (BaseType.NO_FMMU, packet.size)
                 packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
                               self.position, self.pdo_in_off)
             if readwrite and self.pdo_out_sz:
-                bases[2] = (0, packet.size)
+                bases[2] = (BaseType.NO_FMMU, packet.size)
                 packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
                                      self.position, self.pdo_out_off)
         return bases
@@ -378,7 +379,7 @@ class FastEtherCat(SimpleEtherCat):
 
 
 class SterilePacket(Packet):
-    """a sterile packet has all its sets exchanges by NOPs"""
+    """a sterile packet has all its sets exchanged by NOPs"""
     next_logical_addr = 0  # global for all packets
     logical_addr_inc = 0x800
 
@@ -413,6 +414,11 @@ class SterilePacket(Packet):
     def activate(self, ebpf):
         for pos, cmd in self.on_the_fly:
             ebpf.pB[pos + self.ETHERNET_HEADER] = cmd.value
+
+class BaseType(Enum):
+    NO_FMMU = 0
+    FMMU_IN = 1
+    FMMU_OUT = 2
 
 class SyncGroupBase:
     missed_counter = 0
@@ -480,13 +486,16 @@ class SyncGroupBase:
         terminals = {t: t.allocate(self.packet, rw)
                      for t, rw in self.terminals.items()}
         in_pos, out_pos, logical_in, logical_out = self.packet.append_fmmu()
-        offsets = (0, in_pos, out_pos)
+        offsets = {BaseType.NO_FMMU: 0,
+                   BaseType.FMMU_IN: in_pos, BaseType.FMMU_OUT: out_pos}
         self.terminals = {t: {sm: offsets[base] + off + Packet.DATAGRAM_HEADER
                               for sm, (base, off) in d.items()}
                           for t, d in terminals.items()}
-        offsets = (None, logical_in, logical_out)
+        offsets = {BaseType.FMMU_IN: logical_in,
+                   BaseType.FMMU_OUT: logical_out}
         self.fmmu_maps = {t: {sm: offsets[base] + off
-                              for sm, (base, off) in d.items() if base != 0}
+                              for sm, (base, off) in d.items()
+                              if base is not BaseType.NO_FMMU}
                           for t, d in terminals.items()}
 
 
