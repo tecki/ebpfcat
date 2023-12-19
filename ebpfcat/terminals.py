@@ -30,27 +30,27 @@ class Skip(EBPFTerminal):
 class EL1808(EBPFTerminal):
     compatibility = {(2, 118501458)}
 
-    ch1 = PacketDesc(3, 0, 0)
-    ch2 = PacketDesc(3, 0, 1)
-    ch3 = PacketDesc(3, 0, 2)
-    ch4 = PacketDesc(3, 0, 3)
-    ch5 = PacketDesc(3, 0, 4)
-    ch6 = PacketDesc(3, 0, 5)
-    ch7 = PacketDesc(3, 0, 6)
-    ch8 = PacketDesc(3, 0, 7)
+    channel1 = ProcessDesc(0x6000, 1)
+    channel2 = ProcessDesc(0x6010, 1)
+    channel3 = ProcessDesc(0x6020, 1)
+    channel4 = ProcessDesc(0x6030, 1)
+    channel5 = ProcessDesc(0x6040, 1)
+    channel6 = ProcessDesc(0x6050, 1)
+    channel7 = ProcessDesc(0x6060, 1)
+    channel8 = ProcessDesc(0x6070, 1)
 
 
 class EL2808(EBPFTerminal):
     compatibility = {(2, 184037458), (2, 0x7D83052)}
 
-    ch1 = PacketDesc(2, 0, 0)
-    ch2 = PacketDesc(2, 0, 1)
-    ch3 = PacketDesc(2, 0, 2)
-    ch4 = PacketDesc(2, 0, 3)
-    ch5 = PacketDesc(2, 0, 4)
-    ch6 = PacketDesc(2, 0, 5)
-    ch7 = PacketDesc(2, 0, 6)
-    ch8 = PacketDesc(2, 0, 7)
+    channel1 = ProcessDesc(0x7000, 1)
+    channel2 = ProcessDesc(0x7010, 1)
+    channel3 = ProcessDesc(0x7020, 1)
+    channel4 = ProcessDesc(0x7030, 1)
+    channel5 = ProcessDesc(0x7040, 1)
+    channel6 = ProcessDesc(0x7050, 1)
+    channel7 = ProcessDesc(0x7060, 1)
+    channel8 = ProcessDesc(0x7070, 1)
 
 
 class EL4104(EBPFTerminal):

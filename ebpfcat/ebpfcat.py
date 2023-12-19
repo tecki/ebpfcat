@@ -25,7 +25,8 @@ import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
-from .ethercat import ECCmd, EtherCat, Packet, Terminal, EtherCatError
+from .ethercat import (
+    ECCmd, EtherCat, Packet, Terminal, EtherCatError, SyncManager)
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
 from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
@@ -77,7 +78,7 @@ class ProcessDesc:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        index = self.index + instance.position_offset[3]
+        index = self.index + instance.position_offset[SyncManager.IN]
         if isinstance(instance, Struct):
             terminal = instance.terminal
             device = instance.device
@@ -159,7 +160,7 @@ class Struct:
 class StructDesc:
     def __init__(self, struct, sm3=0, sm2=0):
         self.struct = struct
-        self.position_offset = {2: sm2, 3: sm3}
+        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3}
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -230,7 +231,7 @@ class Device(SubProgram):
         ret = defaultdict(lambda: False)
         for pv in self.__dict__.values():
             if isinstance(pv, (PacketVar, Struct)):
-                ret[pv.terminal] |= pv.sm == 2
+                ret[pv.terminal] |= pv.sm is SyncManager.OUT
         return ret
 
     def fast_update(self):
@@ -239,7 +240,7 @@ class Device(SubProgram):
 
 class EBPFTerminal(Terminal):
     compatibility = None
-    position_offset = {2: 0, 3: 0}
+    position_offset = {SyncManager.OUT: 0, SyncManager.IN: 0}
     use_fmmu = True
 
     async def apply_eeprom(self):
@@ -268,18 +269,19 @@ class EBPFTerminal(Terminal):
         bases = {}
         if self.use_fmmu:
             if self.pdo_in_sz:
-                bases[3] = (BaseType.FMMU_IN, packet.fmmu_in_size)
+                bases[SyncManager.IN] = (BaseType.FMMU_IN, packet.fmmu_in_size)
                 packet.fmmu_in_size += self.pdo_in_sz
             if readwrite and self.pdo_out_sz:
-                bases[2] = (BaseType.FMMU_OUT, packet.fmmu_out_size)
+                bases[SyncManager.OUT] = (BaseType.FMMU_OUT,
+                                          packet.fmmu_out_size)
                 packet.fmmu_out_size += self.pdo_out_sz
         else:
             if self.pdo_in_sz:
-                bases[3] = (BaseType.NO_FMMU, packet.size)
+                bases[SyncManager.IN] = (BaseType.NO_FMMU, packet.size)
                 packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
                               self.position, self.pdo_in_off)
             if readwrite and self.pdo_out_sz:
-                bases[2] = (BaseType.NO_FMMU, packet.size)
+                bases[SyncManager.OUT] = (BaseType.NO_FMMU, packet.size)
                 packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
                                      self.position, self.pdo_out_off)
         return bases
@@ -448,11 +450,11 @@ class SyncGroupBase:
     async def map_fmmu(self):
         async with AsyncExitStack() as stack:
             for terminal, bases in self.fmmu_maps.items():
-                base = bases.get(2)
+                base = bases.get(SyncManager.OUT)
                 if base is not None:
                     await stack.enter_async_context(
                             terminal.map_fmmu(base, True))
-                base = bases.get(3)
+                base = bases.get(SyncManager.IN)
                 if base is not None:
                     await stack.enter_async_context(
                             terminal.map_fmmu(base, False))

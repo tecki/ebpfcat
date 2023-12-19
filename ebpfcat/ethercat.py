@@ -134,6 +134,10 @@ class EEPROM(IntEnum):
     REVISION = 12
     SERIAL_NO = 14
 
+class SyncManager(Enum):
+    OUT = 2
+    IN = 3
+
 class ObjectDescription:
     def __init__(self, terminal):
         self.terminal = terminal
@@ -494,14 +498,15 @@ class Terminal:
             i = 0
             bitpos = 0
             while i < len(s):
+                # third parameter seems to indicate the sync manager, sometimes
                 idx, e, sm, u1, u2, u3 = unpack_from("<HBbBBH", s, i)
                 i += 8
                 for er in range(e):
                     idx, subidx, k1, k2, bits, = unpack_from("<HBBBB2x", s, i)
-                    yield idx, subidx, sm + 2, bits
+                    yield idx, subidx, bits
                     i += 8
 
-        async def parse_sdo(index, sm):
+        async def parse_sdo(index):
             assignment = await self.sdo_read(index)
             bitpos = 0
             for i in range(0, len(assignment), 2):
@@ -511,11 +516,11 @@ class Terminal:
                 count, = unpack("B", await self.sdo_read(pdo, 0))
                 for j in range(1, count + 1):
                     bits, subidx, idx = unpack("<BBH", await self.sdo_read(pdo, j))
-                    yield idx, subidx, sm, bits
+                    yield idx, subidx, bits
 
-        async def parse(func):
+        async def parse(func, sm):
             bitpos = 0
-            async for idx, subidx, sm, bits in func:
+            async for idx, subidx, bits in func:
                 if idx == 0:
                     pass
                 elif bits < 8:
@@ -531,34 +536,14 @@ class Terminal:
 
         self.pdos = {}
         if self.has_mailbox():
-            return (await parse(parse_sdo(0x1c12, 2)),
-                    await parse(parse_sdo(0x1c13, 3)))
+            return (await parse(parse_sdo(0x1c12), SyncManager.OUT),
+                    await parse(parse_sdo(0x1c13), SyncManager.IN))
         else:
             return (
-                await parse(parse_eeprom(self.eeprom[51]))
+                await parse(parse_eeprom(self.eeprom[51]), SyncManager.OUT)
                 if 51 in self.eeprom else 0,
-                await parse(parse_eeprom(self.eeprom[50]))
+                await parse(parse_eeprom(self.eeprom[50]), SyncManager.IN)
                 if 50 in self.eeprom else 0)
-
-    async def parse_pdo(self, index, sm):
-        assignment = await self.sdo_read(index)
-        bitpos = 0
-        for i in range(0, len(assignment), 2):
-            pdo, = unpack_from("<H", assignment, i)
-            count, = unpack("B", await self.sdo_read(pdo, 0))
-            for j in range(1, count + 1):
-                bits, subidx, idx = unpack("<BBH", await self.sdo_read(pdo, j))
-                if idx == 0:
-                    pass
-                elif bits < 8:
-                    self.pdos[idx, subidx] = (sm, bitpos // 8, bitpos % 8)
-                elif (bits % 8) or (bitpos % 8):
-                    raise RuntimeError("PDOs must be byte-aligned")
-                else:
-                    self.pdos[idx, subidx] = \
-                        (sm, bitpos // 8,
-                         {8: "B", 16: "H", 32: "I", 64: "Q"}[bits])
-                bitpos += bits
 
     async def set_state(self, state):
         """try to set the state, and return the new state"""
