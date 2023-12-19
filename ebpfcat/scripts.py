@@ -45,7 +45,7 @@ async def info():
 
     if args.terminal is None:
         terminals = range(await ec.count())
-        terms = [Terminal() for t in terminals]
+        terms = [Terminal(ec) for t in terminals]
         for t in terms:
             t.ec = ec
         await asyncio.gather(*(t.initialize(-i, i + 7)
