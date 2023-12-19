@@ -19,7 +19,8 @@ class GenericInput(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.value
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel)
         self.state = State.ON
@@ -34,7 +35,8 @@ class AnalogInput(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.value * self.the_channel.factor + self.the_channel.offset
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
         self.state = State.ON
@@ -64,7 +66,8 @@ class PressureGauge(EtherCATDevice):
             self.set_state(State.ON)
             self.value = 10**(semiRaw * self.factor + self.offset) * unit.mbar
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
         self.state = State.ON
@@ -94,7 +97,8 @@ class AnalogOutput(EtherCATDevice):
         self.device.set_value = int(value)
         self.value = value
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.device = AnalogOutputDevice()
         self.device.owner = self
         self.device.value = self.find_channel(self.channel)
@@ -123,7 +127,8 @@ class Counter(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.current_value
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.state = State.ON
         self.device = CounterDevice()
         self.lasttime = monotonic()
@@ -221,7 +226,8 @@ class Motor(EtherCATDevice):
     targetPosition = Float(unitSymbol=Unit.METER,
                            metricPrefixSymbol=MetricPrefix.MILLI)
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.device = MotorDevice()
         self.motor_term = self.find_channel(self.motor)
         self.encoder_term = self.find_channel(self.encoder)
@@ -299,7 +305,8 @@ class Bronkhorst(EtherCATDevice):
         self.current_value = self.device.current_value
         self.controller_output = self.device.controller_output
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.the_terminal = self.find_channel(self.terminal)
         self.device = BronkhorstDevice()
         self.device.owner = self
@@ -374,7 +381,8 @@ class TurboVac(EtherCATDevice):
         self.current = self.device.current
         self.speed = self.device.speed
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.device = TurboVacDevice()
         self.pump_term = self.find_channel(self.pump)
         self.device.pump_on = self.pump_term.pump_on
@@ -395,7 +403,8 @@ class Inficon(EtherCATDevice):
                    assignment=Assignment.MANDATORY)
     value = Float(accessMode=AccessMode.READONLY)
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.device = InficonDevice()
         self.gauge_term = self.find_channel(self.gauge)
         self.device.value = self.gauge_term.value
@@ -437,7 +446,8 @@ class Valve(EtherCATDevice):
     movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
                        defaultValue=3)
 
-    async def join(self):
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
         self.device = ValveDevice()
         self.device.reset()
         self.device.coil = self.find_channel(self.coil)

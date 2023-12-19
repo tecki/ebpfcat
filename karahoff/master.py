@@ -1,4 +1,5 @@
 from asyncio import gather, sleep, Event, get_event_loop
+from itertools import chain
 from struct import pack, unpack
 
 from karabo.middlelayer import (
@@ -106,14 +107,12 @@ class EtherCATSyncGroupBase(Device):
         with master:
             await waitUntil(lambda: master.state == State.ON)
         self.devs = [EtherCATDevice.instances[d] for d in self.devices]
-        for d in self.devs:
-            d.syncGroup = self
-            d.ethercat = self.ethercat
         self.status = "waiting for devices to join"
-        await gather(*[d.join() for d in self.devs])
+        await gather(*[d.join(self) for d in self.devs])
         self.status = "ready"
-        self.syncGroup = self.SyncGroup(self.ethercat.ethercat,
-                                        [d.device for d in self.devs])
+        self.syncGroup = self.SyncGroup(
+            self.ethercat.ethercat,
+            list(chain.from_iterable(d.get_devices() for d in self.devs)))
         self.state = State.OFF
         self.syncGroup.start()
         self.state = State.ON
@@ -152,6 +151,9 @@ class EtherCATDevice(Device):
         super().__init__(configuration)
         self.instances[self.deviceId] = self
         self.state_change = Event()
+
+    def get_devices(self):
+        return (self.device,)
 
     def set_state(self, state):
         if state != self.state:
@@ -222,3 +224,8 @@ class EtherCATDevice(Device):
 
     def update_properties(self):
         pass
+
+    async def join(self, syncGroup):
+        """Let this device join a sync group"""
+        self.syncGroup = syncGroup
+        self.ethercat = syncGroup.ethercat
