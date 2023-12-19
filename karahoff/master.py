@@ -151,6 +151,13 @@ class EtherCATDevice(Device):
     def __init__(self, configuration):
         super().__init__(configuration)
         self.instances[self.deviceId] = self
+        self.state_change = Event()
+
+    def set_state(self, state):
+        if state != self.state:
+            self.state = state
+        self.state_change.set()
+        self.state_change.clear()
 
     @classmethod
     def sdo_setter(cls, attr):

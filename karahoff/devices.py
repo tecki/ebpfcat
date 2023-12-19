@@ -50,10 +50,19 @@ class PressureGauge(EtherCATDevice):
                     assignment=Assignment.MANDATORY)
     offset = Double(accessMode=AccessMode.INITONLY,
                     assignment=Assignment.MANDATORY)
+    minimum = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    maximum = Double(accessMode=AccessMode.INITONLY, defaultValue=8)
 
     def update_properties(self):
-        semiRaw = self.device.value * self.the_channel.factor + self.the_channel.offset
-        self.value = 10 ** (semiRaw * self.factor + self.offset) * unit.mbar
+        semiRaw = self.device.value * self.the_channel.factor \
+                + self.the_channel.offset
+        if semiRaw < self.minimum.value:
+            self.set_state(State.OFF)
+        elif semiRaw > self.maximum.value:
+            self.set_state(State.ERROR)
+        else:
+            self.set_state(State.ON)
+            self.value = 10**(semiRaw * self.factor + self.offset) * unit.mbar
 
     async def join(self):
         self.the_channel = self.find_channel(self.channel)
