@@ -8,7 +8,7 @@ from karabo.middlelayer import (
 from .master import EtherCATDevice
 from ebpfcat.ebpf import ktime
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
-from ebpfcat.devices import AnalogInput as AnalogInputDevice
+from ebpfcat.devices import AnalogInput as AnalogInputDevice, DigitalOutput
 
 
 class GenericInput(EtherCATDevice):
@@ -42,7 +42,33 @@ class AnalogInput(EtherCATDevice):
         self.state = State.ON
 
 
-class PressureGauge(EtherCATDevice):
+class OptionalSwitchMixin(EtherCATDevice):
+    switchChannel = String(accessMode=AccessMode.INITONLY)
+
+    def get_devices(self):
+        ret = super().get_devices()
+        if self.switchChannel:
+            return ret + (self.switchDevice,)
+        else:
+            return ret
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        if self.switchChannel:
+            self.switchDevice = DigitalOutput(
+                self.find_channel(self.switchChannel))
+
+    @Slot()
+    async def on(self):
+        self.switchDevice.value = True
+        await self.state_change.wait()
+
+    @Slot()
+    async def off(self):
+        self.switchDevice.value = False
+        await self.state_change.wait()
+
+class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY,
                      assignment=Assignment.MANDATORY)
 
