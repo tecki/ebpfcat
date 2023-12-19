@@ -7,7 +7,7 @@ from karabo.middlelayer import (
     MetricPrefix, Bool)
 from .master import EtherCATDevice
 from ebpfcat.ebpf import ktime
-from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar
+from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar, Struct
 from ebpfcat.devices import AnalogInput as AnalogInputDevice, DigitalOutput
 
 
@@ -42,6 +42,29 @@ class AnalogInput(EtherCATDevice):
         self.state = State.ON
 
 
+class FusedOutput(Device):
+    data = TerminalVar()
+    error = TerminalVar()
+    value = False
+
+    def update(self):
+        if self.was_error or self.error:
+            self.data = False
+            self.was_error = True
+        else:
+            self.data = self.value
+
+
+def optionalFusedOutput(channel):
+    if isinstance(channel, Struct):
+        ret = FusedOutput()
+        ret.data = channel.value
+        ret.error = channel.overcurrent
+        return ret
+    else:
+        return DigitalOutput(channel)
+
+
 class OptionalSwitchMixin(EtherCATDevice):
     switchChannel = String(accessMode=AccessMode.INITONLY)
 
@@ -55,8 +78,19 @@ class OptionalSwitchMixin(EtherCATDevice):
     async def join(self, syncGroup):
         await super().join(syncGroup)
         if self.switchChannel:
-            self.switchDevice = DigitalOutput(
+            self.switchDevice = optionalFusedOutput(
                 self.find_channel(self.switchChannel))
+            self.switchDevice.was_error = False
+        else:
+            self.switchDevice = None
+
+    def update_properties(self):
+        if self.switchDevice is None:
+            return True
+        if self.switchDevice.was_error:
+            self.set_state(State.ERROR)
+            return False
+        return True
 
     @Slot()
     async def on(self):
@@ -67,6 +101,12 @@ class OptionalSwitchMixin(EtherCATDevice):
     async def off(self):
         self.switchDevice.value = False
         await self.state_change.wait()
+
+    @Slot()
+    async def reset(self):
+        if self.switchDevice is not None:
+            self.switchDevice.was_error = False
+
 
 class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY,
@@ -82,6 +122,8 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
     maximum = Double(accessMode=AccessMode.INITONLY, defaultValue=8)
 
     def update_properties(self):
+        if not super().update_properties():
+            return
         semiRaw = self.device.value * self.the_channel.factor \
                 + self.the_channel.offset
         if semiRaw < self.minimum.value:
@@ -423,6 +465,7 @@ class InficonDevice(Device):
 
     def update(self):
         pass
+
 
 class Inficon(EtherCATDevice):
     gauge = String(accessMode=AccessMode.INITONLY,
