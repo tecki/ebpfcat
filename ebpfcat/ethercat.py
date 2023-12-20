@@ -467,18 +467,22 @@ class Terminal:
         self.mbx_in_off = self.mbx_in_sz = None
         self.pdo_out_off = self.pdo_out_sz = None
         self.pdo_in_off = self.pdo_in_sz = None
+        self.pdo_in_addr = 0x818
+        self.pdo_out_addr = 0x810
         for i in range(0, len(self.eeprom[41]), 8):
             offset, size, mode = unpack("<HHB", self.eeprom[41][i:i+5])
             mode &= 0xf
             if mode == 0:
                 self.pdo_in_off = offset
                 self.pdo_in_sz = size
+                self.pdo_in_addr = 0x800 + i
             elif mode == 2:
                 self.mbx_in_off = offset
                 self.mbx_in_sz = size
             elif mode == 4:
                 self.pdo_out_off = offset
                 self.pdo_out_sz = size
+                self.pdo_out_addr = 0x800 + i
             elif mode == 6:
                 self.mbx_out_off = offset
                 self.mbx_out_sz = size
@@ -486,12 +490,12 @@ class Terminal:
                 print("wrong mode")
 
     async def write_pdo_sm(self):
-        await self.write(0x816, "B", 0)
-        await self.write(0x812, "H", self.pdo_out_sz)
-        await self.write(0x816, "B", self.pdo_out_sz > 0)
-        await self.write(0x81E, "B", 0)
-        await self.write(0x81A, "H", self.pdo_in_sz)
-        await self.write(0x81E, "B", self.pdo_in_sz > 0)
+        await self.write(self.pdo_out_addr + 6, "B", 0)
+        await self.write(self.pdo_out_addr + 2, "H", self.pdo_out_sz)
+        await self.write(self.pdo_out_addr + 6, "B", self.pdo_out_sz > 0)
+        await self.write(self.pdo_in_addr + 6, "B", 0)
+        await self.write(self.pdo_in_addr + 2, "H", self.pdo_in_sz)
+        await self.write(self.pdo_in_addr + 6, "B", self.pdo_in_sz > 0)
 
     async def parse_pdos(self):
         async def parse_eeprom(s):
