@@ -53,6 +53,34 @@ class EL2808(EBPFTerminal):
     channel8 = ProcessDesc(0x7070, 1)
 
 
+class EL2819(EBPFTerminal):
+    compatibility = {(2, 0xB033052)}
+
+    class Channel(Struct):
+        value = ProcessDesc(0x7000, 1)
+        overtemperature = ProcessDesc(0x6001, 1)
+        open_load = ProcessDesc(0x6001, 2)
+        overcurrent = ProcessDesc(0x6001, 3)
+        short_circuit = ProcessDesc(0x6001, 4)
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
+    channel3 = Channel(0x20)
+    channel4 = Channel(0x30)
+    channel5 = Channel(0x40)
+    channel6 = Channel(0x50)
+    channel7 = Channel(0x60)
+    channel8 = Channel(0x70)
+    channel9 = Channel(0x80)
+    channel10 = Channel(0x90)
+    channel11 = Channel(0xa0)
+    channel12 = Channel(0xb0)
+    channel13 = Channel(0xc0)
+    channel14 = Channel(0xd0)
+    channel15 = Channel(0xe0)
+    channel16 = Channel(0xf0)
+
+
 class EL2624(EBPFTerminal):
     compatibility = {(2, 171978834)}
 
