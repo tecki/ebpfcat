@@ -113,7 +113,8 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
                      assignment=Assignment.MANDATORY)
 
     value = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.BAR,
-                   metricPrefixSymbol=MetricPrefix.MILLI)
+                   metricPrefixSymbol=MetricPrefix.MILLI,
+                   relativeError=0.01)
     factor = Double(accessMode=AccessMode.INITONLY,
                     assignment=Assignment.MANDATORY)
     offset = Double(accessMode=AccessMode.INITONLY,
