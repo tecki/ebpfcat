@@ -65,7 +65,7 @@ async def info():
             infos = t.eeprom[10]
             i = 1
             while i < len(infos):
-                print(infos[i+1 : i+infos[i]+1].decode("ascii"))
+                print(infos[i+1 : i+infos[i]+1].decode("latin1"))
                 i += infos[i] + 1
 
         if args.eeprom:
