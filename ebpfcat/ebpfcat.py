@@ -271,10 +271,12 @@ class EBPFTerminal(Terminal):
             if self.pdo_in_sz:
                 bases[SyncManager.IN] = (BaseType.FMMU_IN, packet.fmmu_in_size)
                 packet.fmmu_in_size += self.pdo_in_sz
+                packet.fmmu_in_count += 1
             if readwrite and self.pdo_out_sz:
                 bases[SyncManager.OUT] = (BaseType.FMMU_OUT,
                                           packet.fmmu_out_size)
                 packet.fmmu_out_size += self.pdo_out_sz
+                packet.fmmu_out_count += 1
         else:
             if self.pdo_in_sz:
                 bases[SyncManager.IN] = (BaseType.NO_FMMU, packet.size)
@@ -389,10 +391,16 @@ class SterilePacket(Packet):
         super().__init__()
         self.on_the_fly = []  # list of sterilized positions
         self.fmmu_out_size = self.fmmu_in_size = 0
+        self.fmmu_out_count = self.fmmu_in_count = 0
+        self.counters = {}
 
-    def append_writer(self, cmd, *args):
+    def append_writer(self, cmd, *args, **kwargs):
         self.on_the_fly.append((self.size, cmd))
+        self.append(cmd, *args, **kwargs)
+
+    def append(self, cmd, *args, counter=1):
         super().append(cmd, *args)
+        self.counters[self.size - 2] = counter
 
     def sterile(self, index):
         ret = bytearray(self.assemble(index))
@@ -405,11 +413,12 @@ class SterilePacket(Packet):
         fmmu_in_pos = self.size
         if self.fmmu_in_size:
             self.append(ECCmd.LRD, b"\0" * self.fmmu_in_size, 0,
-                        self.next_logical_addr)
+                        self.next_logical_addr, counter=self.fmmu_in_count)
         fmmu_out_pos = self.size
         if self.fmmu_out_size:
             self.append_writer(ECCmd.LWR, b"\0" * self.fmmu_out_size, 0,
-                               self.next_logical_addr + self.logical_addr_inc)
+                               self.next_logical_addr + self.logical_addr_inc,
+                               counter=self.fmmu_out_count)
         return (fmmu_in_pos, fmmu_out_pos, self.next_logical_addr,
                 self.next_logical_addr + self.logical_addr_inc)
 
@@ -417,10 +426,12 @@ class SterilePacket(Packet):
         for pos, cmd in self.on_the_fly:
             ebpf.pB[pos + self.ETHERNET_HEADER] = cmd.value
 
+
 class BaseType(Enum):
     NO_FMMU = 0
     FMMU_IN = 1
     FMMU_OUT = 2
+
 
 class SyncGroupBase:
     missed_counter = 0
@@ -508,6 +519,10 @@ class SyncGroup(SyncGroupBase):
 
     def update_devices(self, data):
         self.current_data = bytearray(data)
+        for pos, count in self.packet.counters.items():
+            if data[pos] != count:
+                print('count wrong!', self, pos, count, data[pos])
+            self.current_data[pos] = 0
         for dev in self.devices:
             dev.update()
         return self.current_data

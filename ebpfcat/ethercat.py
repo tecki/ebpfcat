@@ -437,7 +437,11 @@ class Terminal:
         await self.set_state(0x11)
         await self.set_state(1)
 
-        self.fmmu_used = [None] * (await self.read(4, "B"))[0]
+        fmmu_no, = await self.read(4, "B")
+        self.fmmu_used = [None] * fmmu_no
+        # switch off all fmmus
+        for i in range(fmmu_no):
+            await self.write(0x60c + 0x10 * i, "B", 0)
 
         self.mbx_cnt = 1
         self.mbx_lock = Lock()
