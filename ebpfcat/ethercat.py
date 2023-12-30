@@ -32,6 +32,7 @@ from asyncio import (
 from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
 from itertools import count
+import logging
 from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, unpack_from, calcsize
@@ -308,7 +309,7 @@ class EtherCat(Protocol):
                     elif not future.done():
                         future.set_result(data[start:stop])
                     else:
-                        print("dropped package")
+                        logging.info("future already done, dropped datagram")
                 dgrams = []
                 packet = Packet()
 
@@ -491,7 +492,7 @@ class Terminal:
                 self.mbx_out_off = offset
                 self.mbx_out_sz = size
             else:
-                print("wrong mode")
+                logging.error("wrong mode parsing sync managers in EEPROM")
 
     async def write_pdo_sm(self):
         await self.write(self.pdo_out_addr + 6, "B", 0)
@@ -638,7 +639,6 @@ class Terminal:
             busy = 0x8000
             while busy & 0x8000:
                 busy, = await self.read(0x502, "H")
-                print(f"busy {busy:X}")
             await self.write(0x502, "H", 0)
 
     async def read_eeprom(self):
@@ -704,7 +704,7 @@ class Terminal:
                 while type is not MBXType.COE:
                     type, data = await self.mbx_recv()
                     if type is not MBXType.COE:
-                        print(f"expected CoE package, got {type}")
+                        logging.warning(f"expected CoE package, got {type}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
                     raise EtherCatError(f"expected {odcmd.value}, got {rodcmd}")
@@ -723,7 +723,7 @@ class Terminal:
             while type is not MBXType.COE:
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    print(f"got {type}")
+                    logging.warning(f"expected CoE package, got {type}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
@@ -846,7 +846,7 @@ class Terminal:
                     data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
                                                   "HBB", od.index, i, 7)
                 except EtherCatError as e:
-                    print(f"problems reading SDO {od.index:x}:{i:x}:", e)
+                    logging.info(f"problems reading SDO {od.index:x}:{i:x}:")
                     continue
                 oe = ObjectEntry(od)
                 oe.valueInfo, dataType, oe.bitLength, oe.objectAccess = \

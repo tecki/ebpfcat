@@ -21,6 +21,7 @@ from asyncio import (
 from collections import defaultdict
 from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
 from enum import Enum
+import logging
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
 from time import time
@@ -484,7 +485,9 @@ class SyncGroupBase:
                                 timeout=0.1)
                     except TimeoutError:
                         self.missed_counter += 1
-                        print("didn't receive in time", self.missed_counter)
+                        logging.warning(
+                            "did not receive Ethercat response in time %i",
+                            self.missed_counter)
                         continue
                     data = self.update_devices(data)
             finally:
@@ -521,7 +524,9 @@ class SyncGroup(SyncGroupBase):
         self.current_data = bytearray(data)
         for pos, count in self.packet.counters.items():
             if data[pos] != count:
-                print('count wrong!', self, pos, count, data[pos])
+                logging.warning(
+                    'EtherCAT datagram was processe %i times, should be %i',
+                    data[pos], count)
             self.current_data[pos] = 0
         for dev in self.devices:
             dev.update()
@@ -534,7 +539,8 @@ class SyncGroup(SyncGroupBase):
             for t in self.terminals:
                 state, error = await t.get_state()
                 if state != 8:  # operational
-                    print(f"ERROR AL register {error}")
+                    logging.warning(
+                        "terminal is not operational, state is %i", error)
                 await t.to_operational()
             await sleep(1)
 
