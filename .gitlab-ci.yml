@@ -1,5 +1,5 @@
 test:
-    image: python:3.8-slim
+    image: python:3.12-slim
     script:
         - python3 -m ebpfcat.ebpf_test -v Tests && python3 -m ebpfcat.ethercat_test -v
 
