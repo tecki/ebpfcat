@@ -33,6 +33,7 @@ from .ebpf import Instruction, Opcode as O
 
 
 H = bytes.fromhex
+ZERO = 0.01  # near-zero time to fool broken Python
 
 
 class MockEtherCatBase:
@@ -51,6 +52,7 @@ class MockEtherCat(MockEtherCatBase):
         if not self.expected:
             self.test.fail(f"unexpected {args}")
         self.test.assertEqual(args, self.expected.pop(0))
+        await sleep(ZERO)
         return self.results.pop(0)
 
     def send_packet(self, data):
@@ -60,7 +62,7 @@ class MockEtherCat(MockEtherCatBase):
         self.test.assertEqual(index, self.expected.pop(0))
         if not self.expected:
             self.test.data_needed.set()
-            await sleep(0)
+        await sleep(ZERO)
         return self.results.pop(0)
 
     @contextmanager
