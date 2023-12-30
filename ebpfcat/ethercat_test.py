@@ -159,28 +159,24 @@ class Tests(TestCase):
               "04000200801110000000000000000000000000000000000000000000"
               "3333"), # padding
             0x66554433, # index
+            (ECCmd.FPRD, 2, 304, 'H2xH'),  # get_state
             H("2a10"  # EtherCAT Header, length & type
               "0000334455660280000000000000"  # ID datagram
               # in datagram
               "04000400801110000000123456780000000000000000000000000000"
               "3333"),  # padding
-            (ECCmd.FPRD, 2, 304, 'H2xH'),  # get_state
             0x66554433, # index
             ]
         ec.results = [
             H("2a10"  # EtherCAT Header, length & type
               "0000334455660280000000000000"  # ID datagram
               # in datagram
-              "04000400801110000000123456780000000000000000000000000000"
+              "04000400801110000000123456780000000000000000000000000100"
               "3333"), # padding
             (8, 0),  # return state 8, no error
-            H("2a10"  # EtherCAT Header, length & type
-              "0000334455660280000000000000"  # ID datagram
-              # in datagram
-              "04000400801110000000123456780000000000000000000000000000"
-              "3333"), # padding
             ]
-        await self.new_data()
+        with self.assertNoLogs():
+            await self.new_data()
         self.assertFalse(ec.expected or ec.results)
         self.assertEqual(ai.value, 0x7856)
         self.task.cancel()
@@ -218,26 +214,37 @@ class Tests(TestCase):
               "0500030000110800000000000000000000000000" # out datagram
               "33333333333333333333"), # padding
             0x55443322,  # index
+            (ECCmd.FPRD, 3, 304, 'H2xH'),  # get_state
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
               "0500030000110800000076980000000000000000" # out datagram
               "33333333333333333333"), # padding
-            (ECCmd.FPRD, 3, 304, 'H2xH'),  # get_state
+            0x55443322,  # index
+            H("2210"  # EtherCAT Header, length & type
+              "0000223344550280000000000000"  # ID datagram
+              "0500030000110800000076980000000000000000" # out datagram
+              "33333333333333333333"), # padding
             0x55443322,  # index
             ]
         ec.results = [
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
-              "0500030000110800000000000000000000000000" # out datagram
+              "0500030000110800000000000000000000000100" # out datagram
               "33333333333333333333"), # padding
             (8, 0),  # return state 8, no error
+            H("2210"  # EtherCAT Header, length & type
+              "0000223344550280000000000000"  # ID datagram
+              "0500030000110800000000000000000000000100" # out datagram
+              "33333333333333333333"), # padding
             ]
         ao.value = 0x9876
-        await self.new_data()
-        self.assertFalse(ec.expected or ec.results)
+        with self.assertNoLogs():
+            await self.new_data()
+        self.assertFalse(ec.expected or ec.results, f"{ec.expected} {ec.results}")
         self.task.cancel()
         with self.assertRaises(CancelledError):
             await self.task
+        self.assertFalse(ec.expected or ec.results, f"{ec.expected} {ec.results}")
 
     @mockAsync
     async def test_ebpf(self):
