@@ -135,6 +135,19 @@ class EEPROM(IntEnum):
     REVISION = 12
     SERIAL_NO = 14
 
+class MachineState(Enum):
+    """The states of the EtherCAT state machine
+
+    The states are in the order in which they should
+    be taken, BOOTSTRAP is at the end as this is a
+    state we usually do not go to.
+    """
+    INIT = 1
+    PRE_OPERATIONAL = 2
+    SAFE_OPERATIONAL = 4
+    OPERATIONAL = 8
+    BOOTSTRAP = 3
+
 class SyncManager(Enum):
     OUT = 2
     IN = 3
@@ -561,43 +574,37 @@ class Terminal:
         return ret
 
     async def get_state(self):
-        """get the current state and error flags"""
-        state, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                               0x0130, "H2xH")
-        return state, error
+        """get the current state, error flag and status word"""
+        state, status = await self.ec.roundtrip(ECCmd.FPRD, self.position,
+                                                0x0130, "H2xH")
+        return MachineState(state & 0xf), bool(state & 0x10), status
 
-    async def to_operational(self, target=8):
+    async def to_operational(self, target=MachineState.OPERATIONAL):
         """try to bring the terminal to operational state
 
         this tries to push the terminal through its state machine to the
-        operational state. Note that even if it reaches there, the terminal
+        target state. Note that even if it reaches there, the terminal
         will quickly return to pre-operational if no packets are sent to keep
-        it operational. """
-        order = [1, 2, 4, 8]
-        ret, error = await self.ec.roundtrip(
-                ECCmd.FPRD, self.position, 0x0130, "H2xH")
-        if ret & 0x10:
+        it operational.
+
+        return the state, error flag and status before the operation."""
+        order = list(MachineState)
+        state, error, status = ret = await self.get_state()
+        if error:
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                     0x0120, "H", 0x11)
-            ret, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                                 0x0130, "H2xH")
-        pos = order.index(ret)
-        s = 0x11
-        for state in order[pos+1:]:
+            state = MachineState.INIT
+        pos = order.index(state) + 1
+        state = None
+        for current in order[pos:]:
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
-                                    0x0120, "H", state)
-            while s != state:
-                s, error = await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                                   0x0130, "H2xH")
-                if error != 0:
-                    raise EtherCatError(f"AL register {error}")
-            if state >= target:
-                return
-
-    async def get_error(self):
-        """read the error register"""
-        return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                        0x0134, "H"))[0]
+                                    0x0120, "H", current.value)
+            while current is not state:
+                state, error, status = await self.get_state()
+                if error:
+                    raise EtherCatError(f"AL register error {status}")
+            if state.value >= target.value:
+                return ret
 
     async def read(self, start, *args, **kwargs):
         """read data from the terminal at offset `start`

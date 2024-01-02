@@ -25,7 +25,7 @@ from unittest import TestCase, main, skip
 
 from .devices import AnalogInput, AnalogOutput, Motor
 from .terminals import EL4104, EL3164, EK1814, Skip
-from .ethercat import ECCmd, Terminal
+from .ethercat import ECCmd, MachineState, Terminal
 from .ebpfcat import (
     FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc,
     SterilePacket)
@@ -82,11 +82,14 @@ class MockTerminal(Terminal):
 
         await self.apply_eeprom()
 
-    async def to_operational(self, state=8):
+    async def to_operational(self, state=MachineState.OPERATIONAL):
+        assert isinstance(state, MachineState)
+        before = self.operational
         self.operational = state
+        return state, 0, before
 
     async def sdo_read(self, index, subindex=None):
-        assert self.operational >= 2
+        assert self.operational.value >= 2
         if subindex is None:
             r = b''
             for i in count(1):
