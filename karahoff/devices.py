@@ -1,14 +1,16 @@
+from asyncio import sleep
 from struct import pack, unpack
 from time import time, monotonic
 
 from karabo.middlelayer import (
     AccessMode, Assignment, String, Int16, Slot, isSet, background, State,
     Float, Int32, Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, unit,
-    MetricPrefix, Bool)
+    MetricPrefix, Bool, Overwrite)
 from .master import EtherCATDevice
 from ebpfcat.ebpf import ktime
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar, Struct
-from ebpfcat.devices import AnalogInput as AnalogInputDevice, DigitalOutput
+from ebpfcat.devices import (
+    AnalogInput as AnalogInputDevice, DigitalOutput as DigitalOutputDevice)
 
 
 class GenericInput(EtherCATDevice):
@@ -62,7 +64,7 @@ def optionalFusedOutput(channel):
         ret.error = channel.overcurrent
         return ret
     else:
-        return DigitalOutput(channel)
+        return DigitalOutputDevice(channel)
 
 
 class OptionalSwitchMixin(EtherCATDevice):
@@ -106,6 +108,17 @@ class OptionalSwitchMixin(EtherCATDevice):
     async def reset(self):
         if self.switchDevice is not None:
             self.switchDevice.was_error = False
+
+
+class DigitalOutput(OptionalSwitchMixin):
+    switchChannel = Overwrite(assignment=Assignment.MANDATORY)
+
+    def get_devices(self):
+        return (self.switchDevice,)
+
+    def update_properties(self):
+        if super().update_properties():
+            self.set_state(State.ON if self.switchDevice.data else State.OFF)
 
 
 class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
