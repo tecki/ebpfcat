@@ -126,6 +126,7 @@ class EtherCATSyncGroupBase(Device):
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
                         d.update_properties()
+                        await sleep(0)
                 await sleep(self.interval.value)
             self.syncGroup.task.result()  # raises error if problem
         except Exception as e:
