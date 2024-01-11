@@ -609,17 +609,15 @@ class Terminal:
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                     0x0120, "H", 0x11)
             state = MachineState.INIT
-        pos = order.index(state) + 1
-        state = None
-        for current in order[pos:]:
+        for current in order[order.index(state) + 1:]:
+            if state.value >= target.value:
+                return ret
             await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                     0x0120, "H", current.value)
             while current is not state:
                 state, error, status = await self.get_state()
                 if error:
                     raise EtherCatError(f"AL register error {status}")
-            if state.value >= target.value:
-                return ret
 
     async def read(self, start, *args, **kwargs):
         """read data from the terminal at offset `start`

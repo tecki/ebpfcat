@@ -162,7 +162,6 @@ class Tests(TestCase):
               "04000200801110000000000000000000000000000000000000000000"
               "3333"), # padding
             0x66554433, # index
-            (ECCmd.FPRD, 2, 304, 'H2xH'),  # get_state
             H("2a10"  # EtherCAT Header, length & type
               "0000334455660280000000000000"  # ID datagram
               # in datagram
@@ -176,7 +175,6 @@ class Tests(TestCase):
               # in datagram
               "04000400801110000000123456780000000000000000000000000100"
               "3333"), # padding
-            (8, 0),  # return state 8, no error
             ]
         with self.assertNoLogs():
             await self.new_data()
@@ -217,7 +215,6 @@ class Tests(TestCase):
               "0500030000110800000000000000000000000000" # out datagram
               "33333333333333333333"), # padding
             0x55443322,  # index
-            (ECCmd.FPRD, 3, 304, 'H2xH'),  # get_state
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
               "0500030000110800000076980000000000000000" # out datagram
@@ -234,7 +231,6 @@ class Tests(TestCase):
               "0000223344550280000000000000"  # ID datagram
               "0500030000110800000000000000000000000100" # out datagram
               "33333333333333333333"), # padding
-            (8, 0),  # return state 8, no error
             H("2210"  # EtherCAT Header, length & type
               "0000223344550280000000000000"  # ID datagram
               "0500030000110800000000000000000000000100" # out datagram

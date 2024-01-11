@@ -534,16 +534,22 @@ class SyncGroup(SyncGroupBase):
         return self.current_data
 
     async def to_operational(self):
-        r = await gather(*[t.to_operational() for t in self.terminals])
+        try:
+            await gather(*[t.to_operational() for t in self.terminals])
 
-        while True:
-            for t in self.terminals:
-                state, error = await t.get_state()
-                if state != 8:  # operational
-                    logging.warning(
-                        "terminal is not operational, state is %i", error)
-                await t.to_operational()
-            await sleep(1)
+            while True:
+                r = await gather(*[t.to_operational() for t in self.terminals])
+                for t, (state, error, status) in zip(self.terminals, r):
+                    if state is not MachineState.OPERATIONAL:
+                        logging.warning(
+                            "terminal %s was not operational, status was %i",
+                            t, status)
+                await sleep(1)
+        except CancelledError:
+            raise
+        except Exception:
+            logging.exception('to_operational failed')
+            raise
 
     def start(self):
         self.allocate()
