@@ -540,12 +540,12 @@ class Valve(EtherCATDevice):
 
     def update_properties(self):
         if self.device.error:
-            self.state = State.ERROR
+            self.set_state(State.ERROR)
         elif self.device.openSwitch:
-            self.state = State.OPENED
+            self.set_state(State.OPENED)
         elif self.device.closeSwitch:
-            self.state = State.CLOSED
+            self.set_state(State.CLOSED)
         elif self.device.coil:
-            self.state = State.OPENING
+            self.set_state(State.OPENING)
         else:
-            self.state = State.CLOSING
+            self.set_state(State.CLOSING)
