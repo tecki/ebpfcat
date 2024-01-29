@@ -165,6 +165,22 @@ class EL7041(EBPFTerminal):
     high_switch = ProcessDesc(0x6010, 0xd)
 
 
+
+class EL7332(EBPFTerminal):
+    compatibility = {(2, 0x1CA43052)}
+
+    class Channel(Struct):
+        moving_positive = ProcessDesc(0x6020, 5)
+        moving_negative = ProcessDesc(0x6020, 6)
+        low_switch = ProcessDesc(0x6020, 0xc)
+        high_switch = ProcessDesc(0x6020, 0xd)
+        enable = ProcessDesc(0x7020, 1)
+        velocity = ProcessDesc(0x7020, 0x21, "h")
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
+
+
 class TurboVac(EBPFTerminal):
     compatibility = {(0x723, 0xb5)}
     pump_on = ProcessDesc(0x20D3, 0, 0)
