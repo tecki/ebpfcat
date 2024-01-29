@@ -562,3 +562,86 @@ class Valve(EtherCATDevice):
             self.set_state(State.OPENING)
         else:
             self.set_state(State.CLOSING)
+
+
+class ShutterDevice(Device):
+    velocity = TerminalVar()
+    enable = TerminalVar()
+    openSwitch = TerminalVar()
+    closeSwitch = TerminalVar()
+    opening = TerminalVar()
+    closing = TerminalVar()
+
+    def update(self):
+        if (self.openSwitch != self.closeSwitch) \
+                and (self.openSwitch if self.target else self.closeSwitch):
+            self.lastGood = monotonic()
+            self.enable = False
+        elif monotonic() - self.lastGood < self.movingTime:
+            self.velocity = -(-1) ** self.target * self.speed
+            self.enable = True
+        else:
+            self.error = True
+            self.enable = False
+
+    def reset(self):
+        self.error = False
+        self.lastGood = monotonic()
+
+
+class Shutter(EtherCATDevice):
+    velocity = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    enable = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY,
+                        assignment=Assignment.MANDATORY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY,
+                         assignment=Assignment.MANDATORY)
+    opening = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    closing = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
+                       defaultValue=3)
+    speed = Int16(accessMode=AccessMode.INITONLY, defaultValue=3, minInc=0)
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.device = ShutterDevice()
+        self.device.reset()
+        self.device.velocity = self.find_channel(self.velocity)
+        self.device.openSwitch = self.find_channel(self.openSwitch)
+        self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        self.device.opening = self.find_channel(self.opening)
+        self.device.closing = self.find_channel(self.closing)
+        self.device.enable = self.find_channel(self.enable)
+        self.device.movingTime = self.movingTime.value
+        self.device.speed = self.speed.value
+        self.device.target = False
+
+    @Slot(allowedStates={State.CLOSED, State.CLOSING})
+    async def open(self):
+        self.device.target = True
+
+    @Slot(allowedStates={State.OPENED, State.OPENING})
+    async def close(self):
+        self.device.target = False
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        self.device.reset()
+
+    def update_properties(self):
+        if self.device.error:
+            self.set_state(State.ERROR)
+        elif self.device.openSwitch:
+            self.set_state(State.OPENED)
+        elif self.device.closeSwitch:
+            self.set_state(State.CLOSED)
+        elif self.device.opening:
+            self.set_state(State.OPENING)
+        elif self.device.closing:
+            self.set_state(State.CLOSING)
+        else:
+            self.set_state(State.ERROR)
