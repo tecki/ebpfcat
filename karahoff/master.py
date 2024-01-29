@@ -72,11 +72,11 @@ class EtherCATMasterBase(Device):
                     await t.initialize(-i, position)
                 except EtherCatError:
                     terms.append(
-                        (term['name'], "Incompatible", term['serialNo'],
+                        (term['name'], "Error", term['serialNo'],
                          vendor, code))
                 else:
                     terms.append(
-                        (term['name'], term['classId'], term['serialNo'],
+                        (term['name'], t.__class__.__name__, term['serialNo'],
                          vendor, code))
                     self.term_by_name[term['name']] = t
         self.terminals = terms
