@@ -136,7 +136,7 @@ async def eeprom():
     await t.initialize(-args.terminal, 7)
 
     if args.read or args.check is not None:
-        r, = unpack("<4xI", await t.eeprom_read_one(0xc))
+        r, = unpack("<4xI", await t._eeprom_read_one(0xc))
         if args.check is not None:
             c = encode(args.check)
             print(f"{r:8X} {c:8X} {r == c}")
