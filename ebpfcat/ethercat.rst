@@ -4,31 +4,36 @@ The EtherCAT master
 Getting started
 ---------------
 
-Ethercat terminals are usually connected in a loop with the EtherCAT master.
-The EtherCAT master has to know the order and function of these terminals.
-The list of terminals then has to be given in correct order to the constructor
-of the EtherCAT master object as follows::
+Ethercat terminals are usually connected in a loop with the EtherCAT master,
+via an ethernet interface. So we create a master object, and connect to that
+interface an scan the loop. This takes time, so in a good asyncronous fashion
+we need to use await, which can only be done in an async function::
 
     from ebpfcat.ebpfcat import FastEtherCat
-    from ebpfcat.terminals import EL4104, Generic
 
-    out = EL4104()
-    unknown = Generic()  # use "Generic" for terminals of unknown type
-
-    master = FastEtherCat("eth0", [out, unknown])
-
-Once we have defined the order of devices, we can connect to the loop and
-scan it to actually find all terminals. This takes time, so in a good
-asyncronous fashion we need to use await, which can only be done in an
-async function::
-
+    # later, in an async function:
+    master = FastEtherCat("eth0")
     await master.connect()
     await master.scan_bus()
 
-The terminals usually control some devices, where one terminal may control
-several devices, or one device is controlled by several terminals. The devices
-are represented by `Device` objects. Upon instantiation, they are connected to
-the terminals::
+Next we create an object for each terminal that we want to use. As an example,
+take some Beckhoff output terminal::
+
+    from ebpfcat.terminals import EL4104, Generic
+
+    out = EL4104(master)
+
+This terminal needs to be initialized. The initialization method takes two
+arguments, the relative position in the loop, starting with 0 for the terminal
+directly connected to the interface, counting downwards to negative values. The
+second argument is the absolute address this terminal should be assigned to::
+
+    await out.initialize(-1, 20)  # assign address 20 to the first terminal
+
+The terminals are usually controlled by devices, where one terminal may be
+controlled by several devices, or one device controls several terminals. The
+devices are represented by `Device` objects. Upon instantiation, they are
+connected to the terminals::
 
     from ebpfcat.devices import AnalogOutput
 
@@ -73,7 +78,7 @@ Before they can be used, their `TerminalVar`\ s need to be initialized::
     motor.position = encoderTerminal.value
 
 whenever new data is read from the loop, the `update` method of the device is
-called, in which one can evaluate the `TerminalVar`\ s::
+called, in which one can evaluate the `TerminalVar`\ s, or set them::
 
     def update(self):
         """a idiotic speed controller"""
