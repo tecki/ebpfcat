@@ -7,5 +7,7 @@ XDP to achieve real-time response times. As a corollary, it contains a
 Python based EBPF code generator.
 
 .. toctree::
+    :maxdepth: 2
+
     ebpfcat/ebpf.rst
     ebpfcat/ethercat.rst
