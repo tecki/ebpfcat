@@ -445,7 +445,7 @@ class EtherCat(Protocol):
 
 
 class Terminal:
-    """Represent one terminal ("slave") in the loop"""
+    """Represent one terminal (*SubDevice* or *slave*) in the loop"""
     def __init__(self, ethercat):
         self.ec = ethercat
 
@@ -733,6 +733,11 @@ class Terminal:
             return b"".join(ret)
 
     async def sdo_read(self, index, subindex=None):
+        """read a single SDO entry
+
+        given an adress for a CoE entry like 6020:12, you may read
+        the value like ``await master.sdo_read(0x6020, 0x12)``.
+        """
         async with self.mbx_lock:
             await self.mbx_send(
                     MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
@@ -785,6 +790,13 @@ class Terminal:
             return b"".join(ret)
 
     async def sdo_write(self, data, index, subindex=None):
+        """write a single SDO entry
+
+        given a CoE address like 1200:2, one may write the value as
+        in ``await master.sdo_write(b'abc', 0x1200, 0x2)``. Note that the
+        data needs to already be a binary string matching the binary type of
+        the parameter.
+        """
         if len(data) <= 4 and subindex is not None:
             async with self.mbx_lock:
                 await self.mbx_send(

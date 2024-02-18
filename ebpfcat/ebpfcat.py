@@ -69,8 +69,8 @@ class ProcessDesc:
         in the terminal's documentation
     :param subindex: the subindex, also found in the documentation
     :param size: usually the size is taken from the PDO mapping. A
-        different size as in a `struct` definition may be given here,
-        or the number of a bit for a bit field.
+        different size as in a :mod:`python:struct` definition may be
+        given here, or the number of a bit for a bit field.
     """
     def __init__(self, index, subindex, size=None):
         self.index = index
@@ -150,8 +150,11 @@ class Struct:
     """Define repetitive structures in a PDO
 
     Some terminals, especially multi-channel terminals,
-    have repetitive structures in their PDO. Use this to group
-    them.
+    have repetitive structures in their PDO. Inherit from this
+    class to create a structure for them. Each instance
+    will then define one channel. It takes one parameter, which
+    is the offset in the CoE address space from the template
+    structure to the one of the channel.
     """
     device = None
 
@@ -241,6 +244,12 @@ class Device(SubProgram):
 
 
 class EBPFTerminal(Terminal):
+    """This is the base class for all supported terminal types
+
+    inheriting classes should define a ``compatibility`` class variable
+    which is a set of tuples, each of which is a pair of Ethercat vendor and
+    product id of all supported terminal types.
+    """
     compatibility = None
     position_offset = {SyncManager.OUT: 0, SyncManager.IN: 0}
     use_fmmu = True

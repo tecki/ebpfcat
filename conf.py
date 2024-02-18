@@ -14,7 +14,7 @@ author = 'Martin Teichmann'
 
 release = "0.1"
 version = "0.1.0"
-language = None
+language = "en"
 exclude_patterns = ['_build']
 pygments_style = 'sphinx'
 todo_include_todos = False

@@ -98,6 +98,8 @@ class EL4104(EBPFTerminal):
 
 
 class EL3164(EBPFTerminal):
+    compatibility = {(2, 0x0c5c3052)}
+
     class Channel(Struct):
         attrs = ProcessDesc(0x6000, 1, 'H')
         value = ProcessDesc(0x6000, 0x11)

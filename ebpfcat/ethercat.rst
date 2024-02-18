@@ -89,7 +89,7 @@ Three methods of control
 
 The communication with the terminals can happen in three different ways:
 
-- out-of-order: the communication happens ad-hoc whenever needed. This is
+- asynchronous: the communication happens ad-hoc whenever needed. This is
   done during initialization and for reading and writing configuration data,
   like CoE.
 - slow: the data is sent, received and processed via Python. This is good
@@ -97,6 +97,74 @@ The communication with the terminals can happen in three different ways:
 - fast: the data is sent, received and processed using XDP in the Linux
   Kernel. Only very limited operations can be done, but the loop cycle
   frequency exceeds 10 kHz.
+
+Adding new terminals
+--------------------
+
+The elements of an EtherCat loop were used to be called *slaves*, but nowadays
+are referred to as *SubDevices*. As in a typical installation most of them are
+simply terminals, we call them such.
+
+Everything in a terminal is controlled by reading or writing parameters in the
+CoE address space. These addresses are a pair of a 16 bit and an 8 bit number,
+usually seperated by a colon, as in 6010:13. Most terminals allow these
+parameters to be set asynchronously. Some of the parameters may be read or
+written synchronously, so with every communication cycle.
+
+The meaning of all these parameters can usually be found in the documentation of the terminal. Additionally, terminals often have a self-description, which can be read with the command line tool `ec-info`::
+
+    $ ec-info eth0 --terminal -1 --sdo
+
+this reads the first (-1th) terminal's self description (``--sdo``). Add a
+``--value`` to also get the current values of the parameters. This prints out
+all known self descriptions of CoE parameters.
+
+Once we know the meaning of parameters, they may be read or written
+asynchronously using :meth:`~ebpfcat.ethercat.Terminal.sdo_read` and
+:meth:`~ebpfcat.ethercat.Terminal.sdo_write`.
+
+For synchronous data access, a class needs to be defined that defines the
+parameters one want to use synchronously. The parameters available for
+synchronous operations can be found with the ``--pdo`` parameter of the
+``ec-info`` command. The class should inherit from
+:class:`~ebpfcat.ebpfcat.EBPFTerminal` and define a set of tuples called
+``comptibility``. The tuples should be the pairs of Ethercat product and vendor
+id for all terminals supported by this class. Those can be found out with the
+``--ids`` parameter of the ``ec-info`` command.
+
+Within the class, the synchronous parameters are defined via
+:class:`~ebpfcat.ebpfcat.ProcessDesc`. This descriptor takes the two parts of
+the CoE address as parameters, plus an optional size parameter. This is usually
+determined automatically, but this sometimes fails, in which case it may either
+be defined via a format string like in the :mod:`python:struct` module, or it
+is an integer which is then a reference to the position of the bit in the
+parameter to define a boolean flag.
+
+For terminals which have several equivalent channels, one can define a
+structure by inheriting from :class:`~ebpfcat.ebpfcat.Struct`. Within this
+class one defines the first set of parameters the same way one would do it
+without. Once the class is defined, it can be instantiated in the terminal
+class with a single argument which defines the offset in the CoE address space
+for this structure. As an example, if on a two-channel terminal the first
+channel has an address of ``0x6000:12`` and the following two ``0x6010:12`` and
+``0x6020:12``, one would instantiate three structs with arguments ``0``,
+``0x10`` and ``0x20``.
+
+A complete example of a four channel terminal looks as follows::
+
+    class EL3164(EBPFTerminal):
+        compatibility = {(2, 0x0c5c3052)}
+
+        class Channel(Struct):
+            attrs = ProcessDesc(0x6000, 1, 'H') # this is 2 bytes ('H')
+            value = ProcessDesc(0x6000, 0x11)
+            factor = 10/32767  # add bonus information as desired
+            offset = 0
+
+        channel1 = Channel(0)  # adress 0x6000
+        channel2 = Channel(0x10)  # address 0x6010
+        channel3 = Channel(0x20)
+        channel4 = Channel(0x30)
 
 
 Reference Documentation
@@ -106,4 +174,7 @@ Reference Documentation
    :members:
 
 .. automodule:: ebpfcat.ethercat
+   :members:
+
+.. automodule:: ebpfcat.ebpfcat
    :members:
