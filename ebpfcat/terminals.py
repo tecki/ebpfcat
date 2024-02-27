@@ -130,7 +130,7 @@ class EK1814(EBPFTerminal):
 class EL5042(EBPFTerminal):
     compatibility = {(2, 330444882)}
     class Channel(Struct):
-        position = ProcessDesc(0x6000, 0x11)
+        position = ProcessDesc(0x6000, 0x11, 'q')
         warning = ProcessDesc(0x6000, 1)
         error = ProcessDesc(0x6000, 2)
         status = ProcessDesc(0x6000, 1, "H")
