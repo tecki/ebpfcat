@@ -42,44 +42,45 @@ class EtherCATMasterBase(Device):
     terminals = VectorHash(accessMode=AccessMode.INITONLY, rows=TerminalTable)
 
 
+    async def readOneEeprom(self, i):
+        serialNo = await self.ethercat.eeprom_read(-i, EEPROM.SERIAL_NO)
+        if serialNo == 0:
+            serialNo = -i
+        term = self.term_by_serial.get(serialNo)
+        vendor = await self.ethercat.eeprom_read(-i, EEPROM.VENDOR_ID)
+        code = await self.ethercat.eeprom_read(-i, EEPROM.PRODUCT_CODE)
+        if term is None:
+            return ("", "", serialNo, vendor, code)
+        else:
+            t = getattr(terminals, term['classId'],
+                        terminals.Generic)(self.ethercat)
+            position = await self.ethercat.find_free_address()
+            try:
+                await t.initialize(-i, position)
+            except EtherCatError:
+                return (term['name'], "Error", term['serialNo'],
+                        vendor, code)
+            else:
+                self.term_by_name[term['name']] = t
+                return (term['name'], t.__class__.__name__, term['serialNo'],
+                        vendor, code)
+
     async def onInitialization(self):
         #loop = get_event_loop()
         #loop.set_debug(True)
         #loop.slow_callback_duration = 0.01
         self.instances[self.deviceId] = self
 
-        term_by_serial = {row['serialNo'].value: row for row in self.terminals}
+        self.term_by_serial = {
+            row['serialNo'].value: row for row in self.terminals}
         self.ethercat = self.EtherCat(self.interface)
         await self.ethercat.connect()
         self.state = State.INIT
         count = await self.ethercat.count()
         self.status = f"counted {count} terminals"
-        terms = []
         self.term_by_name = {}
-        for i in range(count):
-            serialNo = await self.ethercat.eeprom_read(-i, EEPROM.SERIAL_NO)
-            if serialNo == 0:
-                serialNo = -i
-            term = term_by_serial.get(serialNo)
-            vendor = await self.ethercat.eeprom_read(-i, EEPROM.VENDOR_ID)
-            code = await self.ethercat.eeprom_read(-i, EEPROM.PRODUCT_CODE)
-            if term is None:
-                terms.append(("", "", serialNo, vendor, code))
-            else:
-                t = getattr(terminals, term['classId'], terminals.Generic)(self.ethercat)
-                position = await self.ethercat.find_free_address()
-                try:
-                    await t.initialize(-i, position)
-                except EtherCatError:
-                    terms.append(
-                        (term['name'], "Error", term['serialNo'],
-                         vendor, code))
-                else:
-                    terms.append(
-                        (term['name'], t.__class__.__name__, term['serialNo'],
-                         vendor, code))
-                    self.term_by_name[term['name']] = t
-        self.terminals = terms
+        self.terminals = await gather(*(self.readOneEeprom(i)
+                                        for i in range(count)))
         self.state = State.ON
 
 
