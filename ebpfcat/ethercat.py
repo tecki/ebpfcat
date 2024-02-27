@@ -215,7 +215,7 @@ class Packet:
     packets. We implicitly add a datagram in the front which later serves
     as an identifier for the packet.
     """
-    MAXSIZE = 1000  # maximum size we use for an EtherCAT packet
+    MAXSIZE = 1500  # maximum size we use for an EtherCAT packet
     ETHERNET_HEADER = 14
     PACKET_HEADER = 16
     DATAGRAM_HEADER = 10
@@ -236,8 +236,15 @@ class Packet:
         Depending on the command, one or two more parameters represent the
         address, either terminal and offset for position or node addressing,
         or one value for logical addressing."""
+        newsize = self.size + len(data) + self.DATAGRAM_HEADER \
+                  + self.DATAGRAM_TAIL
+        if newsize > self.MAXSIZE:
+            raise OverflowError("ethercat packet size too big")
+        elif len(self.data) > 14:
+            raise OverflowError("Too many datagrams per packet")
+
         self.data.append((cmd, data, idx) + address)
-        self.size += len(data) + self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
+        self.size = newsize
 
     def assemble(self, index):
         """Assemble the datagrams into a packet
@@ -306,17 +313,24 @@ class EtherCat(Protocol):
         to be sent from a queue, packs them in a packet and ships them
         out. """
         try:
-            packet = Packet()
             dgrams = []
+            packet = Packet()
+            sent = True
             while True:
-                *dgram, future = await self.send_queue.get()
-                lastsize = packet.size
-                packet.append(*dgram)
-                dgrams.append((lastsize + 10, packet.size - 2, future))
-                if packet.full() or self.send_queue.empty():
-                    ensure_future(self.process_packet(dgrams, packet))
-                    dgrams = []
-                    packet = Packet()
+                if sent:
+                   *dgram, future = await self.send_queue.get()
+                try:
+                   lastsize = packet.size
+                   packet.append(*dgram)
+                   dgrams.append((lastsize + 10, packet.size - 2, future))
+                   sent = True
+                   if not self.send_queue.empty():
+                       continue
+                except OverflowError:
+                    sent = False
+                ensure_future(self.process_packet(dgrams, packet))
+                dgrams = []
+                packet = Packet()
         except CancelledError:
             raise
         except Exception:
