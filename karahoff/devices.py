@@ -47,12 +47,19 @@ class AnalogInput(EtherCATDevice):
 class FusedOutput(Device):
     data = TerminalVar()
     error = TerminalVar()
-    value = False
+    value = DeviceVar('B')  # 0 regular off, 1 regular on, 2 error off
+
+    def program(self):
+        with (self.error != 0) | (self.value == 2) as Else:
+            self.data = 0
+            self.value = 2
+        with Else:
+            self.data = self.value
 
     def update(self):
-        if self.was_error or self.error:
+        if self.error or self.value == 2:
             self.data = False
-            self.was_error = True
+            self.value = 2
         else:
             self.data = self.value
 
@@ -67,7 +74,7 @@ def optionalFusedOutput(channel):
         return DigitalOutputDevice(channel)
 
 
-class OptionalSwitchMixin(EtherCATDevice):
+class OptionalMixin(EtherCATDevice):
     switchChannel = String(accessMode=AccessMode.INITONLY)
 
     def get_devices(self):
@@ -82,32 +89,44 @@ class OptionalSwitchMixin(EtherCATDevice):
         if self.switchChannel:
             self.switchDevice = optionalFusedOutput(
                 self.find_channel(self.switchChannel))
-            self.switchDevice.was_error = False
         else:
             self.switchDevice = None
 
+
+class OptionalSwitchMixin(OptionalMixin):
     def update_properties(self):
         if self.switchDevice is None:
             return True
-        if self.switchDevice.was_error:
+        if self.switchDevice.value == 2:
             self.set_state(State.ERROR)
             return False
         return True
 
     @Slot()
     async def on(self):
-        self.switchDevice.value = True
+        self.switchDevice.value = 1
         await self.state_change.wait()
 
     @Slot()
     async def off(self):
-        self.switchDevice.value = False
+        self.switchDevice.value = 0
         await self.state_change.wait()
+
+
+class OptionalKeepOnMixin(OptionalMixin):
+    def update_properties(self):
+        if self.switchDevice is None:
+            return True
+        if self.switchDevice.value == 2:
+            self.set_state(State.ERROR)
+            return False
+        self.switchDevice.value = 1
+        return True
 
     @Slot()
     async def reset(self):
-        if self.switchDevice is not None:
-            self.switchDevice.was_error = False
+        self.switchDevice.value = 1
+        await self.state_change.wait()
 
 
 class DigitalOutput(OptionalSwitchMixin):
@@ -267,7 +286,7 @@ class MotorDevice(Device):
             self.velocity = self.ebpf.stmp
 
 
-class Motor(EtherCATDevice):
+class Motor(OptionalKeepOnMixin, EtherCATDevice):
     motor = String(accessMode=AccessMode.INITONLY,
                    assignment=Assignment.MANDATORY)
     encoder = String(accessMode=AccessMode.INITONLY,
@@ -343,12 +362,13 @@ class Motor(EtherCATDevice):
         self.isCCWLimit = self.device.low_switch
         self.isCWLimit = self.device.high_switch
 
-        if not self.device.enable:
-            self.state = State.OFF
-        elif self.device.velocity != 0 and self.device.deadband_exceeded:
-            self.state = State.MOVING
-        else:
-            self.state = State.ON
+        if super().update_properties():
+            if not self.device.enable:
+                self.set_state(State.OFF)
+            elif self.device.velocity != 0 and self.device.deadband_exceeded:
+                self.set_state(State.MOVING)
+            else:
+                self.set_state(State.ON)
         self.device.deadband_exceeded = 0
 
         self.device.max_velocity = self.targetVelocity
