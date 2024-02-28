@@ -7,7 +7,7 @@ from karabo.middlelayer import (
     waitUntil, Float, background, Simple, isSet, VectorHash, Assignment)
 from karabo import middlelayer as ml
 
-from ebpfcat.ethercat import EEPROM, EtherCatError
+from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
 from ebpfcat.ebpfcat import SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat, Struct
 from ebpfcat import terminals, devices
 
@@ -176,12 +176,12 @@ class EtherCATDevice(Device):
             else:
                 term = self.terminals[attr.terminal]
                 if isinstance(term, Struct):
-                    idx = attr.idx + term.position_offset[2]
+                    idx = attr.idx + term.position_offset[SyncManager.OUT]
                     term = term.terminal
                 else:
                     idx = attr.idx
-                state, error = await term.get_state()
-                if state < 2:
+                state, error, _ = await term.get_state()
+                if state.value < 2:
                     await term.set_state(2)
                 await term.sdo_write(pack(formats[type(attr)], value),
                                      idx, attr.subidx)
@@ -197,12 +197,12 @@ class EtherCATDevice(Device):
             else:
                 term = self.terminals[attr.terminal]
                 if isinstance(term, Struct):
-                    idx = attr.idx + term.position_offset[2]
+                    idx = attr.idx + term.position_offset[SyncManager.OUT]
                     term = term.terminal
                 else:
                     idx = attr.idx
-                state, error = await term.get_state()
-                if state < 2:
+                state, error, _ = await term.get_state()
+                if state.value < 2:
                     await term.set_state(2)
                 ret = await term.sdo_read(idx, attr.subidx)
                 setattr(self, attr.key, *unpack(formats[type(attr)], ret))
