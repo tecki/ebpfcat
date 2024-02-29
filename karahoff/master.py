@@ -114,6 +114,8 @@ class EtherCATSyncGroupBase(Device):
         self.syncGroup = self.SyncGroup(
             self.ethercat.ethercat,
             list(chain.from_iterable(d.get_devices() for d in self.devs)))
+        for d in self.devs:
+            d.initialize()
         self.state = State.OFF
         self.syncGroup.start()
         self.state = State.ON
@@ -231,3 +233,7 @@ class EtherCATDevice(Device):
         """Let this device join a sync group"""
         self.syncGroup = syncGroup
         self.ethercat = syncGroup.ethercat
+
+    def initialize(self):
+        """called once everything is set up"""
+        return

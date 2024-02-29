@@ -135,6 +135,7 @@ class OptionalKeepOnMixin(OptionalMixin):
 
 class DigitalOutput(OptionalSwitchMixin):
     switchChannel = Overwrite(assignment=Assignment.MANDATORY)
+    startupValue = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
 
     def get_devices(self):
         return (self.switchDevice,)
@@ -142,6 +143,9 @@ class DigitalOutput(OptionalSwitchMixin):
     def update_properties(self):
         if super().update_properties():
             self.set_state(State.ON if self.switchDevice.data else State.OFF)
+
+    def initialize(self):
+        self.switchDevice.value = self.startupValue.value
 
 
 class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
