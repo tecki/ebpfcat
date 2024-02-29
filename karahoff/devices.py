@@ -5,12 +5,16 @@ from time import time, monotonic
 from karabo.middlelayer import (
     AccessMode, Assignment, String, Int16, Slot, isSet, background, State,
     Float, Int32, Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, unit,
-    MetricPrefix, Bool, Overwrite)
+    MetricPrefix, Bool, Overwrite, QuantityValue, get_timestamp)
 from .master import EtherCATDevice
 from ebpfcat.ebpf import ktime
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar, Struct
 from ebpfcat.devices import (
     AnalogInput as AnalogInputDevice, DigitalOutput as DigitalOutputDevice)
+
+
+def now():
+    return QuantityValue(1, timestamp=get_timestamp())
 
 
 class GenericInput(EtherCATDevice):
@@ -146,7 +150,7 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
 
     value = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.BAR,
                    metricPrefixSymbol=MetricPrefix.MILLI,
-                   relativeError=0.01)
+                   relativeError=0.01, allowedStates={State.ON})
     factor = Double(accessMode=AccessMode.INITONLY,
                     assignment=Assignment.MANDATORY)
     offset = Double(accessMode=AccessMode.INITONLY,
@@ -165,7 +169,8 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
             self.set_state(State.ERROR)
         else:
             self.set_state(State.ON)
-            self.value = 10**(semiRaw * self.factor + self.offset) * unit.mbar
+            self.value = 10**(semiRaw * self.factor + self.offset) \
+                    * unit.mbar * now()
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
