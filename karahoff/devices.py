@@ -539,21 +539,22 @@ class ValveDevice(Device):
 
     def update(self):
         if (self.openSwitch != self.closeSwitch) \
-                and (self.openSwitch if self.coil else self.closeSwitch):
+                and (self.closeSwitch if (self.coil == self.safeState)
+                     else self.openSwitch):
             self.lastGood = monotonic()
             self.coil = self.target
         elif monotonic() - self.lastGood < self.movingTime:
             self.coil = self.target
         else:
             self.error = True
-            self.coil = self.target = self.safeState
+            self.coil = self.target = False
 
     def reset(self):
         self.error = False
         self.lastGood = monotonic()
 
 
-class Valve(EtherCATDevice):
+class Valve(OptionalKeepOnMixin, EtherCATDevice):
     coil = String(accessMode=AccessMode.INITONLY,
                   assignment=Assignment.MANDATORY)
     openSwitch = String(accessMode=AccessMode.INITONLY,
@@ -563,6 +564,9 @@ class Valve(EtherCATDevice):
     safeState = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
     movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
                        defaultValue=3)
+
+    isOpened = Bool(accessMode=AccessMode.READONLY)
+    isClosed = Bool(accessMode=AccessMode.READONLY)
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
@@ -576,27 +580,34 @@ class Valve(EtherCATDevice):
 
     @Slot(allowedStates={State.CLOSED, State.CLOSING})
     async def open(self):
-        self.device.target = True
+        self.device.target = not self.safeState
 
     @Slot(allowedStates={State.OPENED, State.OPENING})
     async def close(self):
-        self.device.target = False
+        self.device.target = self.safeState
 
     @Slot(allowedStates={State.ERROR})
     async def reset(self):
+        await super().reset()
         self.device.reset()
 
     def update_properties(self):
+        if self.device.openSwitch != self.isOpened:
+            self.isOpened = self.device.openSwitch
+        if self.device.closeSwitch != self.isClosed:
+            self.isClosed = self.device.closeSwitch
+        if not super().update_properties():
+            return
         if self.device.error:
             self.set_state(State.ERROR)
         elif self.device.openSwitch:
             self.set_state(State.OPENED)
         elif self.device.closeSwitch:
             self.set_state(State.CLOSED)
-        elif self.device.coil:
-            self.set_state(State.OPENING)
-        else:
+        elif self.device.coil == self.safeState:
             self.set_state(State.CLOSING)
+        else:
+            self.set_state(State.OPENING)
 
 
 class ShutterDevice(Device):
