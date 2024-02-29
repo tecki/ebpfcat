@@ -505,6 +505,7 @@ class TurboVac(EtherCATDevice):
 
 class InficonDevice(Device):
     value = TerminalVar()
+    valid = TerminalVar()
 
     def update(self):
         pass
@@ -520,9 +521,14 @@ class Inficon(EtherCATDevice):
         self.device = InficonDevice()
         self.gauge_term = self.find_channel(self.gauge)
         self.device.value = self.gauge_term.value
+        self.device.valid = self.gauge_term.valid
 
     def update_properties(self):
-        self.value = self.device.value
+        if self.device.valid:
+            self.set_state(State.ON)
+            self.value = self.device.value
+        else:
+            self.set_state(State.OFF)
 
 
 class ValveDevice(Device):
