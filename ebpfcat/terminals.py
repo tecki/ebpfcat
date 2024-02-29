@@ -199,7 +199,11 @@ class TurboVac(EBPFTerminal):
 
 class Inficon(EBPFTerminal):
     compatibility = {(0x644, 0x21)}
+    valid = ProcessDesc(0xF640, 1)
+    overrange = ProcessDesc(0xF640, 2)
+    underrange = ProcessDesc(0xF640, 3)
     value = ProcessDesc(0xF640, 0x11, "f")
+    sensorNo = ProcessDesc(0xF640, 0x12, "f")
 
 
 class Bronkhorst(EBPFTerminal):
