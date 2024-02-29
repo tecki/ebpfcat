@@ -819,10 +819,12 @@ class Terminal:
                         index, subindex, data)
                 type, data = await self.mbx_recv()
             if type is not MBXType.COE:
-                raise EtherCatError(f"expected CoE, got {type}, {data} {odata} {index:x} {subindex}")
+                raise EtherCatError(f"expected CoE, got {type}, {data} "
+                                    f"{odata} {index:x}:{subindex:x}")
             coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
             if idx != index or subindex != subidx:
-                raise EtherCatError(f"requested index {index}, got {idx}")
+                raise EtherCatError(f"requested index {index:x}:{subindex:x}, "
+                                    f"got {idx:x}:{subidx:x}")
             if coecmd >> 12 != CoECmd.SDORES.value:
                 raise EtherCatError(f"expected CoE SDORES, got {coecmd>>12:x}")
         else:
