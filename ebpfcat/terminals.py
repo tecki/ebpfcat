@@ -159,13 +159,17 @@ class EL6022(EBPFTerminal):
 
 class EL7041(EBPFTerminal):
     compatibility = {(2, 461451346), (2, 461455442), (2, 460795986)}
+    out_pdos = [0x1600, 0x1602, 0x1604]
+    in_pdos = [0x1A00, 0x1A03, 0x1A07]
     velocity = ProcessDesc(0x7010, 0x21, "h")
     enable = ProcessDesc(0x7010, 1)
+    reset = ProcessDesc(0x7010, 2)
     reduced_current = ProcessDesc(0x7010, 3)
     status = ProcessDesc(0x6010, 1, "H")
+    error = ProcessDesc(0x6010, 4)
     low_switch = ProcessDesc(0x6010, 0xc)
     high_switch = ProcessDesc(0x6010, 0xd)
-
+    stepcounter = ProcessDesc(0x6010, 0x14)
 
 
 class EL7332(EBPFTerminal):

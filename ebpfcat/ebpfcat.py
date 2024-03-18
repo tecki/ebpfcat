@@ -255,6 +255,8 @@ class EBPFTerminal(Terminal):
     compatibility = None
     position_offset = {SyncManager.OUT: 0, SyncManager.IN: 0}
     use_fmmu = True
+    out_pdos = None
+    in_pdos = None
 
     async def apply_eeprom(self):
         await super().apply_eeprom()
@@ -263,6 +265,10 @@ class EBPFTerminal(Terminal):
             raise EtherCatError(
                 f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
         await self.to_operational(MachineState.PRE_OPERATIONAL)
+        if self.out_pdos is not None:
+            await self.write_pdos(0x1c12, self.out_pdos)
+        if self.in_pdos is not None:
+            await self.write_pdos(0x1c13, self.in_pdos)
         self.pdos = {}
         outbits, inbits = await self.parse_pdos()
         self.pdo_out_sz = int((outbits + 7) // 8)
@@ -270,6 +276,13 @@ class EBPFTerminal(Terminal):
         self.pdo_in_sz = int((inbits + 7) // 8)
         assert not self.pdo_in_sz or self.pdo_in_off
         await self.write_pdo_sm()
+
+    async def write_pdos(self, index, values):
+        await self.sdo_write(pack('B', 0), index, 0)
+        for i, v in enumerate(values, 1):
+            await self.sdo_write(pack('<H', v), index, i)
+        await self.sdo_write(pack('<H', 0), index, i + 1)
+        await self.sdo_write(pack('B', len(values)), index, 0)
 
     def allocate(self, packet, readwrite):
         """allocate space in packet for the pdos of this terminal
