@@ -163,8 +163,10 @@ class Struct:
 
 
 class StructDesc:
-    def __init__(self, struct, sm3=0, sm2=0):
+    def __init__(self, struct, sm3=0, sm2=None):
         self.struct = struct
+        if sm2 is None:
+            sm2 = sm3
         self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3}
 
     def __get__(self, instance, owner):
