@@ -228,11 +228,18 @@ class CounterDevice(Device):
                 self.maxtime = self.ebpf.tmp - self.lasttime
             self.lasttime = self.ebpf.tmp
 
+    def update(self):
+        self.counter += 1
+        tmp = monotonic()
+        if tmp - self.lasttime > self.maxtime:
+            self.maxtime = (tmp - self.lasttime) * 1e6
+        self.lasttime = tmp
+
 
 class Counter(EtherCATDevice):
     counter = Int32(accessMode=AccessMode.READONLY, defaultValue=0)
     frequency = Float(accessMode=AccessMode.READONLY)
-    maxtime = Int32(displayedName='laber', accessMode=AccessMode.READONLY)
+    maxtime = Int32(accessMode=AccessMode.READONLY)
 
     def update_properties(self):
         self.value = self.device.current_value
