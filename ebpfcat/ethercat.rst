@@ -1,3 +1,5 @@
+.. currentmodule:: ebpfcat
+
 The EtherCAT master
 ===================
 
@@ -32,18 +34,19 @@ second argument is the absolute address this terminal should be assigned to::
 
 The terminals are usually controlled by devices, where one terminal may be
 controlled by several devices, or one device controls several terminals. The
-devices are represented by `Device` objects. Upon instantiation, they are
-connected to the terminals::
+devices are represented by :class:`~ebpfcat.Device` objects. Upon
+instantiation, they are connected to the terminals::
 
     from ebpfcat.devices import AnalogOutput
 
     ao = AnalogOutput(out.ch1_value)
 
-Devices are grouped into `SyncGroup`, which means that their terminals are
-always read and written at the same time. A device can only belong to one
-`SyncGroup`, but a terminal may be part of several devices or sync groups.
-The sync group is also responsible to constantly transfer data to and from
-the terminals such that they do not time out and go into a safe state::
+Devices are grouped into :class:`~ebpfcat.SyncGroup`, which means that their
+terminals are always read and written at the same time. A device can only
+belong to one :class:`~ebpfcat.SyncGroup`, but a terminal may be part of
+several devices or sync groups.  The sync group is also responsible to
+constantly transfer data to and from the terminals such that they do not time
+out and go into a safe state::
 
     from ebpfcat.ebpfcat import SyncGroup
 
@@ -51,7 +54,7 @@ the terminals such that they do not time out and go into a safe state::
 
     sg.start()  # start operating the terminals
 
-The `AnalogOutput` in the examples is a pretty boring device, it can only
+The ``AnalogOutput`` in the examples is a pretty boring device, it can only
 output a value like so::
 
     ao.value = 5  # set the value on the terminal
@@ -61,24 +64,26 @@ Writing a device
 ----------------
 
 Equipment controlled via the EtherCAT terminals often requires that a dedicated
-device is written for it. Devices inherit from `ebpfcat.Device`. They declare
-which kind of data they want to communicate to the terminals as a `TerminalVar`
-like so::
+device is written for it. Devices inherit from :class:`ebpfcat.Device`. They
+declare which kind of data they want to communicate to the terminals as a
+:class:`ebpfcat.TerminalVar` like so::
 
-    from ebpfcat.ebpfcat import Device
+    from ebpfcat.ebpfcat import Device, TerminalVar
 
     class Motor(Device):
         speed = TerminalVar()
         position = TerminalVar()
 
-Before they can be used, their `TerminalVar`\ s need to be initialized::
+Before they can be used, their :class:`~ebpfcat.TerminalVar`\ s need to be
+initialized::
 
     motor = Motor()
     motor.speed = outputTerminal.speed
     motor.position = encoderTerminal.value
 
-whenever new data is read from the loop, the `update` method of the device is
-called, in which one can evaluate the `TerminalVar`\ s, or set them::
+whenever new data is read from the loop, the :meth:`~ebpfcat.Device.update`
+method of the device is called, in which one can evaluate the
+:class:`~ebpfcat.TerminalVar`\ s, or set them::
 
     def update(self):
         """a idiotic speed controller"""
@@ -107,11 +112,13 @@ simply terminals, we call them such.
 
 Everything in a terminal is controlled by reading or writing parameters in the
 CoE address space. These addresses are a pair of a 16 bit and an 8 bit number,
-usually seperated by a colon, as in 6010:13. Most terminals allow these
+usually seperated by a colon, as in ``6010:13``. Most terminals allow these
 parameters to be set asynchronously. Some of the parameters may be read or
 written synchronously, so with every communication cycle.
 
-The meaning of all these parameters can usually be found in the documentation of the terminal. Additionally, terminals often have a self-description, which can be read with the command line tool `ec-info`::
+The meaning of all these parameters can usually be found in the documentation
+of the terminal. Additionally, terminals often have a self-description, which
+can be read with the command line tool ``ec-info``::
 
     $ ec-info eth0 --terminal -1 --sdo
 
@@ -120,21 +127,21 @@ this reads the first (-1th) terminal's self description (``--sdo``). Add a
 all known self descriptions of CoE parameters.
 
 Once we know the meaning of parameters, they may be read or written
-asynchronously using :meth:`~ebpfcat.ethercat.Terminal.sdo_read` and
-:meth:`~ebpfcat.ethercat.Terminal.sdo_write`.
+asynchronously using :meth:`~ethercat.Terminal.sdo_read` and
+:meth:`~ethercat.Terminal.sdo_write`.
 
 For synchronous data access, a class needs to be defined that defines the
 parameters one want to use synchronously. The parameters available for
 synchronous operations can be found with the ``--pdo`` parameter of the
 ``ec-info`` command. The class should inherit from
-:class:`~ebpfcat.ebpfcat.EBPFTerminal` and define a set of tuples called
+:class:`~ebpfcat.EBPFTerminal` and define a set of tuples called
 ``comptibility``. The tuples should be the pairs of Ethercat product and vendor
 id for all terminals supported by this class. Those can be found out with the
 ``--ids`` parameter of the ``ec-info`` command.
 
 Within the class, the synchronous parameters are defined via
-:class:`~ebpfcat.ebpfcat.ProcessDesc`. This descriptor takes the two parts of
-the CoE address as parameters, plus an optional size parameter. This is usually
+:class:`~ebpfcat.ProcessDesc`. This descriptor takes the two parts of the CoE
+address as parameters, plus an optional size parameter. This is usually
 determined automatically, but this sometimes fails, in which case it may either
 be defined via a format string like in the :mod:`python:struct` module, or it
 is an integer which is then a reference to the position of the bit in the
