@@ -389,6 +389,27 @@ class Tests(TestCase):
             Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
             Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0)])
 
+    def test_bits_and_or(self):
+        class Local(EBPF):
+            a = LocalVar((5, 1))
+
+        e = Local(ProgType.XDP, "GPL")
+
+        with e.stmp:
+            with (e.a != 0) & (e.stmp > 0) | (e.a == 0) & (e.stmp < 0):
+                e.stmp = 0
+
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-1, imm=0),
+            Instruction(opcode=O.JSET, dst=2, src=0, off=1, imm=32),
+            Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=O.JSGT, dst=0, src=0, off=3, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-1, imm=0),
+            Instruction(opcode=O.JSET, dst=2, src=0, off=2, imm=32),
+            Instruction(opcode=O.JSGE, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=0),
+            ])
+
     def test_local_subprog(self):
         class Local(EBPF):
             a = LocalVar('I')
