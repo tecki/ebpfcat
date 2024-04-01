@@ -1,4 +1,8 @@
 [project]
+authors = [
+    {name = "Martin Teichmann", email = "martin.teichmann@gmail.com"},
+]
+description = 'An EtherCAT master written in Python using EBPF and XDP'
 name = "ebpfcat"
 version = "0.4.1"
 dependencies = []
