@@ -183,9 +183,11 @@ class EtherCATDevice(Device):
     def get_devices(self):
         return (self.device,)
 
-    def set_state(self, state):
-        if state != self.state:
+    def set_state(self, state, status=None):
+        if state != self.state or (status is not None
+                                   and status != self.status):
             self.state = state
+            self.status = status
         self.state_change.set()
         self.state_change.clear()
 
