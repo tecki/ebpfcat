@@ -23,6 +23,7 @@ formats = {
     ml.Int64: 'q',
     ml.Float: 'f',
     ml.Double: 'd',
+    ml.Bool: '?',
 }
 
 
@@ -215,7 +216,7 @@ class EtherCATDevice(Device):
         cls._sdo_attrs = []
         for name in cls._allattrs:
             attr = getattr(cls, name)
-            if isinstance(attr, Simple) and attr.alias is not None:
+            if isinstance(attr, (Simple, ml.Bool)) and attr.alias is not None:
                 attr(cls.sdo_setter(attr))
                 cls._sdo_attrs.append(attr)
 
