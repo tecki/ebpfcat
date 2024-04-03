@@ -374,16 +374,16 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.reduced_current = self.motor_term.reduced_current
         await self.sdo_set()
 
-    @Slot()
+    @Slot(displayedName='Move')
     async def move(self):
         self.device.target = int(self.targetPosition // self.encodeStep)
         self.device.set_enable = True
 
-    @Slot()
+    @Slot(displayedName='Stop')
     async def stop(self):
         self.device.target = self.device.encoder
 
-    @Slot()
+    @Slot(displayedName='Off')
     async def off(self):
         self.device.set_enable = False
 
