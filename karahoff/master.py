@@ -35,12 +35,22 @@ class TerminalTable(ml.Configurable):
     productCode = ml.Int32(displayType='hex')
 
 
+class CoETable(ml.Configurable):
+    terminal = ml.String()
+    index = ml.UInt16(displayType='hex')
+    subIndex = ml.UInt8(displayType='hex')
+    format = ml.String()
+    value = ml.Int64()
+
+
 class EtherCATMasterBase(Device):
     instances = {}
 
     interface = String(accessMode=AccessMode.INITONLY,
                        assignment=Assignment.MANDATORY)
     terminals = VectorHash(accessMode=AccessMode.INITONLY, rows=TerminalTable)
+    coe = VectorHash(accessMode=AccessMode.INITONLY, rows=CoETable,
+                     defaultValue=[])
 
 
     async def readOneEeprom(self, i):
@@ -63,6 +73,17 @@ class EtherCATMasterBase(Device):
                         vendor, code)
             else:
                 self.term_by_name[term['name']] = t
+                for coe in self.coe:
+                    if coe['terminal'] != term['name']:
+                        continue  # not very pretty algorithm
+                    state, error, _ = await t.get_state()
+                    if state.value < 2:
+                        await t.set_state(2)
+                    await t.sdo_write(pack(coe['format'], coe['value']), coe['index'],
+                                      coe['subIndex'])
+                    ret = await t.sdo_read(coe['index'], coe['subIndex'])
+                    self.new_coes.append((coe['terminal'], coe['index'], coe['subIndex'], coe['format'], unpack(coe['format'], ret)[0]))
+
                 return (term['name'], t.__class__.__name__, term['serialNo'],
                         vendor, code)
 
@@ -80,8 +101,10 @@ class EtherCATMasterBase(Device):
         count = await self.ethercat.count()
         self.status = f"counted {count} terminals"
         self.term_by_name = {}
+        self.new_coes = []
         self.terminals = await gather(*(self.readOneEeprom(i)
                                         for i in range(count)))
+        self.coes = self.new_coes
         self.state = State.ON
 
 
