@@ -270,20 +270,24 @@ class MotorDevice(Device):
     low_switch = TerminalVar()
     high_switch = TerminalVar()
     enable = TerminalVar()
+    reset = TerminalVar()
+    error = TerminalVar()
     reduced_current = TerminalVar()
 
     tstatus = TerminalVar()
+    encoder_error = TerminalVar()
 
     set_enable = DeviceVar('B')
     deadband_exceeded = DeviceVar('b')
-    max_velocity = DeviceVar('i')
+    max_velocity = DeviceVar('q')
     max_acceleration = DeviceVar('i')
     deadband = DeviceVar('q')
     target = DeviceVar('q')
     proportional = DeviceVar('q')
 
     def program(self):
-        self.enable = self.set_enable
+        self.reset = self.set_enable > 1
+        self.enable = self.set_enable > 0
         with abs(self.target - self.encoder) < self.deadband as Else:
             self.reduced_current = True
         with Else:
@@ -296,8 +300,9 @@ class MotorDevice(Device):
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
-            with (((self.low_switch != 0) & (self.ebpf.stmp < 0))
-                  |  ((self.high_switch != 0) & (self.ebpf.stmp > 0))):
+            with ((self.low_switch != 0) & (self.ebpf.stmp < 0)):
+                self.ebpf.stmp = 0
+            with ((self.high_switch != 0) & (self.ebpf.stmp > 0)):
                 self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
 
@@ -307,8 +312,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
                    assignment=Assignment.MANDATORY)
     encoder = String(accessMode=AccessMode.INITONLY,
                      assignment=Assignment.MANDATORY)
-    proportional = Float(accessMode=AccessMode.INITONLY)
-    stepSize = Float(
+    proportional = Float(defaultValue=1, accessMode=AccessMode.INITONLY)
+    encodeStep = Float(
         accessMode=AccessMode.INITONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     deadband = Float(
@@ -336,12 +341,16 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     max_voltage = UInt16(alias="M:8010:3")
     coil_resistance = UInt16(alias="M:8010:4")
     motor_emf = UInt16(alias="M:8010:5")
+    invLogicLim1 = Bool(alias="M:8012:30", defaultValue=True)
+    invLogicLim2 = Bool(alias="M:8012:31", defaultValue=True)
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 
     targetVelocity = Int32(defaultValue=1000)
     targetPosition = Float(unitSymbol=Unit.METER,
                            metricPrefixSymbol=MetricPrefix.MILLI)
+    stepSize = Float(unitSymbol=Unit.METER,
+                     metricPrefixSymbol=MetricPrefix.MILLI)
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
@@ -352,15 +361,22 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.low_switch = self.motor_term.low_switch
         self.device.high_switch = self.motor_term.high_switch
         self.device.tstatus = self.motor_term.status
-        self.device.encoder = self.encoder_term.position
+        if isinstance(self.encoder_term, Struct):
+            self.device.encoder = self.encoder_term.position
+            self.device.encoder_error = self.encoder_term.error
+            self.terminals = dict(M=self.motor_term, E=self.encoder_term)
+        else:
+            self.device.encoder = self.encoder_term
+            self.terminals = dict(M=self.motor_term, E=None)
         self.device.enable = self.motor_term.enable
+        self.device.error = self.motor_term.error
+        self.device.reset = self.motor_term.reset
         self.device.reduced_current = self.motor_term.reduced_current
-        self.terminals = dict(M=self.motor_term, E=self.encoder_term)
         await self.sdo_set()
 
     @Slot()
     async def move(self):
-        self.device.target = int(self.targetPosition // self.stepSize)
+        self.device.target = int(self.targetPosition // self.encodeStep)
         self.device.set_enable = True
 
     @Slot()
@@ -371,15 +387,35 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     async def off(self):
         self.device.set_enable = False
 
+    @Slot(displayedName='Step Up')
+    async def stepUp(self):
+        self.targetPosition = self.actualPosition + self.stepSize
+        await self.move()
+
+    @Slot(displayedName='Step Down')
+    async def stepDown(self):
+        self.targetPosition = self.actualPosition - self.stepSize
+        await self.move()
+
+    @Slot()
+    async def reset(self):
+        self.device.set_enable = 2
+        await sleep(0.2)
+        self.device.set_enable = 0
+
     def update_properties(self):
-        self.actualPosition = self.device.encoder * self.stepSize.value
+        self.actualPosition = self.device.encoder * self.encodeStep * now()
         self.actualVelocity = self.device.velocity
         self.qstatus = self.device.tstatus
         self.isCCWLimit = self.device.low_switch
         self.isCWLimit = self.device.high_switch
 
         if super().update_properties():
-            if not self.device.enable:
+            if self.terminals["E"] is not None and self.device.encoder_error:
+                self.set_state(State.ERROR, f'encoder reported error')
+            elif self.device.error:
+                self.set_state(State.ERROR, 'motor reported error')
+            elif not self.device.enable:
                 self.set_state(State.OFF)
             elif self.device.velocity != 0 and self.device.deadband_exceeded:
                 self.set_state(State.MOVING)
@@ -389,7 +425,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
         self.device.max_velocity = self.targetVelocity
         self.device.proportional = int(self.proportional * (1 << 16))
-        self.device.deadband = int(self.deadband // self.stepSize)
+        self.device.deadband = int(self.deadband // self.encodeStep)
 
 
 class BronkhorstDevice(Device):
