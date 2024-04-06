@@ -134,6 +134,7 @@ class EL5042(EBPFTerminal):
         warning = ProcessDesc(0x6000, 1)
         error = ProcessDesc(0x6000, 2)
         status = ProcessDesc(0x6000, 1, "H")
+        invalid = ProcessDesc(0x6000, 0xE)
 
     channel1 = Channel(0)
     channel2 = Channel(0x10)
@@ -167,8 +168,8 @@ class EL7041(EBPFTerminal):
     reduced_current = ProcessDesc(0x7010, 3)
     status = ProcessDesc(0x6010, 1, "H")
     error = ProcessDesc(0x6010, 4)
-    low_switch = ProcessDesc(0x6010, 0xc)
-    high_switch = ProcessDesc(0x6010, 0xd)
+    high_switch = ProcessDesc(0x6010, 0xc)
+    low_switch = ProcessDesc(0x6010, 0xd)
     stepcounter = ProcessDesc(0x6010, 0x14)
 
 
