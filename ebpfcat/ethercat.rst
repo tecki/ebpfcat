@@ -17,14 +17,14 @@ we need to use await, which can only be done in an async function::
     async def main():
         master = FastEtherCat("eth0")
         await master.connect()
-        await master.scan_bus()
+        print('Number of terminals:', await master.count())
 
     asyncio.run(main())
 
 Next we create an object for each terminal that we want to use. As an example,
 take some Beckhoff output terminal::
 
-    from ebpfcat.terminals import EL4104, Generic
+    from ebpfcat.terminals import EL4104
 
     out = EL4104(master)
 
@@ -61,6 +61,10 @@ The ``AnalogOutput`` in the examples is a pretty boring device, it can only
 output a value like so::
 
     ao.value = 5  # set the value on the terminal
+
+For reference, here is a complete code example:
+
+.. literalinclude:: /examples/ethercat.py
 
 
 Writing a device
