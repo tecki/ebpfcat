@@ -11,12 +11,15 @@ via an ethernet interface. So we create a master object, and connect to that
 interface an scan the loop. This takes time, so in a good asyncronous fashion
 we need to use await, which can only be done in an async function::
 
+    import asyncio
     from ebpfcat.ebpfcat import FastEtherCat
 
-    # later, in an async function:
-    master = FastEtherCat("eth0")
-    await master.connect()
-    await master.scan_bus()
+    async def main():
+        master = FastEtherCat("eth0")
+        await master.connect()
+        await master.scan_bus()
+
+    asyncio.run(main())
 
 Next we create an object for each terminal that we want to use. As an example,
 take some Beckhoff output terminal::
@@ -39,7 +42,7 @@ instantiation, they are connected to the terminals::
 
     from ebpfcat.devices import AnalogOutput
 
-    ao = AnalogOutput(out.ch1_value)
+    ao = AnalogOutput(out.ch1_value)  # use channel 1 of terminal "out"
 
 Devices are grouped into :class:`~ebpfcat.SyncGroup`, which means that their
 terminals are always read and written at the same time. A device can only
@@ -89,6 +92,7 @@ method of the device is called, in which one can evaluate the
         """a idiotic speed controller"""
         self.speed = (self.position - self.target) * self.pConst
 
+
 Three methods of control
 ------------------------
 
@@ -120,11 +124,11 @@ The meaning of all these parameters can usually be found in the documentation
 of the terminal. Additionally, terminals often have a self-description, which
 can be read with the command line tool ``ec-info``::
 
-    $ ec-info eth0 --terminal -1 --sdo
+    $ ec-info eth0 --terminal 1 --sdo
 
-this reads the first (-1th) terminal's self description (``--sdo``). Add a
-``--value`` to also get the current values of the parameters. This prints out
-all known self descriptions of CoE parameters.
+this reads the first terminal's self description (``--sdo``). Add a ``--value``
+to also get the current values of the parameters. This prints out all known
+self descriptions of CoE parameters.
 
 Once we know the meaning of parameters, they may be read or written
 asynchronously using :meth:`~ethercat.Terminal.sdo_read` and

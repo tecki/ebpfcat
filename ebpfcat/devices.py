@@ -110,11 +110,11 @@ class DigitalOutput(Device):
         self.data = self.value
 
 
-class PWM(Device):
-    """Generic digital output device
+class RandomOutput(Device):
+    """Randomized digital output
 
-    This device can be linked to an analog output of a terminal.
-    It will write the `value` to that terminal.
+    This device randomly switches its linked digital output
+    on or off, with a probability given by :attr:`probability`.
     """
     seed = DeviceVar("I", write=True)
     value = DeviceVar("I", write=True)
@@ -127,8 +127,13 @@ class PWM(Device):
         self.seed = self.seed * 0xcf019d85 + 1
         self.data = self.value > self.seed
 
-    def update(self):
-        self.data = self.value
+    @property
+    def probability(self):
+        return self.value / 0xffffffff
+
+    @probability.setter
+    def probability(self, value):
+        self.value = int(value * 0xffffffff)
 
 
 class Counter(Device):
@@ -156,14 +161,67 @@ class Counter(Device):
 
 
 class Motor(Device):
+    """A simple closed-loop motor
+
+    This device implements a closed loop between an encoder and a
+    velocity-control motor.
+
+    .. attribute:: velocity
+        :type: TerminalVar
+
+        link this to the velocity output of a motor terminal
+
+    .. attribute:: encoder
+        :type: TerminalVar
+
+        link this to the position input of an encoder
+
+    .. attribute:: low_switch
+        :type: TerminalVar
+
+        link to a digital input for a low limit switch
+
+    .. attribute:: high_switch
+        :type: TerminalVar
+
+        link to a digital input for a high limit switch
+
+    .. attribute:: enable
+        :type: TerminalVar
+
+        link to the enable parameter of the motor terminal
+
+    .. attribute:: current_position
+        :type: TerminalVar
+
+    .. attribute:: set_enable
+        :type: DeviceVar
+
+        set to whether the motor should be enabled, i.e. moving
+
+    .. attribute:: target
+        :type: DeviceVar
+
+        the current target the motor should move to
+
+    .. attribute:: max_velocity
+        :type: DeviceVar
+
+        the maximum allowed velocity for the motor. If the motor is far away
+        from its target, this is the velocity the motor will go with.
+
+    .. attribute:: proportional
+        :type: DeviceVar
+
+        the proportionality factor between the distance from target and the
+        desired velocity.
+    """
     velocity = TerminalVar()
     encoder = TerminalVar()
     low_switch = TerminalVar()
     high_switch = TerminalVar()
     enable = TerminalVar()
 
-    current_position = DeviceVar()
-    set_velocity = DeviceVar(write=True)
     set_enable = DeviceVar(write=True)
     max_velocity = DeviceVar(write=True)
     max_acceleration = DeviceVar(write=True)
@@ -176,7 +234,6 @@ class Motor(Device):
             velocity = self.max_velocity
         elif velocity < -self.max_velocity:
             velocity = -self.max_velocity
-        self.current_position = self.encoder
         self.velocity = velocity
         self.enable = self.set_enable
 
@@ -197,6 +254,7 @@ class Motor(Device):
         with self.high_switch, self.velocity > 0:
             self.velocity = 0
 
+
 class Dummy(Device):
     """A placeholder device assuring a terminal is initialized"""
     def __init__(self, terminals):
@@ -210,6 +268,11 @@ class Dummy(Device):
 
 
 class RandomDropper(Device):
+    """Randomly drop packets
+
+    This fake device randomly drops EtherCat packets, to simulate bad
+    connections.
+    """
     rate = DeviceVar("I", write=True)
 
     def program(self):
