@@ -195,8 +195,10 @@ class ObjectEntry:
         if self.name is None:
             return "[unread ObjectEntry]"
 
-        return f'"{self.name}" {self.dataType}:{self.bitLength} ' \
-               f'{self.objectAccess:X}'
+        dt = self.dataType
+        return f'{self.name} ' \
+               f'{dt.name if isinstance(dt, ECDataType) else dt} ' \
+               f'({self.bitLength} bit) flags {self.objectAccess:X}'
 
 
 def datasize(args, data):

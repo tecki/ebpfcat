@@ -56,7 +56,7 @@ async def info():
         await term.initialize(-args.terminal, free)
         terms = [term]
 
-    for i, t in enumerate(terms):
+    for i, t in enumerate(terms, args.terminal if args.terminal else 0):
         print(f"terminal no {i}")
         if args.ids:
             print(f"{t.vendorId:X}:{t.productCode:X} "
@@ -94,7 +94,7 @@ async def info():
             await t.to_operational(MachineState.PRE_OPERATIONAL)
             await t.parse_pdos()
             for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
-                print(f"{idx:4X}:{subidx:02X} {sm} {pos} {fmt}")
+                print(f"{idx:4X}:{subidx:02X} {sm.name} {pos} {fmt}")
 
 
 def encode(name):
