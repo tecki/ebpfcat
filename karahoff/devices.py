@@ -327,22 +327,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
     motor_term = encoder_term = None
 
-    statusbits = UInt8(alias="E:8008:2", defaultValue=0)
-    crc_invert = UInt8(alias="E:8008:3", defaultValue=1)
-    multiturn = UInt8(alias="E:8008:15", defaultValue=0)
-    singleturn = UInt8(alias="E:8008:16", defaultValue=26)
-    frequency = UInt8(alias="E:8008:13", defaultValue=0)
-    polynomial = UInt32(alias="E:8008:11", defaultValue=67)
-
     isCWLimit = Bool(accessMode=AccessMode.READONLY)
     isCCWLimit = Bool(accessMode=AccessMode.READONLY)
-
-    max_current = UInt16(alias="M:8010:1")
-    max_voltage = UInt16(alias="M:8010:3")
-    coil_resistance = UInt16(alias="M:8010:4")
-    motor_emf = UInt16(alias="M:8010:5")
-    invLogicLim1 = Bool(alias="M:8012:30", defaultValue=True)
-    invLogicLim2 = Bool(alias="M:8012:31", defaultValue=True)
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 
@@ -372,7 +358,6 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.error = self.motor_term.error
         self.device.reset = self.motor_term.reset
         self.device.reduced_current = self.motor_term.reduced_current
-        await self.sdo_set()
 
     @Slot(displayedName='Move')
     async def move(self):
@@ -475,7 +460,6 @@ class Bronkhorst(EtherCATDevice):
         if mode is not None:
             await self.the_terminal.sdo_write(pack('B', mode), 0x6423, 1)
         mode, = unpack('B', await self.the_terminal.sdo_read(0x6423, 1))
-        print('mode is', mode)
         self.state = {
                 0x80: State.RUNNING,
                 0x83: State.CLOSED,
