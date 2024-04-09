@@ -48,12 +48,11 @@ async def info():
         terms = [Terminal(ec) for t in terminals]
         for t in terms:
             t.ec = ec
-        await asyncio.gather(*(t.initialize(-i, i + 7)
+        await asyncio.gather(*(t.initialize(-i)
                                for i, t in zip(terminals, terms)))
     else:
-        free = await ec.find_free_address()
         term = Terminal(ec)
-        await term.initialize(-args.terminal, free)
+        await term.initialize(-args.terminal)
         terms = [term]
 
     for i, t in enumerate(terms, args.terminal if args.terminal else 0):
@@ -120,20 +119,9 @@ async def eeprom():
 
     if args.terminal is None:
         return
-        terminals = range(await ec.count())
-    else:
-        # former terminal: don't listen!
-        # this does not work with all terminals, dunno why
-        try:
-            await ec.roundtrip(ECCmd.FPRW, 7, 0x10, "H", 0)
-        except EtherCatError:
-            print('fine: no not used yet')
-        else:
-            print('had to silence former listener')
-        terminals = [args.terminal]
 
     t = Terminal(ec)
-    await t.initialize(-args.terminal, 7)
+    await t.initialize(-args.terminal)
 
     if args.read or args.check is not None:
         r, = unpack("<4xI", await t._eeprom_read_one(0xc))
@@ -165,7 +153,7 @@ async def create_test():
     for i in range(no):
         t = Terminal()
         t.ec = ec
-        await t.initialize(-i, await ec.find_free_address())
+        await t.initialize(-i)
         sdo = {}
         if t.has_mailbox():
             await t.to_operational(MachineState.PRE_OPERATIONAL)

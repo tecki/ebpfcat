@@ -302,6 +302,7 @@ class EtherCat(Protocol):
         """
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
         self.wait_futures = {}
+        self.used_addresses = set()
 
     async def connect(self):
         """connect to the EtherCAT loop"""
@@ -429,13 +430,28 @@ class EtherCat(Protocol):
         return no
 
     async def find_free_address(self):
-        """Find an absolute address currently not in use"""
+        """Find an absolute address not in use
+
+        an address once returned by this method is assumed to be used in the
+        future and will never be handed out again"""
         while True:
             i = randint(1000, 30000)
+            if i in self.used_addresses:
+                continue
+            self.used_addresses.add(i)
             try:
                 await self.roundtrip(ECCmd.FPRD, i, 0x10, "H", 0)
             except EtherCatError:
                 return i  # this address is not in use
+
+    async def assigned_address(self, position):
+        """return the set adress of terminal at position, if none set one"""
+        ret, = await self.roundtrip(ECCmd.APRD, position, 0x10, "H", 0)
+        if ret != 0:
+            return ret
+        ret = await self.find_free_address()
+        await self.roundtrip(ECCmd.APWR, position, 0x10, "H", ret)
+        return ret
 
     async def eeprom_read(self, position, start):
         """read 4 bytes from the eeprom of terminal `position` at `start`"""
@@ -466,18 +482,28 @@ class Terminal:
     def __init__(self, ethercat):
         self.ec = ethercat
 
-    async def initialize(self, relative, absolute):
+    async def initialize(self, relative=None, absolute=None):
         """Initialize the terminal
 
         this sets up the connection to the terminal we represent.
 
         :param relative: the position of the terminal in the loop,
             a negative number counted down from 0 for the first terminal
+            If None, we assume the address is already initialized
         :param absolute: the number used to identify the terminal henceforth
+            If None take a free one
+
+        If only one parameter is given, it is taken to be an absolute
+        position, the terminal address is supposed to be already initialized.
 
         This also reads the EEPROM and sets up the sync manager as defined
-        therein. It still leaves the terminal in the init state. """
-        await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
+        therein. It still leaves the terminal in the init state.
+        """
+        assert relative is not None or absolute is not None
+        if absolute is None:
+            absolute = await self.ec.find_free_address()
+        if relative is not None:
+            await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
 
         await self.set_state(0x11)
