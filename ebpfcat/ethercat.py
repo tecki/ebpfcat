@@ -966,8 +966,11 @@ class Terminal:
         oe.valueInfo, dataType, oe.bitLength, oe.objectAccess = \
             unpack_from("<BxHHH", data)
         assert subidx == oe.valueInfo
+        oe.dataTypeOriginal = dataType
         if dataType < 2048:
             oe.dataType = ECDataType(dataType)
+        elif oe.bitLength == 8:
+            oe.dataType = ECDataType.UNSIGNED8
         else:
             oe.dataType = dataType
         oe.name = data[8:].decode("utf8")
