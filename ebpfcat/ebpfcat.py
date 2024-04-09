@@ -28,7 +28,7 @@ from time import time
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import (
     ECCmd, EtherCat, MachineState, Packet, Terminal, EtherCatError,
-    SyncManager)
+    Struct, SyncManager)
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
 from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
@@ -144,38 +144,6 @@ class PacketVar(MemoryDesc):
     def fmt_addr(self, device):
         return ((self.size, 1) if isinstance(self.size, int) else self.size,
                 self._start(device) + Packet.ETHERNET_HEADER)
-
-
-class Struct:
-    """Define repetitive structures in a PDO
-
-    Some terminals, especially multi-channel terminals,
-    have repetitive structures in their PDO. Inherit from this
-    class to create a structure for them. Each instance
-    will then define one channel. It takes one parameter, which
-    is the offset in the CoE address space from the template
-    structure to the one of the channel.
-    """
-    device = None
-
-    def __new__(cls, *args):
-        return StructDesc(cls, *args)
-
-
-class StructDesc:
-    def __init__(self, struct, sm3=0, sm2=None):
-        self.struct = struct
-        if sm2 is None:
-            sm2 = sm3
-        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3}
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        ret = object.__new__(self.struct)
-        ret.position_offset = self.position_offset
-        ret.terminal = instance
-        return ret
 
 
 class TerminalVar:

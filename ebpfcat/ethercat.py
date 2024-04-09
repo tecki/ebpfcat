@@ -477,6 +477,50 @@ class EtherCat(Protocol):
         self.wait_futures[index].set_result(data)
 
 
+class ServiceDesc:
+    def __init__(self, index, subidx):
+        self.index = index
+        self.subidx = subidx
+
+
+class Struct:
+    """Define repetitive structures in CoE objects
+
+    Some terminals, especially multi-channel terminals,
+    have repetitive structures in their CoE. Inherit from this
+    class to create a structure for them. Each instance
+    will then define one channel. It takes one parameter, which
+    is the offset in the CoE address space from the template
+    structure to the one of the channel.
+    """
+    device = None
+
+    def __new__(cls, *args):
+        return StructDesc(cls, *args)
+
+
+class StructDesc:
+    def __init__(self, struct, sm3=0, sm2=None):
+        self.struct = struct
+        if sm2 is None:
+            sm2 = sm3
+        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3}
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        if (ret := instance.__dict__.get(self.name)) is not None:
+            return ret
+        ret = object.__new__(self.struct)
+        ret.position_offset = self.position_offset
+        ret.terminal = instance
+        instance.__dict__[self.name] = ret
+        return ret
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+
 class Terminal:
     """Represent one terminal (*SubDevice* or *slave*) in the loop"""
     def __init__(self, ethercat):
@@ -624,6 +668,22 @@ class Terminal:
                 if 51 in self.eeprom else 0,
                 await parse(parse_eeprom(self.eeprom[50]), SyncManager.IN)
                 if 50 in self.eeprom else 0)
+
+    async def parse_sdos(self):
+        sdos = {}
+        for cls in self.__class__.__mro__:
+            for k, v in cls.__dict__.items():
+                if isinstance(v, ServiceDesc):
+                    setattr(self, k,
+                            await self.read_object_entry(v.index, v.subidx))
+                elif isinstance(v, StructDesc):
+                    struct = getattr(self, k)
+                    offset = struct.position_offset[SyncManager.IN]
+                    for kk, vv in struct.__class__.__dict__.items():
+                        if isinstance(vv, ServiceDesc):
+                            setattr(struct, kk,
+                                    await self.read_object_entry(
+                                        vv.index + offset, vv.subidx))
 
     async def set_state(self, state):
         """try to set the state, and return the new state"""

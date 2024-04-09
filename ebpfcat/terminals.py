@@ -15,7 +15,8 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .ebpfcat import EBPFTerminal, PacketDesc, ProcessDesc, Struct
+from .ethercat import ServiceDesc, Struct
+from .ebpfcat import EBPFTerminal, PacketDesc, ProcessDesc
 
 
 class Generic(EBPFTerminal):
@@ -136,9 +137,15 @@ class EL5042(EBPFTerminal):
         status = ProcessDesc(0x6000, 1, "H")
         invalid = ProcessDesc(0x6000, 0xE)
 
+        statusbits = ServiceDesc(0x8008, 2)
+        crc_invert = ServiceDesc(0x8008, 3)
+        multiturn = ServiceDesc(0x8008, 0x15)
+        singleturn = ServiceDesc(0x8008, 0x16)
+        frequency = ServiceDesc(0x8008, 0x13)
+        polynomial = ServiceDesc(0x8008, 0x11)
+
     channel1 = Channel(0)
     channel2 = Channel(0x10)
-
 
 class EL6022(EBPFTerminal):
     class Channel(Struct):
@@ -171,6 +178,13 @@ class EL7041(EBPFTerminal):
     high_switch = ProcessDesc(0x6010, 0xc)
     low_switch = ProcessDesc(0x6010, 0xd)
     stepcounter = ProcessDesc(0x6010, 0x14)
+
+    max_current = ServiceDesc(0x8010, 1)
+    max_voltage = ServiceDesc(0x8010, 3)
+    coil_resistance = ServiceDesc(0x8010, 4)
+    motor_emf = ServiceDesc(0x8010, 5)
+    invLogicLim1 = ServiceDesc(0x8012, 0x30)
+    invLogicLim2 = ServiceDesc(0x8012, 0x31)
 
 
 class EL7332(EBPFTerminal):
