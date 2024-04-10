@@ -322,8 +322,6 @@ class Counter(EtherCATDevice):
     def update_properties(self):
         lc = self.counter
         t1 = monotonic()
-        if t1 - self.lasttime < 0.1:
-            return
         self.counter = self.device.counter
         self.frequency = (self.counter - lc) / (t1 - self.lasttime)
         self.lasttime = t1

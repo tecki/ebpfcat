@@ -141,8 +141,10 @@ class EtherCATSyncGroupBase(Device):
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
                         d.update_properties()
-                        await sleep(0)
-                await sleep(self.interval.value)
+                        d.update()
+                        await sleep(self.interval.value / len(self.devs))
+                else:
+                    await sleep(self.interval.value)
             self.syncGroup.task.result()  # raises error if problem
         except Exception as e:
             self.status = str(e)
@@ -199,6 +201,9 @@ class EtherCATDevice(Device):
     def initialize(self):
         """called once everything is set up"""
         return
+
+    def setChildValue(self, key, value, desc):
+        self._sethash[key] = value, desc
 
 
 class Channel(Configurable):
