@@ -37,6 +37,18 @@ from .bpf import (
 
 
 class PacketDesc:
+    """A single value in a process data
+
+    This describes some data in the process data coming from or sent to
+    a terminal. This is the low-level version of :class:`ProcessDesc`, which
+    can be used if the terminal's self-desciption is lacking.
+
+    :param sm: the sync manager, either :attr:`SyncManager.IN` or
+        :attr:`SyncManager.OUT`.
+    :param position: the byte position in the process data
+    :param size: either a :mod:`python:struct` definition of a data type,
+        or an integer denoting the bit within a byte to be adressed.
+    """
     def __init__(self, sm, position, size):
         self.sm = sm
         self.position = position
@@ -147,6 +159,27 @@ class PacketVar(MemoryDesc):
 
 
 class TerminalVar:
+    """a device variable to be linked to a process variable
+
+    Whithin a :class:`Device`, one can refer to process variables that should
+    later be linked to process variables of a terminal. Within the device, one
+    can access the process variable generically. Upon instantiation one would
+    then assign a :class:`ProcessDesc` (or :class:`PacketDesc`) to it to link
+    the variable to an actual terminal.
+
+    For example::
+
+        class MyDevice(Device):
+            the_output = TerminalVar()
+
+            def program(self):
+                self.the_output = 5  # write 5 to whatever variable linked
+
+        terminal = MyTerminal()
+        device = MyDevice()
+        device.the_output = terminal.output5  # link the_output to output5
+    """
+
     def __set__(self, instance, value):
         if isinstance(value, PacketVar):
             instance.__dict__[self.name] = value
@@ -172,6 +205,28 @@ class TerminalVar:
 
 
 class DeviceVar(ArrayGlobalVarDesc):
+    """A variable in a device for higher-level use
+
+    define a variable within a device which the device's user can
+    access. This is especially important for fast devices, this is the
+    way data is communicated to and from the EBPF program.
+
+    For non-fast devices, this acts like normal Python variables.
+
+    :param size: the size of a variable in :mod:`python:struct` letters
+    :param write: whether the variable will be written to by the user
+
+    For example::
+
+        class MyDevice(Device):
+            my_data = DeviceVar()
+
+            def program(self):
+                self.my_data = 7
+
+        device = MyDevice()
+        print(self.my_data)  # should print 7 once the program is running
+    """
     def __init__(self, size="I", write=False):
         super().__init__(FastSyncGroup.properties, size)
         self.write = write
@@ -287,6 +342,23 @@ class EBPFTerminal(Terminal):
 
 
 class EtherXDP(XDP):
+    """The EtherCat packet dispatcher
+
+    This class creates an EBPF program that receives EtherCAT packet
+    from the network and dispatches them to the sync group they belong
+    to, or passes them on to user space if they do not belong to them.
+
+    For each sync group, there are always two packets on the wire, one
+    that only reads value from the terminals, the other one also writes.
+    Usually only the read-write packet is handed over to the sync group's
+    program. If, however, that packet gets lost, the next read-only
+    packet is handed over.
+
+    User space is supposed to constantly feed in new packets, and the
+    then-superfluous packets are sent back to user space. This way user
+    space can constantly read data independent of the EBPF program. It
+    cannot write, however, as this would cause priority issues.
+    """
     license = "GPL"
     minimumPacketSize = 30
 
@@ -336,6 +408,7 @@ class SimpleEtherCat(EtherCat):
 
 
 class FastEtherCat(SimpleEtherCat):
+    """An EtherCAT driver class for fast and slow sync groups"""
     MAX_PROGS = 64
 
     def __init__(self, network):
