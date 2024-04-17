@@ -24,7 +24,7 @@ from enum import Enum
 import logging
 import os
 from struct import pack, unpack, calcsize, pack_into, unpack_from
-from time import time
+from time import monotonic
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import (
     ECCmd, EtherCat, MachineState, Packet, Terminal, EtherCatError,
@@ -502,6 +502,7 @@ class BaseType(Enum):
 
 class SyncGroupBase:
     missed_counter = 0
+    cycletime = 0.01  # cycle time of the PLC loop
     task = None
 
     current_data = None
@@ -544,12 +545,13 @@ class SyncGroupBase:
         async with self.map_fmmu():
             task = ensure_future(self.to_operational())
             try:
+                lasttime = monotonic()
                 while True:
                     self.ec.send_packet(data)
                     try:
                         data = await wait_for(
                                 self.ec.receive_index(self.packet_index),
-                                timeout=0.1)
+                                timeout=0.05)
                     except TimeoutError:
                         self.missed_counter += 1
                         logging.warning(
@@ -557,6 +559,9 @@ class SyncGroupBase:
                             self.missed_counter)
                         continue
                     data = self.update_devices(data)
+                    newtime = monotonic()
+                    await sleep(self.cycletime - (newtime - lasttime))
+                    lasttime = monotonic()
             finally:
                 task.cancel()
                 try:
