@@ -314,7 +314,10 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
                      assignment=Assignment.MANDATORY)
     proportional = Float(defaultValue=1, accessMode=AccessMode.INITONLY)
     encodeStep = Float(
-        accessMode=AccessMode.INITONLY,
+        accessMode=AccessMode.INITONLY, defaultValue=5e-5,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    offset = Float(
+        accessMode=AccessMode.INITONLY, defaultValue=0,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     deadband = Float(
         defaultValue=1e-3,
@@ -361,7 +364,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
     @Slot(displayedName='Move')
     async def move(self):
-        self.device.target = int(self.targetPosition // self.encodeStep)
+        self.device.target = int((self.targetPosition - self.offset)
+                                 // self.encodeStep)
         self.device.set_enable = True
 
     @Slot(displayedName='Stop')
@@ -389,7 +393,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.set_enable = 0
 
     def update_properties(self):
-        self.actualPosition = self.device.encoder * self.encodeStep * now()
+        self.actualPosition = (self.device.encoder * self.encodeStep
+                               + self.offset) * now()
         self.actualVelocity = self.device.velocity
         self.qstatus = self.device.tstatus
         self.isCCWLimit = self.device.low_switch
