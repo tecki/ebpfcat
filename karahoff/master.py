@@ -72,12 +72,13 @@ class EtherCATMasterBase(Device):
     async def init_one_terminal(self, i):
         address = await self.ethercat.assigned_address(i)
         serialNo = await self.ethercat.eeprom_read(i, EEPROM.SERIAL_NO)
-        old = self.addr_by_serial.get(serialNo)
-        if old is not None and old != address:
-            self.status = 'double serial number found'
-            self.state = State.ERROR
         if serialNo > 0:
-            self.addr_by_serial[serialNo] = address
+            old = self.addr_by_serial.get(serialNo)
+            if old is not None and old != address:
+                self.status = f'double serial number found: {serialNo} at {i}'
+                self.state = State.ERROR
+            else:
+                self.addr_by_serial[serialNo] = address
         else:
             self.addr_by_serial[i] = address
 
