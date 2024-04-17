@@ -502,6 +502,7 @@ class BaseType(Enum):
 
 class SyncGroupBase:
     missed_counter = 0
+    task = None
 
     current_data = None
     logical_in = logical_out = None
@@ -617,6 +618,7 @@ class SyncGroup(SyncGroupBase):
             raise
 
     def start(self):
+        assert self.task is None or self.task.done()
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
