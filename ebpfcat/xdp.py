@@ -58,7 +58,6 @@ class XDRFD(DatagramProtocol):
     def connection_made(self, transport):
         sock = transport.get_extra_info("socket")
         sock.setsockopt(270, 11, 1)
-        sock.bind((0, 0))
         self.transport = transport
         # this was adopted from xdp1_user.c
         p = pack("IHHIIBxHiIiHHHHiHHI",
