@@ -130,8 +130,9 @@ class OptionalKeepOnMixin(OptionalMixin):
 
     @Slot()
     async def reset(self):
-        self.switchDevice.value = 1
-        await self.state_change.wait()
+        if self.switchDevice is not None:
+            self.switchDevice.value = 1
+            await self.state_change.wait()
 
 
 class DigitalOutput(OptionalSwitchMixin):
@@ -637,9 +638,11 @@ class ValveDevice(Device):
     error = False
 
     def update(self):
-        if (self.openSwitch != self.closeSwitch) \
-                and (self.closeSwitch if (self.coil == self.safeState)
-                     else self.openSwitch):
+        inPosition = self.openSwitch != self.closeSwitch
+        isCorrect = ((self.closeSwitch or not self.openSwitch)
+                     if (self.coil == self.safeState)
+                     else (self.openSwitch or not self.closeSwitch))
+        if inPosition and isCorrect:
             self.lastGood = monotonic()
             self.coil = self.target
         elif monotonic() - self.lastGood < self.movingTime:
@@ -656,10 +659,8 @@ class ValveDevice(Device):
 class Valve(OptionalKeepOnMixin, EtherCATDevice):
     coil = String(accessMode=AccessMode.INITONLY,
                   assignment=Assignment.MANDATORY)
-    openSwitch = String(accessMode=AccessMode.INITONLY,
-                        assignment=Assignment.MANDATORY)
-    closeSwitch = String(accessMode=AccessMode.INITONLY,
-                         assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY)
     safeState = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
     movingTime = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
                        defaultValue=3)
@@ -672,8 +673,10 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
         self.device = ValveDevice()
         self.device.reset()
         self.device.coil = self.find_channel(self.coil)
-        self.device.openSwitch = self.find_channel(self.openSwitch)
-        self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        if self.openSwitch:
+            self.device.openSwitch = self.find_channel(self.openSwitch)
+        if self.closeSwitch:
+            self.device.closeSwitch = self.find_channel(self.closeSwitch)
         self.device.movingTime = self.movingTime.value
         self.device.target = self.device.safeState = self.safeState.value
 
@@ -691,22 +694,26 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
         self.device.reset()
 
     def update_properties(self):
-        if self.device.openSwitch != self.isOpened:
+        if self.openSwitch and self.device.openSwitch != self.isOpened:
             self.isOpened = self.device.openSwitch
-        if self.device.closeSwitch != self.isClosed:
+        if self.closeSwitch and self.device.closeSwitch != self.isClosed:
             self.isClosed = self.device.closeSwitch
         if not super().update_properties():
             return
         if self.device.error:
             self.set_state(State.ERROR)
-        elif self.device.openSwitch:
-            self.set_state(State.OPENED)
-        elif self.device.closeSwitch:
-            self.set_state(State.CLOSED)
         elif self.device.coil == self.safeState:
-            self.set_state(State.CLOSING)
+            if (self.closeSwitch and not self.device.closeSwitch
+                    or self.openSwitch and self.device.openSwitch):
+                self.set_state(State.CLOSING)
+            else:
+                self.set_state(State.CLOSED)
         else:
-            self.set_state(State.OPENING)
+            if (self.openSwitch and not self.device.openSwitch
+                    or self.closeSwitch and self.device.closeSwitch):
+                self.set_state(State.OPENING)
+            else:
+                self.set_state(State.OPENED)
 
 
 class ShutterDevice(Device):
