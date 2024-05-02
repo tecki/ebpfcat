@@ -29,7 +29,7 @@ class Skip(EBPFTerminal):
 
 
 class EL1808(EBPFTerminal):
-    compatibility = {(2, 118501458)}
+    compatibility = {(2, 118501458), (2, 0x3F03052)}
 
     channel1 = ProcessDesc(0x6000, 1)
     channel2 = ProcessDesc(0x6010, 1)
@@ -39,6 +39,27 @@ class EL1808(EBPFTerminal):
     channel6 = ProcessDesc(0x6050, 1)
     channel7 = ProcessDesc(0x6060, 1)
     channel8 = ProcessDesc(0x6070, 1)
+
+
+class EL2212(EBPFTerminal):
+    compatibility = {(2, 0x8A43052)}
+
+    class Channel(Struct):
+        output = ProcessDesc(0x7000, 2)
+
+        boost_current = ServiceDesc(0x8000, 1)
+        hold_current = ServiceDesc(0x8000, 2)
+        supply_voltage = ServiceDesc(0x8000, 3)
+        coil_resistance = ServiceDesc(0x8000, 5)
+        booster_on_time = ServiceDesc(0x8000, 6)
+        booster_off_time = ServiceDesc(0x8000, 7)
+        switch_off_threshold = ServiceDesc(0x8000, 8)
+        enable_booster_on = ServiceDesc(0x8002, 1)
+        enable_booster_off = ServiceDesc(0x8002, 2)
+        enable_off_threshold = ServiceDesc(0x8002, 3)
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
 
 
 class EL2808(EBPFTerminal):
