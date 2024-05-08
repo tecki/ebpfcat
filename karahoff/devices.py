@@ -1,4 +1,4 @@
-from asyncio import sleep
+from asyncio import Event, Lock, sleep
 from struct import pack, unpack
 from time import time, monotonic
 
@@ -11,6 +11,7 @@ from ebpfcat.ebpf import ktime
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar, Struct
 from ebpfcat.devices import (
     AnalogInput as AnalogInputDevice, DigitalOutput as DigitalOutputDevice)
+from ebpfcat.serial import Serial
 
 
 def now():
@@ -723,3 +724,30 @@ class Shutter(EtherCATDevice):
             self.set_state(State.CLOSING)
         else:
             self.set_state(State.ERROR)
+
+
+class EtherCATSCPIMaster(EtherCATDevice):
+    terminal = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+
+    def __init__(self, configuration):
+        from scpiDevices.scpi import GenericSCPIMaster
+
+        super().__init__(configuration)
+        self.connectEvent = GenericSCPIMaster.instances.setdefault(
+            self.deviceId.value, Event())
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.channel = self.find_channel(self.terminal)
+        self.device = Serial(self.channel)
+
+    initialized = False
+
+    def update_properties(self):
+        if self.initialized:
+            return
+        self.reader, self.writer = self.device.connect()
+        self.lock = Lock()
+        self.connectEvent.set()
+        self.initialized = True
