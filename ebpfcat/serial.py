@@ -20,11 +20,26 @@ from .ebpfcat import Device, TerminalVar
 
 
 class Serial(Device):
-    channel = TerminalVar()
+    transmit_accept = TerminalVar()
+    receive_request = TerminalVar()
+    init_accept = TerminalVar()
+    in_string = TerminalVar()
+    transmit_request = TerminalVar()
+    receive_accept = TerminalVar()
+    init_request = TerminalVar()
+    out_string = TerminalVar()
 
     def __init__(self, channel):
+        self.transmit_accept = channel.transmit_accept
+        self.receive_request = channel.receive_request
+        self.init_accept = channel.init_accept
+        self.in_string = channel.in_string
+        self.transmit_request = channel.transmit_request
+        self.receive_accept = channel.receive_accept
+        self.init_request = channel.init_request
+        self.out_string = channel.out_string
+
         self.buffer = Queue()
-        self.channel = channel
         self.data_arrived = Event()
 
     def write(self, data):
@@ -36,23 +51,23 @@ class Serial(Device):
         return self.reader, self
 
     async def run(self):
-        while not self.channel.init_accept:
-            self.channel.init_request = True
+        while not self.init_accept:
+            self.init_request = True
             await self.data_arrived.wait()
-        self.channel.init_request = False
-        while self.channel.init_accept:
+        self.init_request = False
+        while self.init_accept:
             await self.data_arrived.wait()
 
         await gather(self.receive(), self.transmit())
 
     async def receive(self):
-        ra = self.channel.receive_accept
+        ra = self.receive_accept
         while True:
-            rr = self.channel.receive_request
-            while rr == self.channel.receive_request:
-                self.channel.receive_accept = ra
+            rr = self.receive_request
+            while rr == self.receive_request:
+                self.receive_accept = ra
                 await self.data_arrived.wait()
-            self.reader.feed_data(self.channel.in_string)
+            self.reader.feed_data(self.in_string)
             ra = not ra
 
     async def transmit(self):
@@ -73,12 +88,12 @@ class Serial(Device):
                     s = await self.buffer.get()
 
         while True:
-            ta = self.channel.transmit_accept
-            tr = self.channel.transmit_request
+            ta = self.transmit_accept
+            tr = self.transmit_request
             chunk = b"".join([s async for s in inner()])
-            while ta == self.channel.transmit_accept:
-                self.channel.out_string = chunk
-                self.channel.transmit_request = not tr
+            while ta == self.transmit_accept:
+                self.out_string = chunk
+                self.transmit_request = not tr
                 await self.data_arrived.wait()
 
     def update(self):

@@ -15,7 +15,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .ethercat import ServiceDesc, Struct
+from .ethercat import ServiceDesc, Struct, SyncManager
 from .ebpfcat import EBPFTerminal, PacketDesc, ProcessDesc
 
 
@@ -147,22 +147,33 @@ class EL5042(EBPFTerminal):
     channel1 = Channel(0)
     channel2 = Channel(0x10)
 
+
 class EL6022(EBPFTerminal):
+    compatibility = {(2, 0x17863052)}
+
     class Channel(Struct):
-        transmit_accept = PacketDesc(3, 0, 0)
-        receive_request = PacketDesc(3, 0, 1)
-        init_accept = PacketDesc(3, 0, 2)
-        status = PacketDesc(3, 0, "H")
-        in_string = PacketDesc(3, 1, "23p")
+        transmit_accept = PacketDesc(SyncManager.IN, 0, 0)
+        receive_request = PacketDesc(SyncManager.IN, 0, 1)
+        init_accept = PacketDesc(SyncManager.IN, 0, 2)
+        in_string = PacketDesc(SyncManager.IN, 1, "23p")
 
-        transmit_request = PacketDesc(2, 0, 0)
-        receive_accept = PacketDesc(2, 0, 1)
-        init_request = PacketDesc(2, 0, 2)
-        control = PacketDesc(2, 0, "H")
-        out_string = PacketDesc(2, 1, "23p")
+        transmit_request = PacketDesc(SyncManager.OUT, 0, 0)
+        receive_accept = PacketDesc(SyncManager.OUT, 0, 1)
+        init_request = PacketDesc(SyncManager.OUT, 0, 2)
+        out_string = PacketDesc(SyncManager.OUT, 1, "23p")
 
-    channel1 = Channel(0, 0)
-    channel2 = Channel(24, 24)
+        enableRtsCts = ServiceDesc(0x8000, 1)
+        enableXonXoffSend = ServiceDesc(0x8000, 2)
+        enableXonXoffReceive = ServiceDesc(0x8000, 3)
+        enableFIFOcontinuous = ServiceDesc(0x8000, 4)
+        enableTransferRateOptimization = ServiceDesc(0x8000, 5)
+        enableHalfDuplex = ServiceDesc(0x8000, 6)
+        enablePointToPoint = ServiceDesc(0x8000, 7)
+        baudRate = ServiceDesc(0x8000, 0x11)
+        dataFrame = ServiceDesc(0x8000, 0x15)
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
 
 
 class EL7041(EBPFTerminal):

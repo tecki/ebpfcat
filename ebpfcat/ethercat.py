@@ -968,7 +968,7 @@ class Terminal:
         oe.dataTypeOriginal = dataType
         if dataType < 2048:
             oe.dataType = ECDataType(dataType)
-        elif oe.bitLength == 8:
+        elif oe.bitLength <= 8:
             oe.dataType = ECDataType.UNSIGNED8
         else:
             oe.dataType = dataType
