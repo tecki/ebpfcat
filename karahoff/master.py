@@ -1,17 +1,15 @@
-from asyncio import gather, sleep, Event, get_event_loop
+from asyncio import Event, gather, get_event_loop, sleep
 from itertools import chain
 from struct import pack, unpack
 
-from karabo.middlelayer import (
-    Device, getDevice, String, AccessMode, VectorString, Slot, State,
-    waitUntil, Float, background, Simple, isSet, VectorHash, Assignment)
-from karabo import middlelayer as ml
-
-from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
+from ebpfcat import devices, terminals
 from ebpfcat.ebpfcat import (
-    SimpleEtherCat, SyncGroup, FastSyncGroup, FastEtherCat, Struct)
-from ebpfcat import terminals, devices
-
+    FastEtherCat, FastSyncGroup, SimpleEtherCat, Struct, SyncGroup)
+from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
+from karabo import middlelayer as ml
+from karabo.middlelayer import (
+    AccessMode, Assignment, Configurable, Device, Float, Simple, Slot, State,
+    String, VectorHash, VectorString, background, getDevice, isSet, waitUntil)
 
 formats = {
     ml.UInt8: 'B',
@@ -203,6 +201,44 @@ class EtherCATDevice(Device):
         return
 
 
+class Channel(Configurable):
+    _channel = None
+
+    @classmethod
+    def register(cls, name, dct):
+        super(Channel, cls).register(name, dct)
+        cls._sdo_attrs = []
+        for name in cls._allattrs:
+            attr = getattr(cls, name)
+            if attr.alias is None:
+                continue
+            if isinstance(attr, (Simple, ml.Bool)):
+                attr(cls.sdo_setter(attr))
+                cls._sdo_attrs.append(name)
+
+    @classmethod
+    def sdo_setter(cls, attr):
+        async def setter(self, value):
+            if self._channel is None:
+                return
+            entry = getattr(self._channel, attr.alias)
+            await entry.write(value)
+            setattr(self, attr.key, await entry.read())
+
+        return setter
+
+    async def _initialize(self, channel):
+        self._channel = channel
+        for k in self._sdo_attrs:
+            v = getattr(self, k)
+            desc = getattr(self.__class__, k)
+            if isSet(v):
+                await desc.setter(v)
+            else:
+                entry = getattr(channel, desc.alias)
+                setattr(self, k, await entry.read())
+
+
 class EtherCATTerminal(Device):
     """Base class for Karabo devices representing a single terminal"""
     master = String(accessMode=AccessMode.INITONLY,
@@ -233,13 +269,16 @@ class EtherCATTerminal(Device):
 
         for k in self._sdo_attrs:
             v = getattr(self, k)
+            desc = getattr(self.__class__, k)
             if isSet(v):
-                setattr(self, k, v)
+                await desc.setter(v)
             else:
-                entry = self.terminal
-                for kk in getattr(self.__class__, k).alias.split('.'):
-                    entry = getattr(entry, kk)
+                entry = getattr(self.terminal, desc.alias)
                 setattr(self, k, await entry.read())
+
+        for k in self._sdo_channels:
+            await getattr(self, k)._initialize(
+                getattr(self.terminal, getattr(self.__class__, k).alias))
 
         new_coes = []
         for coe in self.coe:
@@ -260,14 +299,10 @@ class EtherCATTerminal(Device):
 
     @classmethod
     def sdo_setter(cls, attr):
-        keys = attr.alias.split('.')
-
         async def setter(self, value):
             if self.terminal is None:
                 return
-            entry = self.terminal
-            for k in keys:
-                entry = getattr(entry, k)
+            entry = getattr(self.terminal, attr.alias)
             await entry.write(value)
             setattr(self, attr.key, await entry.read())
 
@@ -277,8 +312,13 @@ class EtherCATTerminal(Device):
     def register(cls, name, dct):
         super(EtherCATTerminal, cls).register(name, dct)
         cls._sdo_attrs = []
+        cls._sdo_channels = []
         for name in cls._allattrs:
             attr = getattr(cls, name)
-            if isinstance(attr, (Simple, ml.Bool)) and attr.alias is not None:
+            if attr.alias is None:
+                continue
+            if isinstance(attr, (Simple, ml.Bool)):
                 attr(cls.sdo_setter(attr))
                 cls._sdo_attrs.append(name)
+            elif isinstance(attr, ml.Node):
+                cls._sdo_channels.append(name)

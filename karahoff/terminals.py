@@ -1,6 +1,6 @@
 from karabo.middlelayer import (
-    AccessMode, Assignment, Bool, UInt16, UInt32, UInt8, String)
-from .master import EtherCATTerminal
+    AccessMode, Assignment, Bool, Node, UInt16, UInt32, UInt8, String)
+from .master import Channel, EtherCATTerminal
 from ebpfcat import terminals
 
 
@@ -14,18 +14,16 @@ class GenericTerminal(EtherCATTerminal):
 class EL5042Terminal(EtherCATTerminal):
     Base = terminals.EL5042
 
-    statusbits1 = UInt8(alias='channel1.statusbits')
-    crc_invert1 = Bool(alias='channel1.crc_invert')
-    multiturn1 = UInt8(alias='channel1.multiturn')
-    singleturn1 = UInt8(alias='channel1.singleturn')
-    frequency1 = UInt8(alias='channel1.frequency')
-    polynomial1 = UInt32(alias='channel1.polynomial')
-    statusbits2 = UInt8(alias='channel2.statusbits')
-    crc_invert2 = Bool(alias='channel2.crc_invert')
-    multiturn2 = UInt8(alias='channel2.multiturn')
-    singleturn2 = UInt8(alias='channel2.singleturn')
-    frequency2 = UInt8(alias='channel2.frequency')
-    polynomial2 = UInt32(alias='channel2.polynomial')
+    class OneChannel(Channel):
+        statusbits = UInt8(alias='statusbits')
+        crc_invert = Bool(alias='crc_invert')
+        multiturn = UInt8(alias='multiturn')
+        singleturn = UInt8(alias='singleturn')
+        frequency = UInt8(alias='frequency')
+        polynomial = UInt32(alias='polynomial')
+
+    channel1 = Node(OneChannel, alias='channel1')
+    channel2 = Node(OneChannel, alias='channel2')
 
 
 class EL7041Terminal(EtherCATTerminal):
