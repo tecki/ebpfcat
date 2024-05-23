@@ -81,15 +81,14 @@ class Serial(Device):
             nonlocal remainder
             s = remainder
             size = len(remainder)
-            while not self.buffer.empty() or size == 0:
-                if size + len(s) > 22:
-                    remainder = s[22-size:]
-                    yield s[:22-size]
+
+            while True:
+                remainder = s[22-size:]
+                yield s[:22-size]
+                size += len(s)
+                if (self.buffer.empty() and size > 0) or size > 22:
                     return
-                else:
-                    yield s
-                    size += len(s)
-                    s = await self.buffer.get()
+                s = await self.buffer.get()
 
         while True:
             ta = self.transmit_accept
