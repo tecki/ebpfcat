@@ -220,10 +220,12 @@ class Channel(Configurable):
     def sdo_setter(cls, attr):
         async def setter(self, value):
             if self._channel is None:
+                setattr(self, attr.key, value)
                 return
             entry = getattr(self._channel, attr.alias)
             await entry.write(value)
-            setattr(self, attr.key, await entry.read())
+            r = await entry.read()
+            setattr(self, attr.key, r)
 
         return setter
 
@@ -233,7 +235,7 @@ class Channel(Configurable):
             v = getattr(self, k)
             desc = getattr(self.__class__, k)
             if isSet(v):
-                await desc.setter(v)
+                await desc.setter(self, v)
             else:
                 entry = getattr(channel, desc.alias)
                 setattr(self, k, await entry.read())
@@ -271,7 +273,7 @@ class EtherCATTerminal(Device):
             v = getattr(self, k)
             desc = getattr(self.__class__, k)
             if isSet(v):
-                await desc.setter(v)
+                await desc.setter(self, v)
             else:
                 entry = getattr(self.terminal, desc.alias)
                 setattr(self, k, await entry.read())
@@ -301,6 +303,7 @@ class EtherCATTerminal(Device):
     def sdo_setter(cls, attr):
         async def setter(self, value):
             if self.terminal is None:
+                setattr(self, attr.key, value)
                 return
             entry = getattr(self.terminal, attr.alias)
             await entry.write(value)
