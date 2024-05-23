@@ -745,9 +745,11 @@ class EtherCATSCPIMaster(EtherCATDevice):
     initialized = False
 
     def update_properties(self):
-        if self.initialized:
-            return
-        self.reader, self.writer = self.device.connect()
-        self.lock = Lock()
-        self.connectEvent.set()
-        self.initialized = True
+        async def initialize():
+            self.reader, self.writer = await self.device.connect()
+            self.lock = Lock()
+            self.connectEvent.set()
+
+        if not self.initialized:
+            background(initialize())
+            self.initialized = True
