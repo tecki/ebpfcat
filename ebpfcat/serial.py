@@ -15,7 +15,7 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from asyncio import ensure_future, Event, Queue, StreamReader, gather
+from asyncio import ensure_future, Event, Future, Queue, StreamReader, gather
 from .ebpfcat import Device, TerminalVar
 
 
@@ -45,18 +45,22 @@ class Serial(Device):
     def write(self, data):
         self.buffer.put_nowait(data)
 
-    def connect(self):
-        self.task = ensure_future(self.run())
+    async def connect(self):
+        connected = Future()
+        self.task = ensure_future(self.run(connected))
         self.reader = StreamReader()
+        await connected
         return self.reader, self
 
-    async def run(self):
+    async def run(self, connected):
         while not self.init_accept:
             self.init_request = True
             await self.data_arrived.wait()
         self.init_request = False
         while self.init_accept:
             await self.data_arrived.wait()
+
+        connected.set_result(None)
 
         await gather(self.receive(), self.transmit())
 
