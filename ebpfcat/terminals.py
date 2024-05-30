@@ -213,6 +213,35 @@ class EL7332(EBPFTerminal):
     channel2 = Channel(0x10)
 
 
+class EPP4304(EBPFTerminal):
+    compatibility = {(2, 0x6476D309)}
+
+    class Input(Struct):
+        underrange = ProcessDesc(0x6010, 1)
+        overrange = ProcessDesc(0x6010, 2)
+        value = ProcessDesc(0x6010, 0x11)
+
+        factor = 327.68e-6
+        offset = 0
+
+    input1 = Input(0)
+    input2 = Input(0x10)
+
+    class Output(Struct):
+        impedanceError = ProcessDesc(0x6030, 1)
+        error = ProcessDesc(0x6030, 7)
+        value = ProcessDesc(0x7030, 1)
+
+        factor = 305.19e-6
+        offset = 0
+
+    output1 = Output(0)
+    output2 = Output(0x10)
+
+    digitalInput1 = ProcessDesc(0x6000, 1)
+    digitalInput2 = ProcessDesc(0x6000, 2)
+
+
 class TurboVac(EBPFTerminal):
     compatibility = {(0x723, 0xb5)}
     pump_on = ProcessDesc(0x20D3, 0, 0)
