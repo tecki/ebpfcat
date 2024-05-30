@@ -216,6 +216,74 @@ class AnalogOutput(EtherCATDevice):
         self.state = State.ON
 
 
+class MonitoredOutputDevice(Device):
+    outputTerm = TerminalVar()
+    inputTerm = TerminalVar()
+
+    ramping = 0
+    value = 0
+    lastTime = monotonic() * unit.second
+
+    def update(self):
+        target = int(self.owner.target / (self.owner.outputFactor
+                                          * self.owner.outputCalibration))
+        now = monotonic() * unit.second
+        diff = int(
+            self.owner.rampSpeed * (now - self.lastTime)
+            / (self.owner.outputFactor * self.owner.outputCalibration))
+        if self.owner.rampSpeed == 0 or abs(target - self.lastValue) < diff:
+            self.lastValue = self.outputTerm = target
+            self.lastTime = now
+            self.ramping = 0
+        else:
+            self.ramping = target - self.outputTerm
+            self.lastValue = self.outputTerm = \
+                    self.lastValue + diff if target > self.outputTerm \
+                    else self.lastValue - diff
+            if diff > 0:
+                self.lastTime = now
+        self.value = self.inputTerm
+
+
+class MonitoredOutput(EtherCATDevice):
+    inputChannel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    outputChannel = String(accessMode=AccessMode.INITONLY,
+                           assignment=Assignment.MANDATORY)
+
+    inputCalibration = Float(defaultValue=1, accessMode=AccessMode.INITONLY)
+    outputCalibration = Float(defaultValue=1, accessMode=AccessMode.INITONLY)
+
+    target = Float(unitSymbol=Unit.VOLT, defaultValue=0)
+    value = Float(unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY)
+    lastValue = 0
+    rampSpeed = Float(unitSymbol=Unit.VOLT_PER_SECOND, defaultValue=0)
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.device = MonitoredOutputDevice()
+        self.device.owner = self
+        inputChannel = self.find_channel(self.inputChannel)
+        self.device.inputTerm = inputChannel.value
+        self.inputFactor = inputChannel.factor * unit.volt
+        outputChannel = self.find_channel(self.outputChannel)
+        self.device.outputTerm = outputChannel.value
+        self.outputFactor = outputChannel.factor * unit.volt
+
+    def update_properties(self):
+        if self.device.ramping == 0:
+            self.set_state(State.ON)
+        elif self.device.ramping > 0:
+            self.set_state(State.RAMPING_UP)
+        else:
+            self.set_state(State.RAMPING_DOWN)
+
+        if self.lastValue != self.device.value:
+            self.lastValue = self.device.value
+            self.value = self.device.value * self.inputFactor \
+                         * self.inputCalibration * now()
+
+
 class CounterDevice(Device):
     counter = DeviceVar()
     maxtime = DeviceVar(size='Q')
