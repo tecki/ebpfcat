@@ -259,43 +259,46 @@ class EtherCATTerminal(Device):
         master = await getDevice(self.master)
         self.ethercat = EtherCATMaster.instances[self.master]
         self.ethercat.terminalsInitializingCount += 1
-        self.terminal = self.Base(self.ethercat.ethercat)
 
-        await self.terminal.initialize(
-            absolute=self.ethercat.addr_by_serial[self.serialNumber.value])
-        self.vendorId = self.terminal.vendorId
-        self.productCode = self.terminal.productCode
-        self.revisionNo = self.terminal.revisionNo
-        self.state = State.INIT
-        await self.terminal.parse_sdos()
+        try:
+            self.terminal = self.Base(self.ethercat.ethercat)
 
-        for k in self._sdo_attrs:
-            v = getattr(self, k)
-            desc = getattr(self.__class__, k)
-            if isSet(v):
-                await desc.setter(self, v)
-            else:
-                entry = getattr(self.terminal, desc.alias)
-                setattr(self, k, await entry.read())
+            await self.terminal.initialize(
+                absolute=self.ethercat.addr_by_serial[self.serialNumber.value])
+            self.vendorId = self.terminal.vendorId
+            self.productCode = self.terminal.productCode
+            self.revisionNo = self.terminal.revisionNo
+            self.state = State.INIT
+            await self.terminal.parse_sdos()
 
-        for k in self._sdo_channels:
-            await getattr(self, k)._initialize(
-                getattr(self.terminal, getattr(self.__class__, k).alias))
+            for k in self._sdo_attrs:
+                v = getattr(self, k)
+                desc = getattr(self.__class__, k)
+                if isSet(v):
+                    await desc.setter(self, v)
+                else:
+                    entry = getattr(self.terminal, desc.alias)
+                    setattr(self, k, await entry.read())
 
-        new_coes = []
-        for coe in self.coe:
-            await self.terminal.sdo_write(
-                pack(coe['format'], coe['value']),
-                coe['index'], coe['subIndex'])
-            ret = await self.terminal.sdo_read(coe['index'], coe['subIndex'])
-            new_coes.append((coe['index'], coe['subIndex'], coe['format'],
-                             unpack(coe['format'], ret)[0]))
-        self.coe = new_coes
+            for k in self._sdo_channels:
+                await getattr(self, k)._initialize(
+                    getattr(self.terminal, getattr(self.__class__, k).alias))
 
-        self.ethercat.term_by_name[self.deviceId.split('/')[-1]] = self.terminal
-        self.ethercat.terminalsInitializingCount -= 1
-        if self.ethercat.terminalsInitializingCount == 0:
-            self.ethercat.terminalsInitialized.set()
+            new_coes = []
+            for coe in self.coe:
+                await self.terminal.sdo_write(
+                    pack(coe['format'], coe['value']),
+                    coe['index'], coe['subIndex'])
+                ret = await self.terminal.sdo_read(coe['index'],
+                                                   coe['subIndex'])
+                new_coes.append((coe['index'], coe['subIndex'], coe['format'],
+                                 unpack(coe['format'], ret)[0]))
+            self.coe = new_coes
+            self.ethercat.term_by_name[self.deviceId.split('/')[-1]] = self.terminal
+        finally:
+            self.ethercat.terminalsInitializingCount -= 1
+            if self.ethercat.terminalsInitializingCount == 0:
+                self.ethercat.terminalsInitialized.set()
         self.state = State.ON
         self.status = 'ready'
 
