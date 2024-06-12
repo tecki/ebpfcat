@@ -5,7 +5,7 @@ from time import time, monotonic
 from karabo.middlelayer import (
     AccessMode, Assignment, String, Int16, Slot, isSet, background, State,
     Float, Int32, Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, unit,
-    MetricPrefix, Bool, Overwrite, QuantityValue, get_timestamp)
+    MetricPrefix, Bool, Overwrite, QuantityValue, get_timestamp, Timestamp)
 from .master import EtherCATDevice
 from ebpfcat.ebpf import ktime
 from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar, Struct
@@ -637,7 +637,14 @@ class ValveDevice(Device):
     closeSwitch = TerminalVar()
     error = False
 
+    modulo = None
+    divisor = None
+    delay = 0
+
     def update(self):
+        if self.divisor is not None:
+            ts = get_timestamp(Timestamp(time() - self.delay))
+            self.target = ts.tid % self.divisor == self.modulo
         inPosition = self.openSwitch != self.closeSwitch
         isCorrect = ((self.closeSwitch or not self.openSwitch)
                      if (self.coil == self.safeState)
@@ -668,6 +675,11 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
     isOpened = Bool(accessMode=AccessMode.READONLY)
     isClosed = Bool(accessMode=AccessMode.READONLY)
 
+    divisor = Int32(defaultValue=1, minExc=0)
+    modulo = Int32(defaultValue=0)
+    delay = Float(defaultValue=0, unitSymbol=Unit.SECOND,
+                  metricPrefixSymbol=MetricPrefix.MILLI)
+
     async def join(self, syncGroup):
         await super().join(syncGroup)
         self.device = ValveDevice()
@@ -680,13 +692,21 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
         self.device.movingTime = self.movingTime.value
         self.device.target = self.device.safeState = self.safeState.value
 
-    @Slot(allowedStates={State.CLOSED, State.CLOSING})
+    @Slot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
     async def open(self):
+        self.device.divisor = None
         self.device.target = not self.safeState
 
-    @Slot(allowedStates={State.OPENED, State.OPENING})
+    @Slot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
     async def close(self):
+        self.device.divisor = None
         self.device.target = self.safeState
+
+    @Slot(allowedStates={State.OPENED, State.MOVING, State.CLOSED})
+    async def rock(self):
+        self.device.divisor = self.divisor.value
+        self.device.modulo = self.modulo.value
+        self.device.delay = (self.delay / unit.second).value
 
     @Slot(allowedStates={State.ERROR})
     async def reset(self):
@@ -702,6 +722,8 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
             return
         if self.device.error:
             self.set_state(State.ERROR)
+        elif self.device.divisor is not None:
+            self.set_state(State.MOVING)
         elif self.device.coil == self.safeState:
             if (self.closeSwitch and not self.device.closeSwitch
                     or self.openSwitch and self.device.openSwitch):
