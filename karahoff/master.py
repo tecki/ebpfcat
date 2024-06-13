@@ -228,7 +228,7 @@ class Channel(Configurable):
                 setattr(self, attr.key, value)
                 return
             entry = getattr(self._channel, attr.alias)
-            await entry.write(value)
+            await entry.write(value.value)
             r = await entry.read()
             setattr(self, attr.key, r)
 

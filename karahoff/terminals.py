@@ -49,31 +49,35 @@ class EL6022Terminal(EtherCATTerminal):
         dataFrame = UInt16(alias='dataFrame')
 
     channel1 = Node(OneChannel, alias='channel1')
-    channel2 = Node(OneChannel, alias='channel1')
+    channel2 = Node(OneChannel, alias='channel2')
 
 
 class EL2212Terminal(EtherCATTerminal):
     Base = terminals.EL2212
 
-    boostCurrent = UInt16(
-        alias='channel1.boost_current',
-        unitSymbol=Unit.AMPERE, metricPrefixSymbol=MetricPrefix.MILLI)
-    holdCurrent = UInt16(
-        alias='channel1.hold_current',
-        unitSymbol=Unit.AMPERE, metricPrefixSymbol=MetricPrefix.MILLI)
-    supplyVoltage = UInt16(
-        alias='channel1.supply_voltage',
-        unitSymbol=Unit.VOLT, metricPrefixSymbol=MetricPrefix.CENTI)
-    coilResistance = UInt16(
-        alias='channel1.coil_resistance',
-        unitSymbol=Unit.OHM, metricPrefixSymbol=MetricPrefix.CENTI)
-    boosterOnTime = UInt16(
-        alias='channel1.booster_on_time')
-    boosterOffTime = UInt16(
-        alias='channel1.booster_off_time')
-    switchOffThreshold = Int16(
-        alias='channel1.switch_off_threshold',
-        unitSymbol=Unit.AMPERE, metricPrefixSymbol=MetricPrefix.MILLI)
-    enableBoosterOn = Bool(alias='channel1.enable_booster_on')
-    enableBoosterOff = Bool(alias='channel1.enable_booster_off')
-    enableOffThreshold = Bool(alias='channel1.enable_off_threshold')
+    class OneChannel(Channel):
+        boostCurrent = UInt16(
+            alias='boost_current',
+            unitSymbol=Unit.AMPERE, metricPrefixSymbol=MetricPrefix.MILLI)
+        holdCurrent = UInt16(
+            alias='hold_current',
+            unitSymbol=Unit.AMPERE, metricPrefixSymbol=MetricPrefix.MILLI)
+        supplyVoltage = UInt16(
+            alias='supply_voltage',
+            unitSymbol=Unit.VOLT, metricPrefixSymbol=MetricPrefix.CENTI)
+        coilResistance = UInt16(
+            alias='coil_resistance',
+            unitSymbol=Unit.OHM, metricPrefixSymbol=MetricPrefix.CENTI)
+        boosterOnTime = UInt16(
+            alias='booster_on_time')
+        boosterOffTime = UInt16(
+            alias='booster_off_time')
+        switchOffThreshold = Int16(
+            alias='switch_off_threshold',
+            unitSymbol=Unit.AMPERE, metricPrefixSymbol=MetricPrefix.MILLI)
+        enableBoosterOn = Bool(alias='enable_booster_on')
+        enableBoosterOff = Bool(alias='enable_booster_off')
+        enableOffThreshold = Bool(alias='enable_off_threshold')
+
+    channel1 = Node(OneChannel, alias='channel1')
+    channel2 = Node(OneChannel, alias='channel2')
