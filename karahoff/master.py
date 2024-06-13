@@ -4,12 +4,13 @@ from struct import pack, unpack
 
 from ebpfcat import devices, terminals
 from ebpfcat.ebpfcat import (
-    FastEtherCat, FastSyncGroup, SimpleEtherCat, Struct, SyncGroup)
+    FastEtherCat, FastSyncGroup, SimpleEtherCat, Struct, SyncGroup, Terminal)
 from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
-    AccessMode, Assignment, Configurable, Device, Float, Simple, Slot, State,
-    String, VectorHash, VectorString, background, getDevice, isSet, waitUntil)
+    AccessMode, Assignment, Configurable, Device, Float, Int64, Simple, Slot,
+    State, String, VectorHash, VectorInt64, VectorString, background,
+    getDevice, isSet, waitUntil)
 
 formats = {
     ml.UInt8: 'B',
@@ -51,6 +52,9 @@ class EtherCATMasterBase(Device):
 
     interface = String(accessMode=AccessMode.INITONLY,
                        assignment=Assignment.MANDATORY)
+    serialNumbers = VectorInt64(accessMode=AccessMode.READONLY)
+    targetTerminal = Int64()
+    information = String(accessMode=AccessMode.READONLY)
 
     async def onInitialization(self):
         #loop = get_event_loop()
@@ -60,6 +64,7 @@ class EtherCATMasterBase(Device):
         self.instances[self.deviceId] = self
         self.addr_by_serial = {}
         self.term_by_name = {}
+        self.term_by_addr = {}
 
         self.ethercat = self.EtherCat(self.interface)
         await self.ethercat.connect()
@@ -73,18 +78,39 @@ class EtherCATMasterBase(Device):
         if serialNo > 0:
             old = self.addr_by_serial.get(serialNo)
             if old is not None and old != address:
-                self.status = f'double serial number found: {serialNo} at {i}'
+                status = f'double serial number found: {serialNo} at {i}'
+                self.status = status
+                self.logger.error(status)
                 self.state = State.ERROR
             else:
                 self.addr_by_serial[serialNo] = address
-        else:
-            self.addr_by_serial[i] = address
+                return serialNo
+        self.addr_by_serial[i] = address
+        return i
 
-    @Slot()
+    @Slot(displayedName='Scan Bus')
     async def scanBus(self):
         count = await self.ethercat.count()
         self.status = f"counted {count} terminals"
-        await gather(*(self.init_one_terminal(-i) for i in range(count)))
+        self.serialNumbers = \
+            await gather(*(self.init_one_terminal(-i) for i in range(count)))
+
+    @Slot(displayedName='Get Information')
+    async def getInfo(self):
+        """get information about the targetTerminal"""
+        address = self.addr_by_serial[self.targetTerminal.value]
+        term = self.term_by_addr.get(address)
+        if term is None:
+            term = Terminal(self.ethercat)
+            await term.initialize(absolute=address)
+
+        infos = term.eeprom[10]
+        i = 1
+        ret = []
+        while i < len(infos):
+            ret.append(infos[i+1 : i+infos[i]+1].decode("latin1"))
+            i += infos[i] + 1
+        self.information = '\n'.join(ret)
 
 
 class EtherCATMaster(EtherCATMasterBase):
@@ -266,10 +292,10 @@ class EtherCATTerminal(Device):
         self.ethercat.terminalsInitializingCount += 1
 
         try:
+            addr = self.ethercat.addr_by_serial[self.serialNumber.value]
             self.terminal = self.Base(self.ethercat.ethercat)
-
-            await self.terminal.initialize(
-                absolute=self.ethercat.addr_by_serial[self.serialNumber.value])
+            self.ethercat.term_by_addr[addr] = self.terminal
+            await self.terminal.initialize(absolute=addr)
             self.vendorId = self.terminal.vendorId
             self.productCode = self.terminal.productCode
             self.revisionNo = self.terminal.revisionNo
@@ -299,7 +325,8 @@ class EtherCATTerminal(Device):
                 new_coes.append((coe['index'], coe['subIndex'], coe['format'],
                                  unpack(coe['format'], ret)[0]))
             self.coe = new_coes
-            self.ethercat.term_by_name[self.deviceId.split('/')[-1]] = self.terminal
+            self.ethercat.term_by_name[self.deviceId.split('/')[-1]] = \
+                self.terminal
         finally:
             self.ethercat.terminalsInitializingCount -= 1
             if self.ethercat.terminalsInitializingCount == 0:
