@@ -33,6 +33,7 @@ from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
 from itertools import count
 import logging
+import operator
 from random import randint
 from socket import socket, AF_PACKET, SOCK_DGRAM
 from struct import pack, unpack, unpack_from, calcsize
@@ -355,7 +356,10 @@ class EtherCat(Protocol):
                     logging.info("future already done, dropped datagram")
         except CancelledError:
             raise
-        except Exception:
+        except Exception as e:
+            for _, _, future in dgrams:
+                if not future.done():
+                    future.set_exception(e)
             logging.exception("process_packet failed")
             raise
 
@@ -408,9 +412,8 @@ class EtherCat(Protocol):
             out += b"\0" * data
         elif data is not None:
             out += data
-        assert isinstance(pos, int) and isinstance(offset, int), \
-            f"pos: {pos} offset: {offset}"
-        self.send_queue.put_nowait((cmd, out, idx, pos, offset, future))
+        self.send_queue.put_nowait((cmd, out, idx, operator.index(pos),
+                                    operator.index(offset), future))
         ret = await future
         if data is None:
             return unpack(fmt, ret)
