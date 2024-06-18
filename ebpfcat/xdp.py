@@ -25,7 +25,7 @@ from contextlib import asynccontextmanager, contextmanager
 import os
 from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
 import socket
-from struct import pack, unpack
+from struct import pack, unpack_from
 
 from .ebpf import EBPF, MemoryDesc
 from .bpf import ProgType
@@ -86,21 +86,28 @@ class XDRFD(DatagramProtocol):
         transport.sendto(p, (0, 0))
 
     def datagram_received(self, data, addr):
-        pos = 0
-        while (pos < len(data)):
-            ln, type, flags, seq, pid = unpack("IHHII", data[pos : pos+16])
-            if type == 3:  # DONE
-                self.future.set_result(0)
-                return
-            elif type == 2:  # ERROR
-                errno, *args = unpack("iIHHII", data[pos+16 : pos+36])
-                if errno != 0:
-                    self.future.set_exception(OSError(errno, os.strerror(-errno)))
+        try:
+            pos = 0
+            while (pos < len(data)):
+                ln, type, flags, seq, pid = unpack_from("IHHII", data, pos)
+                if type == 3:  # DONE
+                    self.future.set_result(0)
                     return
-            if flags & 2 == 0:  # not a multipart message
-                self.future.set_result(0)
-                return
-            pos += ln
+                elif type == 2:  # ERROR
+                    errno, *args = unpack_from("iIHHII", data, pos + 16)
+                    if errno != 0:
+                        self.future.set_exception(
+                            OSError(errno, os.strerror(-errno)))
+                        return
+                if flags & 2 == 0:  # not a multipart message
+                    self.future.set_result(0)
+                    return
+                pos += ln
+            self.future.set_exception(
+                RuntimeError("Netlink response not understood"))
+        except Exception as e:
+            self.future.set_exception(e)
+            raise
 
 
 class PacketArray:
