@@ -54,6 +54,7 @@ class EtherCATMasterBase(Device):
                        assignment=Assignment.MANDATORY)
     serialNumbers = VectorInt64(accessMode=AccessMode.READONLY)
     targetTerminal = Int64()
+    targetSerial = ml.UInt32()
     information = String(accessMode=AccessMode.READONLY)
 
     async def onInitialization(self):
@@ -95,15 +96,18 @@ class EtherCATMasterBase(Device):
         self.serialNumbers = \
             await gather(*(self.init_one_terminal(-i) for i in range(count)))
 
-    @Slot(displayedName='Get Information')
-    async def getInfo(self):
-        """get information about the targetTerminal"""
+    async def getTerminal(self):
         address = self.addr_by_serial[self.targetTerminal.value]
         term = self.term_by_addr.get(address)
         if term is None:
             term = Terminal(self.ethercat)
             await term.initialize(absolute=address)
+        return term
 
+    @Slot(displayedName='Get Information')
+    async def getInfo(self):
+        """get information about the targetTerminal"""
+        term = await self.getTerminal()
         infos = term.eeprom[10]
         i = 1
         ret = []
@@ -111,6 +115,13 @@ class EtherCATMasterBase(Device):
             ret.append(infos[i+1 : i+infos[i]+1].decode("latin1"))
             i += infos[i] + 1
         self.information = '\n'.join(ret)
+
+    @Slot(displayedName='Write Serial Number')
+    async def writeSerial(self):
+        """write the serial number to the EEPROM of the terminal"""
+        term = await self.getTerminal()
+        await term.eeprom_write_one(0xe, self.targetSerial.value & 0xffff)
+        await term.eeprom_write_one(0xf, self.targetSerial.value >> 16)
 
 
 class EtherCATMaster(EtherCATMasterBase):
