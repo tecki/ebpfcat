@@ -380,8 +380,11 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
                    assignment=Assignment.MANDATORY)
     encoder = String(accessMode=AccessMode.INITONLY,
                      assignment=Assignment.MANDATORY)
-    proportional = Float(defaultValue=1, accessMode=AccessMode.INITONLY)
+    proportional = Float(
+        displayedName='Proportionality Constant',
+        defaultValue=1, accessMode=AccessMode.INITONLY)
     encodeStep = Float(
+        displayedName='Encoder Stepsize',
         accessMode=AccessMode.INITONLY, defaultValue=5e-5,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     offset = Float(
@@ -392,22 +395,31 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
     actualPosition = Float(
+        displayedName='Actual Position',
         accessMode=AccessMode.READONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-    actualVelocity = Int32(accessMode=AccessMode.READONLY)
+    actualVelocity = Int32(
+        displayedName='Actual Velocity',
+        accessMode=AccessMode.READONLY)
 
     motor_term = encoder_term = None
 
-    isCWLimit = Bool(accessMode=AccessMode.READONLY)
-    isCCWLimit = Bool(accessMode=AccessMode.READONLY)
+    isCWLimit = Bool(
+        displayedName='At Positive Limit?',
+        accessMode=AccessMode.READONLY)
+    isCCWLimit = Bool(
+        displayedName='At Negative Limit?',
+        accessMode=AccessMode.READONLY)
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 
-    targetVelocity = Int32(defaultValue=1000)
-    targetPosition = Float(unitSymbol=Unit.METER,
-                           metricPrefixSymbol=MetricPrefix.MILLI)
-    stepSize = Float(unitSymbol=Unit.METER,
-                     metricPrefixSymbol=MetricPrefix.MILLI)
+    targetVelocity = Int32(displayedName='Target Velocity', defaultValue=1000)
+    targetPosition = Float(
+        displayedName='Target Position',
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    stepSize = Float(
+        displayedName='Step Size', defaultValue=1,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
@@ -439,6 +451,11 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     @Slot(displayedName='Stop')
     async def stop(self):
         self.device.target = self.device.encoder
+
+    @Slot(displayedName='On')
+    async def on(self):
+        self.targetPosition = self.actualPosition
+        await self.move()
 
     @Slot(displayedName='Off')
     async def off(self):
