@@ -164,6 +164,9 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
     minimum = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
     maximum = Double(accessMode=AccessMode.INITONLY, defaultValue=8)
 
+    old_value = -1
+    old_time = monotonic()
+
     def update_properties(self):
         if not super().update_properties():
             return
@@ -175,8 +178,13 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
             self.set_state(State.ERROR)
         else:
             self.set_state(State.ON)
-            self.value = 10**(semiRaw * self.factor + self.offset) \
+            newtime = monotonic()
+            if abs(self.old_value - self.device.value) \
+                    > 10 / (newtime - self.old_time):
+                self.value = 10 ** (semiRaw * self.factor + self.offset) \
                     * unit.mbar * now()
+                self.old_value = self.device.value
+                self.old_time = newtime
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
