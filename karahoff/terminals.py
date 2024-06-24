@@ -69,8 +69,10 @@ class EL2212Terminal(EtherCATTerminal):
             alias='coil_resistance',
             unitSymbol=Unit.OHM, metricPrefixSymbol=MetricPrefix.CENTI)
         boosterOnTime = UInt16(
+            description='Time the booster is on (in 0.1 ms steps)',
             alias='booster_on_time')
         boosterOffTime = UInt16(
+            description='Time the booster pulls back (in 0.1 ms steps)',
             alias='booster_off_time')
         switchOffThreshold = Int16(
             alias='switch_off_threshold',
