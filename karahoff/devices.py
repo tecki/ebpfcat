@@ -869,7 +869,9 @@ class EtherCATSCPIMaster(EtherCATDevice):
             self.reader, self.writer = await self.device.connect()
             self.lock = Lock()
             self.connectEvent.set()
+            self.state = State.ON
 
         if not self.initialized:
+            self.state = State.INIT
             background(initialize())
             self.initialized = True
