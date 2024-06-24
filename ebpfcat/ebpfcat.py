@@ -467,7 +467,7 @@ class SterilePacket(Packet):
 
     def append(self, cmd, *args, counter=1):
         super().append(cmd, *args)
-        self.counters[self.size - 2] = counter
+        self.counters[self.size - 2] = {counter}
 
     def sterile(self, index):
         ret = bytearray(self.assemble(index))
@@ -560,6 +560,9 @@ class SyncGroupBase:
                         continue
                     data = self.update_devices(data)
                     newtime = monotonic()
+                    if newtime - lasttime > self.cycletime:
+                        logging.warning('cycletime exceeded (%f ms)',
+                                        (newtime - lasttime) * 1000)
                     await sleep(self.cycletime - (newtime - lasttime))
                     lasttime = monotonic()
             finally:
@@ -594,11 +597,12 @@ class SyncGroup(SyncGroupBase):
 
     def update_devices(self, data):
         self.current_data = bytearray(data)
-        for pos, count in self.packet.counters.items():
-            if data[pos] != count:
+        for pos, counts in self.packet.counters.items():
+            if data[pos] not in counts:
                 logging.warning(
-                    'EtherCAT datagram was processe %i times, should be %i',
-                    data[pos], count)
+                    'EtherCAT datagram processed %i times, should be in %s',
+                    data[pos], counts)
+                counts.add(data[pos])
             self.current_data[pos] = 0
         for dev in self.devices:
             dev.update()
