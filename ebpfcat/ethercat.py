@@ -684,11 +684,12 @@ class Terminal:
                 elif isinstance(v, StructDesc):
                     struct = getattr(self, k)
                     offset = struct.position_offset[None]
-                    for kk, vv in struct.__class__.__dict__.items():
-                        if isinstance(vv, ServiceDesc):
-                            setattr(struct, kk,
-                                    await self.read_object_entry(
-                                        vv.index + offset, vv.subidx))
+                    for ccls in struct.__class__.__mro__:
+                        for kk, vv in ccls.__dict__.items():
+                            if isinstance(vv, ServiceDesc):
+                                setattr(struct, kk,
+                                        await self.read_object_entry(
+                                            vv.index + offset, vv.subidx))
 
     async def set_state(self, state):
         """try to set the state, and return the new state"""
