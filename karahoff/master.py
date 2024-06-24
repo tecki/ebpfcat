@@ -8,9 +8,9 @@ from ebpfcat.ebpfcat import (
 from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
-    AccessMode, Assignment, Configurable, Device, Float, Int64, Simple, Slot,
-    State, String, VectorHash, VectorInt64, VectorString, background,
-    getDevice, isSet, waitUntil)
+    AccessMode, Assignment, Configurable, Device, Float, Int64, MetricPrefix,
+    Simple, Slot, State, String, Unit, VectorHash, VectorInt64, VectorString,
+    background, getDevice, isSet, unit, waitUntil)
 
 formats = {
     ml.UInt8: 'B',
@@ -136,7 +136,9 @@ class EtherCATSyncGroupBase(Device):
     master = String(accessMode=AccessMode.INITONLY)
     devices = VectorString(accessMode=AccessMode.INITONLY)
     interval = Float(defaultValue=0.05)
-
+    cycletime = Float(accessMode=AccessMode.INITONLY, defaultValue=10,
+                      unitSymbol=Unit.SECOND,
+                      metricPrefixSymbol=MetricPrefix.MILLI)
 
     async def onInitialization(self):
         self.status = "waiting for master"
@@ -163,6 +165,7 @@ class EtherCATSyncGroupBase(Device):
         self.syncGroup = self.SyncGroup(
             self.ethercat.ethercat,
             list(chain.from_iterable(d.get_devices() for d in self.devs)))
+        self.syncGroup.cycletime = float(self.cycletime / unit.second)
         for d in self.devs:
             d.initialize()
         self.state = State.OFF
