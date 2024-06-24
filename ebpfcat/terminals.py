@@ -45,7 +45,7 @@ class EL2212(EBPFTerminal):
     compatibility = {(2, 0x8A43052)}
 
     class Channel(Struct):
-        output = ProcessDesc(0x7000, 2)
+        value = ProcessDesc(0x7000, 2)
 
         boost_current = ServiceDesc(0x8000, 1)
         hold_current = ServiceDesc(0x8000, 2)
@@ -169,8 +169,8 @@ class EL5042(EBPFTerminal):
     channel2 = Channel(0x10)
 
 
-class EL6022(EBPFTerminal):
-    compatibility = {(2, 0x17863052)}
+class EL6002(EBPFTerminal):
+    compatibility = {(2, 393359442)}
 
     class Channel(Struct):
         transmit_accept = PacketDesc(SyncManager.IN, 0, 0)
@@ -193,8 +193,20 @@ class EL6022(EBPFTerminal):
         baudRate = ServiceDesc(0x8000, 0x11)
         dataFrame = ServiceDesc(0x8000, 0x15)
 
-    channel1 = Channel(0)
-    channel2 = Channel(0x10)
+    channel1 = Channel(0, 0, 0)
+    channel2 = Channel(24, 24, 0x10)
+
+
+
+class EL6022(EBPFTerminal):
+    compatibility = {(2, 0x17863052)}
+
+    class Channel(EL6002.Channel):
+        enableHalfDuplex = ServiceDesc(0x8000, 6)
+        enablePointToPoint = ServiceDesc(0x8000, 7)
+
+    channel1 = Channel(0, 0, 0)
+    channel2 = Channel(24, 24, 0x10)
 
 
 class EL7041(EBPFTerminal):

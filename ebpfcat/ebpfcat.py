@@ -92,7 +92,7 @@ class ProcessDesc:
     def __get__(self, instance, owner):
         if instance is None:
             return self
-        index = self.index + instance.position_offset[SyncManager.IN]
+        index = self.index + instance.position_offset[None]
         if isinstance(instance, Struct):
             terminal = instance.terminal
             device = instance.device
@@ -276,7 +276,7 @@ class EBPFTerminal(Terminal):
     product id of all supported terminal types.
     """
     compatibility = None
-    position_offset = {SyncManager.OUT: 0, SyncManager.IN: 0}
+    position_offset = {SyncManager.OUT: 0, SyncManager.IN: 0, None: 0}
     use_fmmu = True
     out_pdos = None
     in_pdos = None

@@ -497,16 +497,19 @@ class Struct:
     """
     device = None
 
-    def __new__(cls, *args):
-        return StructDesc(cls, *args)
+    def __new__(cls, *args, **kwargs):
+        return StructDesc(cls, *args, **kwargs)
 
 
 class StructDesc:
-    def __init__(self, struct, sm3=0, sm2=None):
+    def __init__(self, struct, sm3=0, sm2=None, coe=None):
         self.struct = struct
         if sm2 is None:
             sm2 = sm3
-        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3}
+        if coe is None:
+            coe = sm3
+        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3,
+                                None: coe}
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -680,7 +683,7 @@ class Terminal:
                             await self.read_object_entry(v.index, v.subidx))
                 elif isinstance(v, StructDesc):
                     struct = getattr(self, k)
-                    offset = struct.position_offset[SyncManager.IN]
+                    offset = struct.position_offset[None]
                     for kk, vv in struct.__class__.__dict__.items():
                         if isinstance(vv, ServiceDesc):
                             setattr(struct, kk,
