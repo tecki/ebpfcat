@@ -180,7 +180,11 @@ class EtherCATSyncGroupBase(Device):
             while not self.syncGroup.task.done():
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
-                        d.update_properties()
+                        if (newstate := d.update_properties()) is not None:
+                            if isinstance(newstate, State):
+                                d.set_state(newstate)
+                            else:
+                                d.set_state(*newstate)
                         d.update()
                         await sleep(self.interval.value / len(self.devs))
                 else:

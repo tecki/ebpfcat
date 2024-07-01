@@ -100,12 +100,8 @@ class OptionalMixin(EtherCATDevice):
 
 class OptionalSwitchMixin(OptionalMixin):
     def update_properties(self):
-        if self.switchDevice is None:
-            return True
-        if self.switchDevice.value == 2:
-            self.set_state(State.ERROR)
-            return False
-        return True
+        if self.switchDevice is not None and self.switchDevice.value == 2:
+            return State.ERROR
 
     @Slot()
     async def on(self):
@@ -121,12 +117,10 @@ class OptionalSwitchMixin(OptionalMixin):
 class OptionalKeepOnMixin(OptionalMixin):
     def update_properties(self):
         if self.switchDevice is None:
-            return True
+            return
         if self.switchDevice.value == 2:
-            self.set_state(State.ERROR)
-            return False
+            return State.ERROR
         self.switchDevice.value = 1
-        return True
 
     @Slot()
     async def reset(self):
@@ -143,8 +137,8 @@ class DigitalOutput(OptionalSwitchMixin):
         return (self.switchDevice,)
 
     def update_properties(self):
-        if super().update_properties():
-            self.set_state(State.ON if self.switchDevice.data else State.OFF)
+        if super().update_properties() is None:
+            return State.ON if self.switchDevice.data else State.OFF
 
     def initialize(self):
         self.switchDevice.value = self.startupValue.value
@@ -168,8 +162,8 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
     old_time = monotonic()
 
     def update_properties(self):
-        if not super().update_properties():
-            return
+        if (ret := super().update_properties()) is not None:
+            return ret
         semiRaw = self.device.value * self.the_channel.factor \
                 + self.the_channel.offset
         if semiRaw < self.minimum.value:
@@ -280,17 +274,16 @@ class MonitoredOutput(EtherCATDevice):
         self.outputFactor = outputChannel.factor * unit.volt
 
     def update_properties(self):
-        if self.device.ramping == 0:
-            self.set_state(State.ON)
-        elif self.device.ramping > 0:
-            self.set_state(State.RAMPING_UP)
-        else:
-            self.set_state(State.RAMPING_DOWN)
-
         if self.lastValue != self.device.value:
             self.lastValue = self.device.value
             self.value = self.device.value * self.inputFactor \
                          * self.inputCalibration * now()
+        if self.device.ramping == 0:
+            return State.ON
+        elif self.device.ramping > 0:
+            return State.RAMPING_UP
+        else:
+            return State.RAMPING_DOWN
 
 
 class CounterDevice(Device):
@@ -493,22 +486,23 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.isCCWLimit = self.device.low_switch
         self.isCWLimit = self.device.high_switch
 
-        if super().update_properties():
-            if self.terminals["E"] is not None and self.device.encoder_error:
-                self.set_state(State.ERROR, f'encoder reported error')
-            elif self.device.error:
-                self.set_state(State.ERROR, 'motor reported error')
-            elif not self.device.enable:
-                self.set_state(State.OFF)
-            elif self.device.velocity != 0 and self.device.deadband_exceeded:
-                self.set_state(State.MOVING)
-            else:
-                self.set_state(State.ON)
         self.device.deadband_exceeded = 0
-
         self.device.max_velocity = self.targetVelocity
         self.device.proportional = int(self.proportional * (1 << 16))
         self.device.deadband = int(self.deadband // self.encodeStep)
+
+        if (ret := super().update_properties()) is not None:
+            return ret
+        elif self.terminals["E"] is not None and self.device.encoder_error:
+            return State.ERROR, f'encoder reported error'
+        elif self.device.error:
+            return State.ERROR, 'motor reported error'
+        elif not self.device.enable:
+            return State.OFF
+        elif self.device.velocity != 0 and self.device.deadband_exceeded:
+            return State.MOVING
+        else:
+            return State.ON
 
 
 class BronkhorstDevice(Device):
@@ -610,12 +604,9 @@ class TurboVac(EtherCATDevice):
         self.device.set_pump_on = False
 
     def update_properties(self):
-        if self.device.pump_is_on:
-            self.state = State.ON
-        else:
-            self.state = State.OFF
         self.current = self.device.current
         self.speed = self.device.speed
+        return State.ON if self.device.pump_is_on else State.OFF
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
@@ -650,10 +641,10 @@ class Inficon(EtherCATDevice):
 
     def update_properties(self):
         if self.device.valid:
-            self.set_state(State.ON)
+            return State.ON
             self.value = self.device.value
         else:
-            self.set_state(State.OFF)
+            return State.OFF
 
 
 class ValveDevice(Device):
@@ -721,17 +712,20 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
     async def open(self):
         self.device.divisor = None
         self.device.target = not self.safeState
+        await self.state_change.wait()
 
     @Slot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
     async def close(self):
         self.device.divisor = None
         self.device.target = self.safeState
+        await self.state_change.wait()
 
     @Slot(allowedStates={State.OPENED, State.MOVING, State.CLOSED})
     async def rock(self):
         self.device.divisor = self.divisor.value
         self.device.modulo = self.modulo.value
         self.device.delay = (self.delay / unit.second).value
+        await self.state_change.wait()
 
     @Slot(allowedStates={State.ERROR})
     async def reset(self):
@@ -743,24 +737,72 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
             self.isOpened = self.device.openSwitch
         if self.closeSwitch and self.device.closeSwitch != self.isClosed:
             self.isClosed = self.device.closeSwitch
-        if not super().update_properties():
-            return
+        if (ret := super().update_properties()) is not None:
+            return ret
         if self.device.error:
-            self.set_state(State.ERROR)
+            return State.ERROR
         elif self.device.divisor is not None:
-            self.set_state(State.MOVING)
+            return State.MOVING
         elif self.device.coil == self.safeState:
             if (self.closeSwitch and not self.device.closeSwitch
                     or self.openSwitch and self.device.openSwitch):
-                self.set_state(State.CLOSING)
+                return State.CLOSING
             else:
-                self.set_state(State.CLOSED)
+                return State.CLOSED
         else:
             if (self.openSwitch and not self.device.openSwitch
                     or self.closeSwitch and self.device.closeSwitch):
-                self.set_state(State.OPENING)
+                return State.OPENING
             else:
-                self.set_state(State.OPENED)
+                return State.OPENED
+
+
+class SlowRoughingValve(Valve):
+    slowCoil = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+
+    def get_devices(self):
+        ret = super().get_devices()
+        return ret + (self.slowDevice,)
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.slowDevice = optionalFusedOutput(
+            self.find_channel(self.slowCoil))
+
+    @Slot(allowedStates=
+          {State.CLOSED, State.CLOSING, State.MOVING, State.EMPTYING})
+    async def open(self):
+        self.slowDevice.value = False
+        await super().open()
+
+    @Slot(allowedStates=
+          {State.OPENED, State.OPENING, State.MOVING, State.EMPTYING})
+    async def close(self):
+        self.slowDevice.value = False
+        await super().close()
+
+    @Slot(allowedStates=
+          {State.CLOSED, State.CLOSING, State.MOVING, State.EMPTYING})
+    async def slow(self):
+        self.slowDevice.value = True
+        await self.state_change.wait()
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        await super().reset()
+        self.slowDevice.value = False
+        self.device.reset()
+
+    def update_properties(self):
+        if (ret := super().update_properties()) == State.ERROR:
+            return ret
+        if self.slowDevice.value == 1:
+            return State.EMPTYING
+        elif self.slowDevice.value == 2:
+            return State.ERROR
+        else:
+            return ret
 
 
 class ShutterDevice(Device):
@@ -833,17 +875,17 @@ class Shutter(EtherCATDevice):
 
     def update_properties(self):
         if self.device.error:
-            self.set_state(State.ERROR)
+            return State.ERROR
         elif self.device.openSwitch:
-            self.set_state(State.OPENED)
+            return State.OPENED
         elif self.device.closeSwitch:
-            self.set_state(State.CLOSED)
+            return State.CLOSED
         elif self.device.opening:
-            self.set_state(State.OPENING)
+            return State.OPENING
         elif self.device.closing:
-            self.set_state(State.CLOSING)
+            return State.CLOSING
         else:
-            self.set_state(State.ERROR)
+            return State.ERROR
 
 
 class EtherCATSCPIMaster(EtherCATDevice):
