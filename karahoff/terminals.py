@@ -38,15 +38,24 @@ class EL7041Terminal(EtherCATTerminal):
     invLogicLim2 = Bool(alias='invLogicLim2')
 
 
-class EL6022Terminal(EtherCATTerminal):
-    Base = terminals.EL6022
+class EL6002Terminal(EtherCATTerminal):
+    Base = terminals.EL6002
 
     class OneChannel(Channel):
         enableFIFOcontinuous = Bool(alias='enableFIFOcontinuous')
-        enableHalfDuplex = Bool(alias='enableHalfDuplex')
-        enablePointToPoint = Bool(alias='enablePointToPoint')
         baudRate = UInt16(alias='baudRate')
         dataFrame = UInt16(alias='dataFrame')
+
+    channel1 = Node(OneChannel, alias='channel1')
+    channel2 = Node(OneChannel, alias='channel2')
+
+
+class EL6022Terminal(EL6002Terminal):
+    Base = terminals.EL6022
+
+    class OneChannel(EL6002Terminal.OneChannel):
+        enableHalfDuplex = Bool(alias='enableHalfDuplex')
+        enablePointToPoint = Bool(alias='enablePointToPoint')
 
     channel1 = Node(OneChannel, alias='channel1')
     channel2 = Node(OneChannel, alias='channel2')
