@@ -254,8 +254,8 @@ class Channel(Configurable):
     _channel = None
 
     @classmethod
-    def register(cls, name, dct):
-        super(Channel, cls).register(name, dct)
+    def __init_subclass__(cls, **kwargs):
+        super(Channel, cls).__init_subclass__(**kwargs)
         cls._sdo_attrs = []
         for name in cls._allattrs:
             attr = getattr(cls, name)
@@ -365,8 +365,8 @@ class EtherCATTerminal(Device):
         return setter
 
     @classmethod
-    def register(cls, name, dct):
-        super(EtherCATTerminal, cls).register(name, dct)
+    def __init_subclass__(cls, **kwargs):
+        super(EtherCATTerminal, cls).__init_subclass__(**kwargs)
         cls._sdo_attrs = []
         cls._sdo_channels = []
         for name in cls._allattrs:
