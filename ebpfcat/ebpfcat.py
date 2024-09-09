@@ -368,12 +368,13 @@ class EtherXDP(XDP):
 
     rate = 0
 
-    DATA0 = 26
+    INDEX0 = 17
 
     ethertype = XDPPacketVar(12, "!H")
     addr0 = XDPPacketVar(18, "I")
     cmd0 = XDPPacketVar(16, "B")
-    data0 = XDPPacketVar(DATA0, "H")
+    index0 = XDPPacketVar(INDEX0, "B")
+    data0 = XDPPacketVar(26, "H")
 
     def program(self):
         with prandom(self.ebpf) & 0xffff < self.rate:
@@ -384,22 +385,24 @@ class EtherXDP(XDP):
             with self.counters.get_address(None, False, False) as (dst, _), \
                     self.r3 < FastEtherCat.MAX_PROGS:
                 self.r[dst] += 4 * self.r3
-                self.r4 = self.mH[self.r[dst]]
+                self.r4 = self.mB[self.r[dst]]
                 # we lost a packet
-                with self.data0 == self.r4 as Else:
+                with self.index0 == self.r4 as Else:
                     self.mI[self.r[dst]] += 1 + (self.r4 & 1)
                 # normal case: two packets on the wire
-                with Else, ((self.data0 + 1 & 0xffff) == self.r4) \
-                           | (self.data0 == 0) as Else:
+                with Else, ((self.index0 + 1 & 0xff) == self.r4) \
+                           | (self.index0 == 0) as Else:
                     self.mI[self.r[dst]] += 1
                     with self.r4 & 1:  # last one was active
-                        self.data0 = self.mH[self.r[dst]]
+                        self.index0 = self.mB[self.r[dst]]
                         self.exit(XDPExitCode.TX)
                 with Else:
+                    self.ethertype = self.data0
                     self.exit(XDPExitCode.PASS)
-                self.data0 = self.mH[self.r[dst]]
+                self.index0 = self.mB[self.r[dst]]
                 self.r2 = self.get_fd(self.programs)
                 self.call(FuncId.tail_call)
+        self.ethertype = self.data0
         self.exit(XDPExitCode.PASS)
 
 
@@ -469,8 +472,8 @@ class SterilePacket(Packet):
         super().append(cmd, *args)
         self.counters[self.size - 2] = {counter}
 
-    def sterile(self, index):
-        ret = bytearray(self.assemble(index))
+    def sterile(self, index, protocol=0x88A4):
+        ret = bytearray(self.assemble(index, protocol))
         for pos, cmd in self.on_the_fly:
             ret[pos] = ECCmd.NOP.value
         return ret
@@ -631,7 +634,8 @@ class SyncGroup(SyncGroupBase):
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
-        self.asm_packet = self.packet.assemble(self.packet_index)
+        self.asm_packet = self.packet.assemble(self.packet_index,
+                                               self.ec.protocol)
         self.task = ensure_future(self.run())
         return self.task
 
@@ -653,14 +657,15 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     async def run(self):
         with self.ec.register_sync_group(self) as self.packet_index:
-            self.asm_packet = self.packet.sterile(self.packet_index)
+            self.asm_packet = self.packet.sterile(self.packet_index,
+                                                  self.ec.protocol)
             # prime the pump: two packets to get things going
             self.ec.send_packet(self.asm_packet)
             self.ec.send_packet(self.asm_packet)
             await super().run()
 
     def update_devices(self, data):
-        if data[EtherXDP.DATA0 - Packet.ETHERNET_HEADER] & 1:
+        if data[EtherXDP.INDEX0 - Packet.ETHERNET_HEADER] & 1:
             self.current_data = data
         elif self.current_data is None:
             return self.asm_packet
