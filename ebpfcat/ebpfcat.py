@@ -23,7 +23,10 @@ from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
 from enum import Enum
 import logging
 import os
+from random import randint
+import shutil
 from struct import pack, unpack, calcsize, pack_into, unpack_from
+import tempfile
 from time import monotonic
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
 from .ethercat import (
@@ -32,8 +35,8 @@ from .ethercat import (
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
 from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
-    ProgType, MapType, create_map, delete_elem, update_elem, prog_test_run,
-    lookup_elem)
+    MapType, ProgType, create_map, delete_elem, lookup_elem, obj_pin, obj_get,
+    prog_test_run, update_elem)
 
 
 class PacketDesc:
@@ -416,7 +419,6 @@ class FastEtherCat(SimpleEtherCat):
 
     def __init__(self, network):
         super().__init__(network)
-        self.programs = create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         self.sync_groups = {}
 
     @contextmanager
@@ -437,7 +439,8 @@ class FastEtherCat(SimpleEtherCat):
     async def connect(self):
         await super().connect()
         self.ebpf = EtherXDP()
-        self.ebpf.programs = self.programs
+        self.ebpf.programs = self.programs = \
+            create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
         await self.ebpf.attach(self.addr[0])
 
     @asynccontextmanager
@@ -451,6 +454,70 @@ class FastEtherCat(SimpleEtherCat):
             finally:
                 for v in self.sync_groups.values():
                     v.cancel()
+
+
+class ParallelEtherCat(FastEtherCat):
+    def get_ethertype(self, lockdir):
+        while True:
+            try:
+                lockfile = f'{self.ethertype}.lock'
+                with open(f'{lockdir}/{lockfile}', 'x') as lf:
+                    lf.write(f'{os.getpid():10}\n')
+                return lockfile
+            except FileExistsError:
+                self.ethertype = randint(0x3000, 0x6000)
+                continue
+
+    @asynccontextmanager
+    async def run(self):
+        lockdir = f'/run/lock/ebpf.{self.addr[0]}.lock'
+        programs = f'/sys/fs/bpf/{self.addr[0]}'
+
+        os.makedirs(programs, exist_ok=True)
+        programs += '/programs'
+
+        tmpdir = tempfile.mkdtemp(dir='/run/lock')
+        lockfile = self.get_ethertype(tmpdir)
+        try:
+            os.rename(tmpdir, lockdir)
+        except OSError:
+            shutil.rmtree(tmpdir)
+            lockfile = self.get_ethertype(lockdir)
+            try:
+                await super(FastEtherCat, self).connect()
+                self.ebpf = EtherXDP()
+                try:
+                    self.ebpf.programs = self.programs = obj_get(programs)
+                except FileNotFoundError:
+                    await sleep(0.1)
+                    self.ebpf.programs = self.programs = obj_get(programs)
+            except Exception:
+                os.remove(f'{lockdir}/{lockfile}')
+                raise
+        else:
+            try:
+                await super(FastEtherCat, self).connect()
+                self.ebpf = EtherXDP()
+                self.ebpf.programs = self.programs = \
+                    create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
+                obj_pin(programs, self.programs)
+            except Exception:
+                shutil.rmtree(lockdir)
+                raise
+        try:
+            await self.ebpf.attach(self.addr[0])
+            self.ebpf.close()
+            yield
+        finally:
+            for v in self.sync_groups.values():
+                v.cancel()
+            os.remove(f'{lockdir}/{lockfile}')
+            try:
+                os.rmdir(lockdir)
+            except OSError:
+                return
+            await self.ebpf.detach(self.addr[0])
+            os.remove(programs)
 
 
 class SterilePacket(Packet):
@@ -623,7 +690,7 @@ class SyncGroup(SyncGroupBase):
                         logging.warning(
                             "terminal %s was not operational, status was %i",
                             t, status)
-                await sleep(1)
+                await sleep(10)
         except CancelledError:
             raise
         except Exception:

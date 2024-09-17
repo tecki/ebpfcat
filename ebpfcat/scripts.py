@@ -6,6 +6,7 @@ from pprint import PrettyPrinter
 from struct import unpack
 import sys
 
+from .ebpfcat import ParallelEtherCat
 from .ethercat import EtherCat, MachineState, Terminal, ECCmd, EtherCatError
 
 def entrypoint(func):
@@ -17,12 +18,13 @@ def entrypoint(func):
 
 @entrypoint
 async def scanbus():
-    ec = EtherCat(sys.argv[1])
-    await ec.connect()
-    no = await ec.count()
-    for i in range(no):
-        r, = await ec.roundtrip(ECCmd.APRD, -i, 0x10, "H", 44)
-        print(i, r, await ec.eeprom_read(-i, 0xa))
+    ec = ParallelEtherCat(sys.argv[1])
+    async with ec.run():
+        no = await ec.count()
+        print('counted', no)
+        for i in range(no):
+            r, = await ec.roundtrip(ECCmd.APRD, -i, 0x10, "H", 44)
+            print(i, r, await ec.eeprom_read(-i, 0xa))
 
 @entrypoint
 async def info():
@@ -40,60 +42,59 @@ async def info():
     parser.add_argument("-e", "--eeprom", action="store_true")
     args = parser.parse_args()
 
-    ec = EtherCat(args.interface)
-    await ec.connect()
+    ec = ParallelEtherCat(args.interface)
+    async with ec.run():
+        if args.terminal is None:
+            terminals = range(await ec.count())
+            terms = [Terminal(ec) for t in terminals]
+            for t in terms:
+                t.ec = ec
+            await asyncio.gather(*(t.initialize(-i)
+                                   for i, t in zip(terminals, terms)))
+        else:
+            term = Terminal(ec)
+            await term.initialize(-args.terminal)
+            terms = [term]
 
-    if args.terminal is None:
-        terminals = range(await ec.count())
-        terms = [Terminal(ec) for t in terminals]
-        for t in terms:
-            t.ec = ec
-        await asyncio.gather(*(t.initialize(-i)
-                               for i, t in zip(terminals, terms)))
-    else:
-        term = Terminal(ec)
-        await term.initialize(-args.terminal)
-        terms = [term]
+        for i, t in enumerate(terms, args.terminal if args.terminal else 0):
+            print(f"terminal no {i}")
+            if args.ids:
+                print(f"{t.vendorId:X}:{t.productCode:X} "
+                      f"revision {t.revisionNo:X} serial {t.serialNo}")
+            if args.names:
+                infos = t.eeprom[10]
+                i = 1
+                while i < len(infos):
+                    print(infos[i+1 : i+infos[i]+1].decode("latin1"))
+                    i += infos[i] + 1
 
-    for i, t in enumerate(terms, args.terminal if args.terminal else 0):
-        print(f"terminal no {i}")
-        if args.ids:
-            print(f"{t.vendorId:X}:{t.productCode:X} "
-                  f"revision {t.revisionNo:X} serial {t.serialNo}")
-        if args.names:
-            infos = t.eeprom[10]
-            i = 1
-            while i < len(infos):
-                print(infos[i+1 : i+infos[i]+1].decode("latin1"))
-                i += infos[i] + 1
+            if args.eeprom:
+                for k, v in t.eeprom.items():
+                    print(f"{k:2}: {v}\n    {v.hex()}")
 
-        if args.eeprom:
-            for k, v in t.eeprom.items():
-                print(f"{k:2}: {v}\n    {v.hex()}")
-
-        if args.sdo:
-            await t.to_operational(MachineState.PRE_OPERATIONAL)
-            ret = await t.read_ODlist()
-            for k, v in ret.items():
-                print(f"{k:X}:")
-                for kk, vv in v.entries.items():
-                    print(f"    {kk:X}: {vv}")
-                    if args.values:
-                        try:
-                            r = await vv.read()
-                        except EtherCatError as e:
-                            print(f"        Error {e.args[0]}")
-                        else:
-                            if isinstance(r, int):
-                                print(f"        {r:10} {r:8X}")
+            if args.sdo:
+                await t.to_operational(MachineState.PRE_OPERATIONAL)
+                ret = await t.read_ODlist()
+                for k, v in ret.items():
+                    print(f"{k:X}:")
+                    for kk, vv in v.entries.items():
+                        print(f"    {kk:X}: {vv}")
+                        if args.values:
+                            try:
+                                r = await vv.read()
+                            except EtherCatError as e:
+                                print(f"        Error {e.args[0]}")
                             else:
-                                print(f"        {r}")
-                                print(f"        {r!r}")
-        if args.pdo:
-            await t.to_operational(MachineState.PRE_OPERATIONAL)
-            await t.parse_pdos()
-            for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
-                print(f"{idx:4X}:{subidx:02X} {sm.name} {pos} {fmt}")
+                                if isinstance(r, int):
+                                    print(f"        {r:10} {r:8X}")
+                                else:
+                                    print(f"        {r}")
+                                    print(f"        {r!r}")
+            if args.pdo:
+                await t.to_operational(MachineState.PRE_OPERATIONAL)
+                await t.parse_pdos()
+                for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
+                    print(f"{idx:4X}:{subidx:02X} {sm.name} {pos} {fmt}")
 
 
 def encode(name):
