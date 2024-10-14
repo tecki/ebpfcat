@@ -214,6 +214,7 @@ class XDP(EBPF):
     """
     minimumPacketSize = None
     defaultExitCode = XDPExitCode.PASS
+    ebpf_log_level = 0
 
     def __init__(self, **kwargs):
         super().__init__(prog_type=ProgType.XDP, **kwargs)
@@ -249,7 +250,7 @@ class XDP(EBPF):
            like ``"eth0"``
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
-        fd, _ = self.load(log_level=1)
+        fd, _ = self.load(log_level=self.ebpf_log_level)
         await self._netlink(ifindex, fd, flags)
 
     async def detach(self, network, flags=XDPFlags.SKB_MODE):
@@ -272,7 +273,7 @@ class XDP(EBPF):
            like ``"eth0"``
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
-        fd, _ = self.load(log_level=1)
+        fd, _ = self.load(log_level=self.ebpf_log_level)
         try:
             await self._netlink(ifindex, fd, flags)
         finally:
