@@ -473,8 +473,8 @@ class SterilePacket(Packet):
         super().append(cmd, *args)
         self.counters[self.size - 2] = {counter}
 
-    def sterile(self, index, protocol=0x88A4):
-        ret = bytearray(self.assemble(index, protocol))
+    def sterile(self, index, ethertype=0x88A4):
+        ret = bytearray(self.assemble(index, ethertype))
         for pos, cmd in self.on_the_fly:
             ret[pos] = ECCmd.NOP.value
         return ret
@@ -636,7 +636,7 @@ class SyncGroup(SyncGroupBase):
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.asm_packet = self.packet.assemble(self.packet_index,
-                                               self.ec.protocol)
+                                               self.ec.ethertype)
         self.task = ensure_future(self.run())
         return self.task
 
@@ -659,7 +659,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
     async def run(self):
         with self.ec.register_sync_group(self) as self.packet_index:
             self.asm_packet = self.packet.sterile(self.packet_index,
-                                                  self.ec.protocol)
+                                                  self.ec.ethertype)
             # prime the pump: two packets to get things going
             self.ec.send_packet(self.asm_packet)
             self.ec.send_packet(self.asm_packet)

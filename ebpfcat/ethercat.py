@@ -250,7 +250,7 @@ class Packet:
         self.data.append((cmd, data, idx) + address)
         self.size = newsize
 
-    def assemble(self, index, protocol=0x88A4):
+    def assemble(self, index, ethertype=0x88A4):
         """Assemble the datagrams into a packet
 
         :param index: an identifier for the packet
@@ -259,7 +259,7 @@ class Packet:
         that may be used as an identifier for the packet.
         """
         ret = [pack("<HBBiHHHH", (self.size-2) | 0x1000, 0, 0,
-                    index, 0x8002, 0, protocol, 0)]
+                    index, 0x8002, 0, ethertype, 0)]
         for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
             ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
                             cmd.value, *dgram,
@@ -299,7 +299,7 @@ class EtherCat(Protocol):
     This class supports both to send individual datagrams and wait for their
     response, but also to send and receive entire packets. """
 
-    protocol = 0x88A4  # this is the incoming protocol, not necessary EtherCAT
+    ethertype = 0x88A4  # this is the incoming protocol, not necessary EtherCAT
 
     def __init__(self, network):
         """
@@ -375,7 +375,7 @@ class EtherCat(Protocol):
         index = randint(2000, 1000000000)
         while index in self.wait_futures:
             index = randint(2000, 1000000000)
-        self.send_packet(packet.assemble(index, self.protocol))
+        self.send_packet(packet.assemble(index, self.ethertype))
         return await self.receive_index(index)
 
     async def receive_index(self, index):
@@ -475,7 +475,7 @@ class EtherCat(Protocol):
     def connection_made(self, transport):
         """start the send loop once the connection is made"""
         socket = transport.get_extra_info('socket')
-        socket.bind((self.addr[0], self.protocol))
+        socket.bind((self.addr[0], self.ethertype))
         self.transport = transport
         ensure_future(self.sendloop())
 
