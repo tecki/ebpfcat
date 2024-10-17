@@ -109,6 +109,10 @@ class XDRFD(DatagramProtocol):
             self.future.set_exception(e)
             raise
 
+    def error_received(self, exception):
+        if not self.future.done():
+            self.future.set_exception(exception)
+
 
 class PacketArray:
     """access a packet like a Python array"""
@@ -241,7 +245,7 @@ class XDP(EBPF):
         try:
             await future
         finally:
-            transport.get_extra_info("socket").close()
+            transport.close()
 
     async def attach(self, network, flags=XDPFlags.SKB_MODE):
         """attach this program to a ``network``
