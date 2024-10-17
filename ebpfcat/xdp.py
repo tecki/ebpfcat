@@ -254,8 +254,8 @@ class XDP(EBPF):
            like ``"eth0"``
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
-        fd, _ = self.load(log_level=self.ebpf_log_level)
-        await self._netlink(ifindex, fd, flags)
+        self.load(log_level=self.ebpf_log_level)
+        await self._netlink(ifindex, self.file_descriptor, flags)
 
     async def detach(self, network, flags=XDPFlags.SKB_MODE):
         """detach this program from a ``network``
@@ -277,11 +277,11 @@ class XDP(EBPF):
            like ``"eth0"``
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
-        fd, _ = self.load(log_level=self.ebpf_log_level)
+        self.load(log_level=self.ebpf_log_level)
         try:
-            await self._netlink(ifindex, fd, flags)
+            await self._netlink(ifindex, self.file_descriptor, flags)
         finally:
-            os.close(fd)
+            self.close()
         try:
             yield
         finally:

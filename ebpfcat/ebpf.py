@@ -19,6 +19,7 @@
 
 __all__ = ["EBPF", "LocalVar", "prandom", "ktime"]
 
+import os
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
@@ -1318,16 +1319,24 @@ class EBPF:
 
     def load(self, log_level=0, log_size=10 * 4096):
         """load the program into the kernel"""
-        ret = bpf.prog_load(self.prog_type, self.assemble(), self.license,
-                            log_level, log_size, self.kern_version,
-                            name=self.name)
+        fd, log = bpf.prog_load(self.prog_type, self.assemble(), self.license,
+                                log_level, log_size, self.kern_version,
+                                name=self.name)
         self.loaded = True
+        self.file_descriptor = fd
 
         for v in self.__class__.__dict__.values():
             if isinstance(v, Map):
                 v.load(self)
 
-        return ret
+        return log
+
+    def close(self):
+        os.close(self.file_descriptor)
+        self.file_descriptor = None
+
+    def test_run(self, *args, **kwargs):
+        return bpf.prog_test_run(self.file_descriptor, *args, **kwargs)
 
     def jumpIf(self, comp):
         """jump if `comp` is true to a later defined `target`"""

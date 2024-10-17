@@ -24,7 +24,7 @@ from .ebpf import (
     SubProgram, ktime)
 from .hashmap import HashMap
 from .xdp import XDP, PacketVar
-from .bpf import ProgType, prog_test_run
+from .bpf import ProgType
 
 
 opcodes = list((v.value, v) for v in Opcode)
@@ -1062,10 +1062,10 @@ class KernelTests(TestCase):
         e.a += 7
         e.exit()
 
-        fd, _ = e.load(log_level=1)
-        prog_test_run(fd, 1000, 1000, 0, 0, 1)
+        e.load(log_level=1)
+        e.test_run(1000, 1000, 0, 0, 1)
         e.a *= 2
-        prog_test_run(fd, 1000, 1000, 0, 0, 1)
+        e.test_run(1000, 1000, 0, 0, 1)
         self.assertEqual(e.a, 31)
         self.assertEqual(e.b, 24)
 
@@ -1096,8 +1096,8 @@ class KernelTests(TestCase):
         e.r0 = 55
         e.exit()
 
-        fd, _ = e.load(log_level=1)
-        prog_test_run(fd, 1000, 1000, 100, 100, 1)
+        e.load(log_level=1)
+        e.test_run(1000, 1000, 100, 100, 1)
         self.assertEqual(e.ar, 7)
         self.assertEqual(e.aw, 11)
         self.assertEqual(s1.br, 33)
@@ -1113,7 +1113,7 @@ class KernelTests(TestCase):
         self.assertEqual(s1.bw, 36)
         self.assertEqual(s2.br, 165)
         self.assertEqual(s2.bw, 36)
-        prog_test_run(fd, 1000, 1000, 0, 0, 1)
+        e.test_run(1000, 1000, 0, 0, 1)
         self.assertEqual(e.ar, 18)
         self.assertEqual(e.aw, 22)
         self.assertEqual(s1.br, 36)

@@ -149,7 +149,7 @@ def prog_load(prog_type, insns, license,
     if log_level != 0:
         return fd, the_logbuf.value.decode("utf8")
     else:
-        return fd
+        return fd, None
 
 def obj_pin(pathname, fd):
     pn = pathname.encode("utf8")

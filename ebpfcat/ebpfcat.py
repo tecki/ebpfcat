@@ -424,9 +424,10 @@ class FastEtherCat(SimpleEtherCat):
         index = len(self.sync_groups)
         while index in self.sync_groups:
             index = (index + 1) % self.MAX_PROGS
-        fd, _ = sg.load(log_level=1)
-        update_elem(self.programs, pack("<I", index), pack("<I", fd), 0)
-        os.close(fd)
+        sg.load()
+        update_elem(self.programs, pack("<I", index),
+                    pack("<I", sg.file_descriptor), 0)
+        sg.close()
         self.sync_groups[index] = sg
         try:
             yield index
@@ -437,7 +438,7 @@ class FastEtherCat(SimpleEtherCat):
         await super().connect()
         self.ebpf = EtherXDP()
         self.ebpf.programs = self.programs
-        self.fd = await self.ebpf.attach(self.addr[0])
+        await self.ebpf.attach(self.addr[0])
 
     @asynccontextmanager
     async def run(self):
