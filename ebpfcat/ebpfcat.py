@@ -515,9 +515,10 @@ class ParallelEtherCat(FastEtherCat):
             try:
                 os.rmdir(lockdir)
             except OSError:
-                return
-            await self.ebpf.detach(self.addr[0])
-            os.remove(programs)
+                pass
+            else:
+                await self.ebpf.detach(self.addr[0])
+                os.remove(programs)
 
 
 class SterilePacket(Packet):
