@@ -538,6 +538,8 @@ class Terminal:
     """Represent one terminal (*SubDevice* or *slave*) in the loop"""
     def __init__(self, ethercat):
         self.ec = ethercat
+        self.mbx_cnt = 0
+        self.mbx_lock = Lock()
 
     async def initialize(self, relative=None, absolute=None):
         """Initialize the terminal
@@ -572,25 +574,28 @@ class Terminal:
         for i in range(fmmu_no):
             await self.write(0x60c + 0x10 * i, "B", 0)
 
-        self.mbx_cnt = 1
-        self.mbx_lock = Lock()
-
         await self.apply_eeprom()
 
+    async def gentle_initialize(self, relative=None, absolute=None):
+        assert (relative is None) != (absolute is None)
+        if relative is not None:
+            self.position, = await self.ec.roundtrip(ECCmd.APRD, relative,
+                                                     0x10, "H")
+            if self.position == 0:
+                return await self.initialize(relative=relative)
+        else:
+            self.position = absolute
+
+        state, *_ = await self.get_state()
+        if state is MachineState.INIT:
+            return await self.initialize(relative=relative, absolute=absolute)
+
+        await self.read_eeprom()
+        sm = await self.read(0x800, data=0x80)
+        self.parse_sync_managers(sm)
+
     async def apply_eeprom(self):
-        async def read_eeprom(no, fmt):
-            return unpack(fmt, await self._eeprom_read_one(no))
-
-        self.vendorId, self.productCode = \
-                await read_eeprom(EEPROM.VENDOR_ID, "<II")
-        self.revisionNo, self.serialNo = \
-                await read_eeprom(EEPROM.REVISION, "<II")
-        # this reads the mailbox configuration from the EEPROM header.
-        # weirdly this does not match with the later EEPROM SM configuration
-        # self.mbx_in_off, self.mbx_in_sz, self.mbx_out_off, self.mbx_out_sz = \
-        #     await read_eeprom(0x18, "<HHHH")
-
-        self.eeprom = await self.read_eeprom()
+        await self.read_eeprom()
         if 41 not in self.eeprom:
             # no sync managers defined in eeprom
             return
@@ -602,8 +607,11 @@ class Terminal:
         self.pdo_in_off = self.pdo_in_sz = None
         self.pdo_in_addr = 0x818
         self.pdo_out_addr = 0x810
-        for i in range(0, len(self.eeprom[41]), 8):
-            offset, size, mode = unpack("<HHB", self.eeprom[41][i:i+5])
+        self.parse_sync_managers(self.eeprom[41])
+
+    def parse_sync_managers(self, data):
+        for i in range(0, len(data), 8):
+            offset, size, mode = unpack_from("<HHB", data, i)
             mode &= 0xf
             if mode == 0:
                 self.pdo_in_off = offset
@@ -791,13 +799,18 @@ class Terminal:
 
         pos = 0x40
         data = b""
-        eeprom = {}
+        self.eeprom = {}
+
+        self.vendorId, self.productCode = \
+                unpack('<II', await self._eeprom_read_one(EEPROM.VENDOR_ID))
+        self.revisionNo, self.serialNo = \
+                unpack('<II', await self._eeprom_read_one(EEPROM.REVISION))
 
         while True:
             hd, ws = unpack("<HH", await get_data(4))
             if hd == 0xffff:
-                return eeprom
-            eeprom[hd] = await get_data(ws * 2)
+                return
+            self.eeprom[hd] = await get_data(ws * 2)
 
     def has_mailbox(self):
         return self.mbx_out_off is not None and self.mbx_in_off is not None

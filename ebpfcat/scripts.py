@@ -49,11 +49,11 @@ async def info():
             terms = [Terminal(ec) for t in terminals]
             for t in terms:
                 t.ec = ec
-            await asyncio.gather(*(t.initialize(-i)
+            await asyncio.gather(*(t.gentle_initialize(-i)
                                    for i, t in zip(terminals, terms)))
         else:
             term = Terminal(ec)
-            await term.initialize(-args.terminal)
+            await term.gentle_initialize(-args.terminal)
             terms = [term]
 
         for i, t in enumerate(terms, args.terminal if args.terminal else 0):
@@ -122,7 +122,7 @@ async def eeprom():
         return
 
     t = Terminal(ec)
-    await t.initialize(-args.terminal)
+    await t.gentle_initialize(-args.terminal)
 
     if args.read or args.check is not None:
         r, = unpack("<4xI", await t._eeprom_read_one(0xc))
