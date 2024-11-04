@@ -308,7 +308,7 @@ class CounterDevice(Device):
 
 
 class Counter(EtherCATDevice):
-    counter = Int32(accessMode=AccessMode.READONLY, defaultValue=0)
+    counter = UInt64(accessMode=AccessMode.READONLY, defaultValue=0)
     frequency = Float(accessMode=AccessMode.READONLY)
     maxtime = Int32(accessMode=AccessMode.READONLY)
 
