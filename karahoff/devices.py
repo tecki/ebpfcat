@@ -1,4 +1,5 @@
 from asyncio import Event, Lock, sleep
+from math import sqrt
 from struct import pack, unpack
 from time import time, monotonic
 
@@ -46,6 +47,79 @@ class AnalogInput(EtherCATDevice):
         await super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
+        self.state = State.ON
+
+
+class AnalogStatisticsDevice(Device):
+    value = TerminalVar()
+
+    maxValue = DeviceVar('i')
+    minValue = DeviceVar('i')
+    currentValue = DeviceVar('i')
+    sumValue = DeviceVar('q')
+    sumSquared = DeviceVar('q')
+    counter = DeviceVar('i')
+    trigger = DeviceVar('i')
+    lastSum = DeviceVar('q')
+    lastSquared = DeviceVar('q')
+    lastCounter = DeviceVar('i')
+
+    def program(self):
+        self.currentValue = self.value
+        with self.value > self.maxValue:
+            self.maxValue = self.value
+        with self.value < self.minValue:
+            self.minValue = self.value
+        with self.trigger != 0:
+            self.lastSum = self.sumValue
+            self.lastSquared = self.sumSquared
+            self.lastCounter = self.counter
+            self.sumValue = 0
+            self.sumSquared = 0
+            self.counter = 0
+            self.trigger = 0
+        self.sumValue += self.value
+        self.sumSquared += self.value * self.value
+        self.counter += 1
+
+
+class AnalogStatistics(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    factor = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    offset = Double(accessMode=AccessMode.INITONLY, defaultValue=0)
+
+    mean = Double(accessMode=AccessMode.READONLY)
+    minimum = Double(accessMode=AccessMode.READONLY)
+    maximum = Double(accessMode=AccessMode.READONLY)
+    deviation = Double(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        if self.device.lastCounter == 0:
+            self.device.trigger = 1
+            return
+
+        factor = self.the_channel.factor * self.factor * now()
+        offset = self.the_channel.offset * self.factor + self.offset
+
+        self.mean = (self.device.lastSum
+                     / self.device.lastCounter) * factor + offset
+        self.minimum = self.device.minValue * factor + offset
+        self.maximum = self.device.maxValue * factor + offset
+        self.device.minValue = self.device.currentValue
+        self.device.maxValue = self.device.currentValue
+        variance = self.device.lastSquared / self.device.lastCounter \
+                 - (self.device.lastSum / self.device.lastCounter) ** 2
+        if variance > 0:
+            self.deviation = sqrt(variance) * factor
+        self.device.trigger = 1
+
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogStatisticsDevice()
+        self.device.value = self.the_channel.value
         self.state = State.ON
 
 
