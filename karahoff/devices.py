@@ -143,6 +143,9 @@ class DigitalOutput(OptionalSwitchMixin):
     def initialize(self):
         self.switchDevice.value = self.startupValue.value
 
+    on = Overwrite(allowedStates={State.OFF})
+    off = Overwrite(allowedStates={State.ON})
+
 
 class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY,
