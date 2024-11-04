@@ -1,10 +1,11 @@
 from asyncio import Event, gather, get_event_loop, sleep
+from contextlib import AsyncExitStack
 from itertools import chain
 from struct import pack, unpack
 
 from ebpfcat import devices, terminals
 from ebpfcat.ebpfcat import (
-    FastEtherCat, FastSyncGroup, SimpleEtherCat, Struct, SyncGroup, Terminal)
+    FastSyncGroup, ParallelEtherCat, Struct, SyncGroup, Terminal)
 from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
@@ -46,7 +47,7 @@ class CoETable(ml.Configurable):
     value = ml.Int64()
 
 
-class EtherCATMasterBase(Device):
+class EtherCATMaster(Device):
     instances = {}
     terminalsInitializingCount = 0
 
@@ -67,11 +68,17 @@ class EtherCATMasterBase(Device):
         self.term_by_name = {}
         self.term_by_addr = {}
 
-        self.ethercat = self.EtherCat(self.interface)
-        await self.ethercat.connect()
-        self.state = State.INIT
-        await self.scanBus()
-        self.state = State.ON
+        self.ethercat = ParallelEtherCat(self.interface)
+        async with AsyncExitStack() as exitStack:
+            await exitStack.enter_async_context(self.ethercat.run())
+            self.state = State.INIT
+            await self.scanBus()
+            self.state = State.ON
+            self.exitStack = exitStack.pop_all()
+
+    async def onDestruction(self):
+        async with self.exitStack:
+            pass
 
     async def init_one_terminal(self, i):
         address = await self.ethercat.assigned_address(i)
@@ -122,14 +129,6 @@ class EtherCATMasterBase(Device):
         term = await self.getTerminal()
         await term.eeprom_write_one(0xe, self.targetSerial.value & 0xffff)
         await term.eeprom_write_one(0xf, self.targetSerial.value >> 16)
-
-
-class EtherCATMaster(EtherCATMasterBase):
-    EtherCat = SimpleEtherCat
-
-
-class FastEtherCATMaster(EtherCATMasterBase):
-    EtherCat = FastEtherCat
 
 
 class EtherCATSyncGroupBase(Device):

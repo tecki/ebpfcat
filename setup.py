@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name="KaraHoff",
-      version="0.0.2",
+      version="0.9.0",
       author="Martin Teichmann",
       author_email="martin.teichmann@xfel.eu",
       description="A Karabo Beckhoff driver",
@@ -11,7 +11,6 @@ setup(name="KaraHoff",
       entry_points={
           "karabo.middlelayer_device": [
               "EtherCATMaster = karahoff.master:EtherCATMaster",
-              "FastEtherCATMaster = karahoff.master:FastEtherCATMaster",
               "EtherCATSyncGroup = karahoff.master:EtherCATSyncGroup",
               "FastEtherCATSyncGroup = karahoff.master:FastEtherCATSyncGroup",
               "AnalogInput = karahoff.devices:AnalogInput",
