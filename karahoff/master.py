@@ -58,15 +58,18 @@ class EtherCATMaster(Device):
     targetSerial = ml.UInt32()
     information = String(accessMode=AccessMode.READONLY)
 
+    def __init__(self, configuration):
+        super().__init__(configuration)
+        self.terminalsInitialized = Event()
+        self.addr_by_serial = {}
+        self.term_by_name = {}
+        self.term_by_addr = {}
+
     async def onInitialization(self):
         #loop = get_event_loop()
         #loop.set_debug(True)
         #loop.slow_callback_duration = 0.01
-        self.terminalsInitialized = Event()
         self.instances[self.deviceId] = self
-        self.addr_by_serial = {}
-        self.term_by_name = {}
-        self.term_by_addr = {}
 
         self.ethercat = ParallelEtherCat(self.interface)
         async with AsyncExitStack() as exitStack:
@@ -142,14 +145,15 @@ class EtherCATSyncGroupBase(Device):
     async def onInitialization(self):
         self.status = "waiting for master"
         master = await getDevice(self.master)
-        self.ethercat = EtherCATMaster.instances[self.master]
+        self.ethercat = self.getLocalDevice(self.master)
+        assert isinstance(self.ethercat, EtherCATMaster)
         self.status = "waiting for devices"
         devs = await gather(*[getDevice(d) for d in self.devices])
         self.status = "waiting for master to go to ON state"
         with master:
             await waitUntil(lambda: master.state == State.ON)
         self.status = 'master is ON'
-        self.devs = [EtherCATDevice.instances[d] for d in self.devices]
+        self.devs = [self.getLocalDevice(d) for d in self.devices]
         self.status = "waiting for devices to join"
         if self.ethercat.terminalsInitializingCount != 0:
             await self.ethercat.terminalsInitialized.wait()
@@ -306,7 +310,8 @@ class EtherCATTerminal(Device):
     async def onInitialization(self):
         self.status = "waiting for master"
         master = await getDevice(self.master)
-        self.ethercat = EtherCATMaster.instances[self.master]
+        self.ethercat = self.getLocalDevice(self.master)
+        await waitUntil(lambda: master.state == State.ON)
         self.ethercat.terminalsInitializingCount += 1
 
         try:
