@@ -164,6 +164,7 @@ class EtherCATSyncGroupBase(Device):
         self.syncGroup = self.SyncGroup(
             self.ethercat.ethercat,
             list(chain.from_iterable(d.get_devices() for d in self.devs)))
+        self.syncGroup.name = self.deviceId.value
         self.syncGroup.cycletime = float(self.cycletime / unit.second)
         for d in self.devs:
             d.initialize()
@@ -311,6 +312,7 @@ class EtherCATTerminal(Device):
         try:
             addr = self.ethercat.addr_by_serial[self.serialNumber.value]
             self.terminal = self.Base(self.ethercat.ethercat)
+            self.terminal.name = self.deviceId.value
             self.ethercat.term_by_addr[addr] = self.terminal
             await self.terminal.initialize(absolute=addr)
             self.vendorId = self.terminal.vendorId
