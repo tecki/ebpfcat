@@ -18,6 +18,7 @@
 """\
 A module that wraps the `bpf` system call in Python, using `ctypes`.
 """
+import string
 from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p, addressof, c_char
 from enum import Enum, Flag
 from struct import pack, unpack
@@ -127,6 +128,8 @@ def update_elem(fd, key, value, flags):
 def delete_elem(fd, key):
     return bpf(3, "IQ", fd, addrof(key))[0]
 
+allowed_chars = set(string.ascii_letters + string.digits + "-_")
+
 def prog_load(prog_type, insns, license,
               log_level=0, log_size=4096, kern_version=0, flags=0,
               name="", ifindex=0, attach_type=0):
@@ -137,6 +140,7 @@ def prog_load(prog_type, insns, license,
         the_logbuf = create_string_buffer(log_size)
         log_buf = addrof(the_logbuf)
     license = license.encode("utf8")
+    assert len(name) < 16 and set(name) <= allowed_chars, f'wrong name {name}'
     try:
         fd, _ = bpf(5, "IIQQIIQII16sII", prog_type.value, int(len(insns) // 8),
                     addrof(insns), addrof(license), log_level, log_size,

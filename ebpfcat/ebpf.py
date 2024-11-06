@@ -1247,7 +1247,7 @@ class EBPF:
         self.kern_version = kern_version
         if name is None:
             if self.name is None:
-                self.name = self.__class__.__name__[:16]
+                self.name = self.__class__.__name__
         else:
             self.name = name
         self.loaded = load_maps is not None
@@ -1319,9 +1319,11 @@ class EBPF:
 
     def load(self, log_level=0, log_size=10 * 4096):
         """load the program into the kernel"""
+        name = ''.join(c if c in bpf.allowed_chars else '_'
+                       for c in self.name[:15])
         fd, log = bpf.prog_load(self.prog_type, self.assemble(), self.license,
                                 log_level, log_size, self.kern_version,
-                                name=self.name)
+                                name=name)
         self.loaded = True
         self.file_descriptor = fd
 
