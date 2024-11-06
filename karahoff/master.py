@@ -305,6 +305,9 @@ class EtherCATTerminal(Device):
                             assignment=Assignment.MANDATORY)
     coe = VectorHash(accessMode=AccessMode.INITONLY, rows=CoETable,
                      defaultValue=[])
+    watchdog = ml.Float(accessMode=AccessMode.INITONLY,
+                        defaultValue=200, unitSymbol=Unit.SECOND,
+                        metricPrefixSymbol=MetricPrefix.MILLI)
     terminal = None
 
     async def onInitialization(self):
@@ -320,6 +323,9 @@ class EtherCATTerminal(Device):
             self.terminal.name = self.deviceId.value
             self.ethercat.term_by_addr[addr] = self.terminal
             await self.terminal.initialize(absolute=addr)
+            wd = int(self.watchdog / (100 * unit.microsecond))
+            await self.terminal.set_watchdog(wd, wd)
+
             self.vendorId = self.terminal.vendorId
             self.productCode = self.terminal.productCode
             self.revisionNo = self.terminal.revisionNo
