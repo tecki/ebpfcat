@@ -541,6 +541,14 @@ class Terminal:
         self.mbx_cnt = 0
         self.mbx_lock = Lock()
 
+    name = 'No Name'
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}.("{self.name}")'
+
+    def __str__(self):
+        return self.name
+
     async def initialize(self, relative=None, absolute=None):
         """Initialize the terminal
 
@@ -742,7 +750,7 @@ class Terminal:
             while current is not state:
                 state, error, status = await self.get_state()
                 if error:
-                    raise EtherCatError(f"AL register error {status}")
+                    raise EtherCatError(f"error status {status} in {self}")
 
     async def read(self, start, *args, **kwargs):
         """read data from the terminal at offset `start`

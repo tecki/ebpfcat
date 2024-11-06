@@ -652,10 +652,15 @@ class SyncGroupBase:
                     data = self.update_devices(data)
                     newtime = monotonic()
                     if newtime - lasttime > self.cycletime:
-                        logging.warning('cycletime exceeded (%f ms)',
+                        logging.warning('response time exceeded (%.0f ms)',
                                         (newtime - lasttime) * 1000)
                     await sleep(self.cycletime - (newtime - lasttime))
-                    lasttime = monotonic()
+                    newtime = monotonic()
+                    if newtime - lasttime > 0.05:
+                        logging.warning('excessive cycle time (%.0f ms)',
+                                        (newtime - lasttime) * 1000)
+                    lasttime = newtime
+                    assert not task.done()
             finally:
                 task.cancel()
                 try:
