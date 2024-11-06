@@ -602,6 +602,11 @@ class Terminal:
         sm = await self.read(0x800, data=0x80)
         self.parse_sync_managers(sm)
 
+    async def set_watchdog(self, pdi, process):
+        """set the watchdog time for the PDI and process data watchdog"""
+        await self.write(0x410, 'H', pdi)
+        await self.write(0x420, 'H', process)
+
     async def apply_eeprom(self):
         await self.read_eeprom()
         if 41 not in self.eeprom:
