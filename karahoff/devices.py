@@ -388,6 +388,8 @@ class Counter(EtherCATDevice):
     counter = UInt64(accessMode=AccessMode.READONLY, defaultValue=0)
     frequency = Float(accessMode=AccessMode.READONLY)
     maxtime = Int32(accessMode=AccessMode.READONLY)
+    errorSleep = Float(defaultValue=0, unitSymbol=Unit.SECOND,
+                       metricPrefixSymbol=MetricPrefix.MILLI)
 
     def update_properties(self):
         self.value = self.device.current_value
@@ -408,6 +410,11 @@ class Counter(EtherCATDevice):
         if self.device.maxtime < 1000000000:
             self.maxtime = self.device.maxtime
         self.device.maxtime = 0
+
+    @Slot()
+    async def error(self):
+        import time
+        time.sleep(self.errorSleep.value / 1000)
 
 
 class MotorDevice(Device):
