@@ -579,6 +579,7 @@ class SyncGroupBase:
 
     current_data = None
     logical_in = logical_out = None
+    name = 'No Name'
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
@@ -597,6 +598,24 @@ class SyncGroupBase:
 
     async def to_operational(self):
         await gather(*[t.to_operational() for t in self.terminals])
+
+        while True:
+            try:
+                ok = 0
+                r = await gather(*[t.to_operational() for t in self.terminals])
+                for t, (state, error, status) in zip(self.terminals, r):
+                    if state is not MachineState.OPERATIONAL or status != 0:
+                        logging.warning(
+                            "terminal %s was not operational, status was %i",
+                            t, status)
+                    else:
+                        ok += 1
+                await sleep(1)
+            except CancelledError:
+                raise
+            except Exception:
+                logging.exception('to_operational of sync group %s failed',
+                                  self.name)
 
     @asynccontextmanager
     async def map_fmmu(self):
@@ -679,24 +698,6 @@ class SyncGroup(SyncGroupBase):
         for dev in self.devices:
             dev.update()
         return self.current_data
-
-    async def to_operational(self):
-        try:
-            await gather(*[t.to_operational() for t in self.terminals])
-
-            while True:
-                r = await gather(*[t.to_operational() for t in self.terminals])
-                for t, (state, error, status) in zip(self.terminals, r):
-                    if state is not MachineState.OPERATIONAL:
-                        logging.warning(
-                            "terminal %s was not operational, status was %i",
-                            t, status)
-                await sleep(10)
-        except CancelledError:
-            raise
-        except Exception:
-            logging.exception('to_operational failed')
-            raise
 
     def start(self):
         assert self.task is None or self.task.done()
