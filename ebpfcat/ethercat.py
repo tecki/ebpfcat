@@ -38,6 +38,8 @@ from random import randint
 from socket import AF_PACKET
 from struct import pack, unpack, unpack_from, calcsize
 
+from .lock import MailboxLock
+
 class EtherCatError(Exception):
     pass
 
@@ -315,6 +317,9 @@ class EtherCat(Protocol):
         await get_event_loop().create_datagram_endpoint(
             lambda: self, family=AF_PACKET, proto=0xA488)
 
+    def get_mbx_lock(self, no):
+        return MailboxLock()
+
     async def sendloop(self):
         """the eternal datagram sending loop
 
@@ -538,8 +543,6 @@ class Terminal:
     """Represent one terminal (*SubDevice* or *slave*) in the loop"""
     def __init__(self, ethercat):
         self.ec = ethercat
-        self.mbx_cnt = 0
-        self.mbx_lock = Lock()
 
     name = 'No Name'
 
@@ -572,6 +575,7 @@ class Terminal:
         if relative is not None:
             await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
+        self.mbx_lock = self.ec.get_mbx_lock(self.position)
 
         await self.set_state(0x11)
         await self.set_state(1)
@@ -837,11 +841,10 @@ class Terminal:
         await self.write(self.mbx_out_off, "HHBB",
                                 datasize(args, data),
                                 address, channel | priority << 6,
-                                type.value | self.mbx_cnt << 4,
+                                type.value | self.mbx_lock.next_counter() << 4,
                                 *args, data=data)
         await self.write(self.mbx_out_off + self.mbx_out_sz - 1,
                                 data=1)
-        self.mbx_cnt = self.mbx_cnt % 7 + 1  # yes, we start at 1 not 0
 
     async def mbx_recv(self):
         """receive data from the mailbox"""
