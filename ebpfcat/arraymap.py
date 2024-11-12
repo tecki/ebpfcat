@@ -47,7 +47,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
             return self
         if instance.ebpf.loaded:
             fmt, addr = self.fmt_addr(instance)
-            data = instance.ebpf.__dict__[self.map.name].data
+            data = instance.ebpf.__dict__[self.map.name]
             if fmt == "x":
                 return unpack_from("q", data, addr)[0] / Expression.FIXED_BASE
             else:
@@ -67,18 +67,10 @@ class ArrayGlobalVarDesc(MemoryDesc):
                 value = int(value * Expression.FIXED_BASE)
             if not isinstance(value, tuple):
                 value = value,
-            pack_into(fmt, instance.ebpf.__dict__[self.map.name].data,
+            pack_into(fmt, instance.ebpf.__dict__[self.map.name],
                       addr, *value)
         else:
             super().__set__(instance, value)
-
-
-class ArrayMapAccess:
-    """This is the array map proper"""
-    def __init__(self, fd, size):
-        self.data = mmap(fd, size)
-        self.fd = fd
-        self.size = size
 
 
 class ArrayMap(Map):
@@ -106,13 +98,12 @@ class ArrayMap(Map):
         self.name = name
 
     def init(self, ebpf, fd):
-        setattr(ebpf, self.name, 0)
         size = self.collect(ebpf)
         if not size:  # nobody is actually using the map
             return
         if fd is None:
             fd = create_map(MapType.ARRAY, 4, size, 1, MapFlags.MMAPABLE)
-        setattr(ebpf, self.name, ArrayMapAccess(fd, size))
+        setattr(ebpf, self.name, mmap(fd, size))
         with ebpf.save_registers(list(range(6))), ebpf.get_stack(4) as stack:
             ebpf.mI[ebpf.r10 + stack] = 0
             ebpf.r1 = ebpf.get_fd(fd)
