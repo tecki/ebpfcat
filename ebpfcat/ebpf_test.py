@@ -21,7 +21,7 @@ from . import ebpf
 from .arraymap import ArrayMap
 from .ebpf import (
     AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
-    SubProgram, ktime)
+    SimulatedEBPF, SubProgram, ktime)
 from .hashmap import HashMap
 from .xdp import XDP, PacketVar
 from .bpf import ProgType
@@ -1134,6 +1134,45 @@ class KernelTests(TestCase):
         e.exit()
         print(e.opcodes)
         print(e.load(log_level=1)[1])
+
+
+class ProcessProgram(SimulatedEBPF):
+    map = ArrayMap()
+    a = map.globalVar()
+
+    def program(self):
+        self.a += 3
+
+
+class SimulatedTests(TestCase):
+    def test_minimal(self):
+        class Program(SimulatedEBPF):
+            map = ArrayMap()
+            a = map.globalVar()
+
+            def program(self):
+                self.a += 3
+
+        p = Program()
+        self.assertEqual(p.a, 0)
+        p.program()
+        self.assertEqual(p.a, 3)
+        p.program()
+        self.assertEqual(p.a, 6)
+        p.a = 7
+        self.assertEqual(p.a, 7)
+        p.program()
+        self.assertEqual(p.a, 10)
+
+    def test_process(self):
+        from multiprocessing import get_context
+        p = ProcessProgram()
+        self.assertEqual(p.a, 0)
+        ctx = get_context('spawn')
+        proc = ctx.Process(target=p.program)
+        proc.start()
+        proc.join()
+        self.assertEqual(p.a, 3)
 
 
 if __name__ == "__main__":

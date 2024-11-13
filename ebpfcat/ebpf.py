@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
 from operator import index
+from multiprocessing import Array
 from struct import pack, unpack, calcsize
 from enum import Enum
 
@@ -1218,7 +1219,37 @@ class TemporaryDesc(RegisterDesc):
         getattr(instance, self.array)[no] = value
 
 
-class EBPF:
+class EBPFBase:
+    name = None
+
+    def __init__(self, name=None, subprograms=()):
+        if name is None:
+            if self.name is None:
+                self.name = self.__class__.__name__
+        else:
+            self.name = name
+
+        self.subprograms = subprograms
+        for p in subprograms:
+            p.ebpf = self
+
+    @property
+    def ebpf(self):
+        return self
+
+
+class SimulatedEBPF(EBPFBase):
+    loaded = True
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        for k, v in self.__class__.__dict__.items():
+            if isinstance(v, Map):
+                size = v.collect(self)
+                setattr(self, k, Array('c', size).get_obj())
+
+
+class EBPF(EBPFBase):
     """The base class for all EBPF programs
 
     Usually this class is sub-classed, and the actual program is defined
@@ -1235,21 +1266,15 @@ class EBPF:
         bpf file system, and usually ends in a "/".
     """
     stack = 0
-    name = None
     license = None
 
-    def __init__(self, prog_type=0, license=None, kern_version=0,
-                 name=None, load_maps=None, subprograms=()):
+    def __init__(self, prog_type=0, license=None, *, kern_version=0,
+                 load_maps=None, **kwargs):
         self.opcodes = []
         self.prog_type = prog_type
         if license is not None:
             self.license = license
         self.kern_version = kern_version
-        if name is None:
-            if self.name is None:
-                self.name = self.__class__.__name__
-        else:
-            self.name = name
         self.loaded = load_maps is not None
 
         self.mB = MemoryMap(self, "B")
@@ -1271,9 +1296,7 @@ class EBPF:
 
         self.owners = {1, 10}
 
-        self.subprograms = subprograms
-        for p in subprograms:
-            p.ebpf = self
+        super().__init__(**kwargs)
 
         for k, v in self.__class__.__dict__.items():
             if isinstance(v, Map):
@@ -1410,10 +1433,6 @@ class EBPF:
         self.stack = (self.stack - size) & -size
         yield self.stack
         self.stack = oldstack
-
-    @property
-    def ebpf(self):
-        return self
 
     tmp = TemporaryDesc(None, "r")
     stmp = TemporaryDesc(None, "sr")
