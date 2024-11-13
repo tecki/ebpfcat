@@ -500,6 +500,13 @@ class ParallelEtherCat(FastEtherCat):
                 self.ebpf = EtherXDP()
                 self.ebpf.programs = self.programs = \
                     create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
+                try:
+                    os.remove(programs)
+                except OSError:
+                    pass
+                else:
+                    logging.error('an old programs file was still at %s',
+                                  programs)
                 obj_pin(programs, self.programs)
             except Exception:
                 shutil.rmtree(lockdir)
