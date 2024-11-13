@@ -653,19 +653,19 @@ class SyncGroupBase:
                     except TimeoutError:
                         self.missed_counter += 1
                         logging.warning(
-                            "did not receive Ethercat response in time %i",
-                            self.missed_counter)
+                            "%s: did not receive Ethercat response in time %i",
+                            self.name, self.missed_counter)
                         continue
                     data = self.update_devices(data)
                     newtime = monotonic()
                     if newtime - lasttime > self.cycletime:
-                        logging.warning('response time exceeded (%.0f ms)',
-                                        (newtime - lasttime) * 1000)
+                        logging.warning('%s: response time exceeded (%.0f ms)',
+                                        self.name, (newtime - lasttime) * 1000)
                     await sleep(self.cycletime - (newtime - lasttime))
                     newtime = monotonic()
                     if newtime - lasttime > 0.05:
-                        logging.warning('excessive cycle time (%.0f ms)',
-                                        (newtime - lasttime) * 1000)
+                        logging.warning('%s: excessive cycle time (%.0f ms)',
+                                        self.name, (newtime - lasttime) * 1000)
                     lasttime = newtime
                     assert not task.done()
             finally:
