@@ -1140,8 +1140,21 @@ class ProcessProgram(SimulatedEBPF):
     map = ArrayMap()
     a = map.globalVar()
 
+    def get_array(self, size):
+        from multiprocessing import Array
+        return Array('B', size).get_obj()
+
     def program(self):
         self.a += 3
+        for p in self.subprograms:
+            p.program()
+
+
+class ProcessSubProgram(SubProgram):
+    b = ProcessProgram.map.globalVar('I')
+
+    def program(self):
+        self.b += 7
 
 
 class SimulatedTests(TestCase):
@@ -1149,6 +1162,9 @@ class SimulatedTests(TestCase):
         class Program(SimulatedEBPF):
             map = ArrayMap()
             a = map.globalVar()
+
+            def get_array(self, size):
+                return bytearray(size)
 
             def program(self):
                 self.a += 3
@@ -1166,13 +1182,26 @@ class SimulatedTests(TestCase):
 
     def test_process(self):
         from multiprocessing import get_context
+        ctx = get_context('spawn')
         p = ProcessProgram()
         self.assertEqual(p.a, 0)
-        ctx = get_context('spawn')
         proc = ctx.Process(target=p.program)
         proc.start()
         proc.join()
         self.assertEqual(p.a, 3)
+
+    def test_subprogram(self):
+        from multiprocessing import get_context
+        ctx = get_context('spawn')
+        s = ProcessSubProgram()
+        p = ProcessProgram(subprograms=[s])
+        self.assertEqual(p.a, 0)
+        self.assertEqual(s.b, 0)
+        proc = ctx.Process(target=p.program)
+        proc.start()
+        proc.join()
+        self.assertEqual(p.a, 3)
+        self.assertEqual(s.b, 7)
 
 
 if __name__ == "__main__":

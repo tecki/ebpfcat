@@ -24,7 +24,6 @@ from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
 from operator import index
-from multiprocessing import Array
 from struct import pack, unpack, calcsize
 from enum import Enum
 
@@ -1246,7 +1245,7 @@ class SimulatedEBPF(EBPFBase):
         for k, v in self.__class__.__dict__.items():
             if isinstance(v, Map):
                 size = v.collect(self)
-                setattr(self, k, Array('c', size).get_obj())
+                setattr(self, k, self.get_array(size))
 
 
 class EBPF(EBPFBase):
