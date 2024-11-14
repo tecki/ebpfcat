@@ -735,14 +735,15 @@ class ValveDevice(Device):
     coil = TerminalVar()
     openSwitch = TerminalVar()
     closeSwitch = TerminalVar()
-    error = False
 
-    modulo = None
-    divisor = None
-    delay = 0
+    error = DeviceVar('?')
+    target = DeviceVar('?')
+    modulo = DeviceVar('I')
+    divisor = DeviceVar('I')
+    delay = DeviceVar('f')
 
     def update(self):
-        if self.divisor is not None:
+        if self.divisor > 0:
             ts = get_timestamp(Timestamp(time() - self.delay))
             self.target = ts.tid % self.divisor == self.modulo
         inPosition = self.openSwitch != self.closeSwitch
@@ -783,24 +784,23 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
     async def join(self, syncGroup):
         await super().join(syncGroup)
         self.device = ValveDevice()
-        self.device.reset()
         self.device.coil = self.find_channel(self.coil)
         if self.openSwitch:
             self.device.openSwitch = self.find_channel(self.openSwitch)
         if self.closeSwitch:
             self.device.closeSwitch = self.find_channel(self.closeSwitch)
         self.device.movingTime = self.movingTime.value
-        self.device.target = self.device.safeState = self.safeState.value
+        self.device.safeState = self.safeState.value
 
     @Slot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
     async def open(self):
-        self.device.divisor = None
+        self.device.divisor = 0
         self.device.target = not self.safeState
         await self.state_change.wait()
 
     @Slot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
     async def close(self):
-        self.device.divisor = None
+        self.device.divisor = 0
         self.device.target = self.safeState
         await self.state_change.wait()
 
@@ -824,9 +824,9 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
         if (ret := super().update_properties()) is not None:
             return ret
         if self.device.error:
-            return State.ERROR
-        elif self.device.divisor is not None:
-            return State.MOVING
+            self.set_state(State.ERROR)
+        elif self.device.divisor > 0:
+            self.set_state(State.MOVING)
         elif self.device.coil == self.safeState:
             if (self.closeSwitch and not self.device.closeSwitch
                     or self.openSwitch and self.device.openSwitch):

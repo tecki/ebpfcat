@@ -12,6 +12,7 @@ setup(name="KaraHoff",
           "karabo.middlelayer_device": [
               "EtherCATMaster = karahoff.master:EtherCATMaster",
               "EtherCATSyncGroup = karahoff.master:EtherCATSyncGroup",
+              "ProcessEtherCATSyncGroup = karahoff.master:ProcessEtherCATSyncGroup",
               "FastEtherCATSyncGroup = karahoff.master:FastEtherCATSyncGroup",
               "AnalogInput = karahoff.devices:AnalogInput",
               "AnalogStatistics = karahoff.devices:AnalogStatistics",

@@ -5,7 +5,8 @@ from struct import pack, unpack
 
 from ebpfcat import devices, terminals
 from ebpfcat.ebpfcat import (
-    FastSyncGroup, ParallelEtherCat, Struct, SyncGroup, Terminal)
+    FastSyncGroup, ParallelEtherCat, ProcessSyncGroup, Struct,
+    SyncGroup, Terminal)
 from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
@@ -71,7 +72,7 @@ class EtherCATMaster(Device):
         #loop.slow_callback_duration = 0.01
         self.instances[self.deviceId] = self
 
-        self.ethercat = ParallelEtherCat(self.interface)
+        self.ethercat = ParallelEtherCat(self.interface.value)
         async with AsyncExitStack() as exitStack:
             await exitStack.enter_async_context(self.ethercat.run())
             self.state = State.INIT
@@ -207,6 +208,10 @@ class EtherCATSyncGroup(EtherCATSyncGroupBase):
 
 class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
     SyncGroup = FastSyncGroup
+
+
+class ProcessEtherCATSyncGroup(EtherCATSyncGroupBase):
+    SyncGroup = ProcessSyncGroup
 
 
 class EtherCATDevice(Device):
