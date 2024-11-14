@@ -33,6 +33,7 @@ from .ethercat import (
     ECCmd, EtherCat, MachineState, Packet, Terminal, EtherCatError,
     Struct, SyncManager)
 from .ebpf import FuncId, MemoryDesc, SubProgram, prandom
+from .lock import ParallelMailboxLock, LockFile
 from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
     MapType, ProgType, create_map, delete_elem, lookup_elem, obj_pin, obj_get,
@@ -468,6 +469,9 @@ class ParallelEtherCat(FastEtherCat):
                 self.ethertype = randint(0x3000, 0x6000)
                 continue
 
+    def get_mbx_lock(self, no):
+        return ParallelMailboxLock(self.mbx_lock_file, no)
+
     @asynccontextmanager
     async def run(self):
         lockdir = f'/run/lock/ebpf.{self.addr[0]}.lock'
@@ -511,6 +515,8 @@ class ParallelEtherCat(FastEtherCat):
             except Exception:
                 shutil.rmtree(lockdir)
                 raise
+        self.mbx_lock_file = LockFile(f'/run/ebpf/{self.addr[0]}',
+                                      *self.terminal_addr_range)
         try:
             await self.ebpf.attach(self.addr[0])
             self.ebpf.close()
@@ -526,6 +532,7 @@ class ParallelEtherCat(FastEtherCat):
             else:
                 await self.ebpf.detach(self.addr[0])
                 os.remove(programs)
+                self.mbx_lock_file.remove()
 
 
 class SterilePacket(Packet):

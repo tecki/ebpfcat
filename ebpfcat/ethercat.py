@@ -302,6 +302,7 @@ class EtherCat(Protocol):
     response, but also to send and receive entire packets. """
 
     ethertype = 0x88A4  # this is the incoming protocol, not necessary EtherCAT
+    terminal_addr_range = (1000, 30000)
 
     def __init__(self, network):
         """
@@ -447,7 +448,7 @@ class EtherCat(Protocol):
         an address once returned by this method is assumed to be used in the
         future and will never be handed out again"""
         while True:
-            i = randint(1000, 30000)
+            i = randint(*self.terminal_addr_range)
             if i in self.used_addresses:
                 continue
             self.used_addresses.add(i)
