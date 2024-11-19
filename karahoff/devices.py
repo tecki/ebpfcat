@@ -300,8 +300,8 @@ class MonitoredOutputDevice(Device):
     outputTerm = TerminalVar()
     inputTerm = TerminalVar()
 
-    ramping = 0
-    value = 0
+    ramping = DeviceVar('i')
+    value = DeviceVar('q')
     lastTime = monotonic() * unit.second
 
     def update(self):
@@ -595,7 +595,8 @@ class BronkhorstDevice(Device):
     controller_output = TerminalVar()
     control_byte = TerminalVar()
     status_word = TerminalVar()
-    set_setpoint = 0
+
+    set_setpoint = DeviceVar('H')
 
     def update(self):
         self.setpoint = self.set_setpoint
@@ -667,7 +668,8 @@ class TurboVacDevice(Device):
     pump_is_on = TerminalVar()
     speed = TerminalVar()
     current = TerminalVar()
-    set_pump_on = False
+
+    set_pump_on = DeviceVar('?')
 
     def update(self):
         self.pump_on = self.set_pump_on
@@ -896,6 +898,10 @@ class ShutterDevice(Device):
     closeSwitch = TerminalVar()
     opening = TerminalVar()
     closing = TerminalVar()
+
+    error = DeviceVar('?')
+    target = DeviceVar('?')
+    speed = DeviceVar('h')
 
     def update(self):
         if (self.openSwitch != self.closeSwitch) \
