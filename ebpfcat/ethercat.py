@@ -480,8 +480,7 @@ class EtherCat(Protocol):
 
     def connection_made(self, transport):
         """start the send loop once the connection is made"""
-        socket = transport.get_extra_info('socket')
-        socket.bind((self.addr[0], self.ethertype))
+        transport._sock.bind((self.addr[0], self.ethertype))
         self.transport = transport
         ensure_future(self.sendloop())
 
