@@ -656,6 +656,11 @@ class Terminal:
         await self.write(self.pdo_in_addr + 6, "B", self.pdo_in_sz > 0)
 
     async def parse_pdos(self):
+        """parse the PDOs from self description
+
+        parse the PDO assignment from the SDO if available, or EEPROM
+        if not. Return the number of bits for the output PDO and the
+        input PDO. """
         async def parse_eeprom(s):
             i = 0
             bitpos = 0
@@ -669,10 +674,10 @@ class Terminal:
                     i += 8
 
         async def parse_sdo(index):
-            assignment = await self.sdo_read(index)
+            assignments, = unpack("B", await self.sdo_read(index, 0))
             bitpos = 0
-            for i in range(0, len(assignment), 2):
-                pdo, = unpack_from("<H", assignment, i)
+            for i in range(1, assignments + 1):
+                pdo, = unpack("<H", await self.sdo_read(index, i))
                 if pdo == 0:
                     continue
                 count, = unpack("B", await self.sdo_read(pdo, 0))
