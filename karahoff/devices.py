@@ -380,8 +380,8 @@ class CounterDevice(Device):
         self.counter += 1
         tmp = monotonic()
         if tmp - self.lasttime > self.maxtime:
-            self.maxtime = (tmp - self.lasttime) * 1e6
-        self.lasttime = tmp
+            self.maxtime = int((tmp - self.lasttime) * 1e6)
+        self.lasttime = int(tmp)
 
 
 class Counter(EtherCATDevice):
@@ -1007,3 +1007,78 @@ class EtherCATSCPIMaster(EtherCATDevice):
             self.state = State.INIT
             background(initialize())
             self.initialized = True
+
+
+class Automation1Device(Device):
+    actualPosition = TerminalVar()
+    actualVelocity = TerminalVar()
+    error = TerminalVar()
+    status = TerminalVar()
+
+    targetPosition_term = TerminalVar()
+    targetVelocity_term = TerminalVar()
+    command_term = TerminalVar()
+    targetPosition = DeviceVar('d')
+    targetVelocity = DeviceVar('d')
+    command = DeviceVar('i')
+
+
+    def update(self):
+        self.targetPosition_term = self.targetPosition
+        self.targetVelocity_term = self.targetVelocity
+        self.command_term = self.command
+
+class Automation1(EtherCATDevice):
+    motor = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    actualPosition = Float(
+        displayedName='Actual Position',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    targetPosition = Float(
+        displayedName='Target Position',
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    targetVelocity = Float(
+        displayedName='Target Velocity',
+        unitSymbol=Unit.METER_PER_SECOND, metricPrefixSymbol=MetricPrefix.MILLI)
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.device = Automation1Device()
+        self.motor_term = self.find_channel(self.motor)
+        self.device.actualPosition = self.motor_term.actualPosition
+        self.device.actualVelocity = self.motor_term.actualVelocity
+        self.device.targetPosition_term = self.motor_term.targetPosition
+        self.device.targetVelocity_term = self.motor_term.targetVelocity
+        self.device.command_term = self.motor_term.command
+        self.device.error = self.motor_term.error
+        self.device.status = self.motor_term.status
+
+    @Slot()
+    async def on(self):
+        self.device.command = 4
+
+    @Slot()
+    async def off(self):
+        self.device.command = 5
+
+    @Slot()
+    async def reset(self):
+        self.device.command = 2
+
+    @Slot()
+    async def home(self):
+        self.device.command = 3
+
+    @Slot()
+    async def move(self):
+        self.device.targetPosition = self.targetPosition.value
+        self.device.targetVelocity = self.targetVelocity.value
+        self.device.command = 1
+
+    def update_properties(self):
+        self.actualPosition = self.device.actualPosition
+        self.actualVelocity = self.device.actualVelocity
+
+        if self.device.error != 0:
+            self.state = State.ERROR

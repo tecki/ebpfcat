@@ -3,6 +3,8 @@ from karabo.middlelayer import (
     UInt8, Unit, String)
 from .master import Channel, EtherCATTerminal
 from ebpfcat import terminals
+from ebpfcat.ebpfcat import BaseType, EBPFTerminal, PacketDesc
+from ebpfcat.ethercat import ECCmd, SyncManager
 
 
 class GenericTerminal(EtherCATTerminal):
@@ -92,3 +94,41 @@ class EL2212Terminal(EtherCATTerminal):
 
     channel1 = Node(OneChannel, alias='channel1')
     channel2 = Node(OneChannel, alias='channel2')
+
+
+class Aerotech(EtherCATTerminal):
+    class Base(EBPFTerminal):
+        compatibility = {(2608, 4096)}
+
+        actualPosition = PacketDesc(SyncManager.IN, 8, "d")
+        actualVelocity = PacketDesc(SyncManager.IN, 0, "d")
+        positionLag = PacketDesc(SyncManager.IN, 36, "d")
+        enabled = PacketDesc(SyncManager.IN, 28, "i")
+        homed = PacketDesc(SyncManager.IN, 24, "i")
+        error = PacketDesc(SyncManager.IN, 20, "i")
+        inPosition = PacketDesc(SyncManager.IN, 32, "i")
+        status = PacketDesc(SyncManager.IN, 16, "i")
+
+        targetPosition = PacketDesc(SyncManager.OUT, 8, "d")
+        targetVelocity = PacketDesc(SyncManager.OUT, 16, "d")
+        command = PacketDesc(SyncManager.OUT, 0, "i")
+        emergencyStop = PacketDesc(SyncManager.OUT, 4, "i")
+
+        def allocate(self, packet, readwrite):
+            bases = {}
+            in_sz = 44
+            out_sz = 24
+            if self.pdo_in_sz:
+                bases[SyncManager.IN] = (BaseType.FMMU_IN, packet.fmmu_in_size)
+                packet.fmmu_in_size += in_sz
+                packet.fmmu_in_count += 1
+
+                packet.append(ECCmd.FPRD, b"0", 0,
+                              self.position, self.pdo_in_off + self.pdo_in_sz - 1)
+            if readwrite and self.pdo_out_sz:
+                bases[SyncManager.OUT] = (BaseType.NO_FMMU, packet.size)
+                packet.append_writer(ECCmd.FPWR, b"\0" * out_sz, 0,
+                                     self.position, self.pdo_out_off)
+                packet.append_writer(ECCmd.FPWR, b"3", 0,
+                                     self.position, self.pdo_out_off + self.pdo_out_sz - 1)
+            return bases
