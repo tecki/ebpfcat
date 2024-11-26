@@ -763,14 +763,7 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
         async with self.ec.run():
             self.asm_packet = self.packet.assemble(self.packet_index,
                                                    self.ec.ethertype)
-            print('just before run')
-            try:
-                await self.run()
-            except Exception as e:
-                print('error in run', e)
-                raise
-            finally:
-                print('after run')
+            await self.run()
 
     async def wait_for_process(self):
         fd = os.pidfd_open(self.process.pid)
@@ -785,7 +778,6 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
                 self.runningValue.value = False
             else:
                 if error is None:
-                    print('process terminated', self.process.is_alive())
                     return
                 else:
                     raise error
