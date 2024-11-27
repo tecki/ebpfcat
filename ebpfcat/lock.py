@@ -20,7 +20,6 @@ import fcntl
 import os
 from asyncio import Lock, create_task, run, sleep
 from functools import wraps
-from multiprocessing import get_context
 from unittest import TestCase, main
 
 
@@ -75,7 +74,7 @@ class MailboxLock(Lock):
         return ret
 
 
-class ParallelMailboxLock:
+class ParallelMailboxLock(MailboxLock):
     """A lock for the mailbox counter for multi-process programs
 
     Write the mailbox counter to a :class:`LockFile`, such that different
@@ -83,32 +82,28 @@ class ParallelMailboxLock:
     """
 
     def __init__(self, lock_file, no):
+        super().__init__()
         self.lock_file = lock_file
         assert self.lock_file.minimum <= no < self.lock_file.maximum
         self.no = no - self.lock_file.minimum
-        self.counter = None
 
     async def __aenter__(self):
+        await super().__aenter__()
         while True:
             try:
                 fcntl.lockf(
                     self.lock_file.fd, fcntl.LOCK_NB | fcntl.LOCK_EX, 1, self.no
                 )
+                break
             except OSError:
                 await sleep(0)
                 continue
-            break
         (self.counter,) = os.pread(self.lock_file.fd, 1, self.no)
 
     async def __aexit__(self, a, b, c):
         os.pwrite(self.lock_file.fd, bytes((self.counter,)), self.no)
         fcntl.lockf(self.lock_file.fd, fcntl.LOCK_UN, 1, self.no)
-        self.counter = None
-
-    def next_counter(self):
-        ret = self.counter
-        self.counter = ret % 7 + 1
-        return ret
+        await super().__aexit__(a, b, c)
 
 
 def asynctst(f):
@@ -117,6 +112,29 @@ def asynctst(f):
         run(f(self))
 
     return wrapper
+
+
+async def run_async(pno, lock, queue):
+    from random import random
+
+    async def f(no):
+        for i in range(3):
+            async with lock:
+                for j in range(4):
+                    await sleep(0.03 * random())
+                    queue.put((pno, no, i, j, lock.next_counter()))
+                await sleep(0.03 * random())
+
+    from asyncio import create_task, gather
+
+    tasks = [create_task(f(i)) for i in range(4)]
+    await gather(*tasks)
+
+
+def run_tst(pno, lock, queue):
+    from asyncio import run
+
+    run(run_async(pno, lock, queue))
 
 
 class Tests(TestCase):
@@ -141,8 +159,93 @@ class Tests(TestCase):
                 self.assertEqual(lock.next_counter(), i)
         await task
 
-    def spawn(self):
+    def test_parallel(self):
+        from multiprocessing import get_context
+        from queue import Empty
+
         ctx = get_context("spawn")
+        lockfile = LockFile("/tmp/test", 7, 33)
+        try:
+            lock = ParallelMailboxLock(lockfile, 10)
+            queue = ctx.Queue()
+            processes = [
+                ctx.Process(target=run_tst, args=(i, lock, queue)) for i in range(7)
+            ]
+            for p in processes:
+                p.start()
+            switch = 0
+            last_pno, last_no, last_i, last_j, last_cnt = queue.get()
+            while True:
+                try:
+                    pno, no, i, j, cnt = queue.get(timeout=0.1)
+                    self.assertEqual(cnt, last_cnt % 7 + 1)
+                    if j != 0:
+                        self.assertEqual(last_i, i)
+                        self.assertEqual(last_no, no)
+                        self.assertEqual(last_pno, pno)
+                    switch += pno != last_pno
+                    last_cnt = cnt
+                    last_j = j
+                    last_i = i
+                    last_no = no
+                    last_pno = pno
+                except Empty:
+                    for p in processes:
+                        if p.is_alive():
+                            break
+                    else:
+                        break
+            self.assertGreater(switch, 70)
+        except AssertionError as exc:
+            for p in processes:
+                p.join()
+            raise exc
+        finally:
+            lockfile.close()
+            lockfile.remove()
+
+    def test_parallel_boxes(self):
+        from multiprocessing import get_context
+        from queue import Empty
+
+        ctx = get_context("spawn")
+        lockfile = LockFile("/tmp/test", 7, 33)
+        try:
+            queue = ctx.Queue()
+            processes = [
+                ctx.Process(
+                    target=run_tst,
+                    args=(i, ParallelMailboxLock(lockfile, i + 10), queue),
+                )
+                for i in range(7)
+            ]
+            for p in processes:
+                p.start()
+            switch = 0
+            last_pno, last_no, last_i, last_j, last_cnt = queue.get()
+            while True:
+                try:
+                    pno, no, i, j, cnt = queue.get(timeout=0.1)
+                    switch += pno != last_pno
+                    last_cnt = cnt
+                    last_j = j
+                    last_i = i
+                    last_no = no
+                    last_pno = pno
+                except Empty:
+                    for p in processes:
+                        if p.is_alive():
+                            break
+                    else:
+                        break
+            self.assertGreater(switch, 300)
+        except AssertionError as exc:
+            for p in processes:
+                p.join()
+            raise exc
+        finally:
+            lockfile.close()
+            lockfile.remove()
 
 
 if __name__ == "__main__":
