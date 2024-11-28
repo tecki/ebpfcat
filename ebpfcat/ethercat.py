@@ -245,7 +245,7 @@ class Packet:
         newsize = self.size + len(data) + self.DATAGRAM_HEADER \
                   + self.DATAGRAM_TAIL
         if newsize > self.MAXSIZE:
-            raise OverflowError("ethercat packet size too big")
+            raise OverflowError(f"ethercat packet size too big: {newsize}")
         elif len(self.data) > 14:
             raise OverflowError("Too many datagrams per packet")
 
@@ -589,6 +589,13 @@ class Terminal:
         await self.apply_eeprom()
 
     async def gentle_initialize(self, relative=None, absolute=None):
+        """Initialize a terminal only if not already initialized
+
+        Use this method instead of :meth:`initialize` if the terminal should
+        be used in parallel with other users. This will bring the terminal
+        to a state such that one can read and write SDO parameters. It is
+        not possible to use PDOs, only one user can do that at a time.
+        """
         assert (relative is None) != (absolute is None)
         if relative is not None:
             self.position, = await self.ec.roundtrip(ECCmd.APRD, relative,
