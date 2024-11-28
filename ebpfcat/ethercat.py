@@ -572,13 +572,12 @@ class Terminal:
         assert relative is not None or absolute is not None
         if absolute is None:
             absolute = await self.ec.find_free_address()
+        self.mbx_lock = self.ec.get_mbx_lock(absolute)
         if relative is not None:
             await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
-        self.mbx_lock = self.ec.get_mbx_lock(self.position)
 
-        await self.set_state(0x11)
-        await self.set_state(1)
+        await self.to_operational(MachineState.INIT)
 
         fmmu_no, = await self.read(4, "B")
         self.fmmu_used = [None] * fmmu_no
@@ -604,6 +603,7 @@ class Terminal:
                 return await self.initialize(relative=relative)
         else:
             self.position = absolute
+        self.mbx_lock = self.ec.get_mbx_lock(self.position)
 
         state, *_ = await self.get_state()
         if state is MachineState.INIT:
