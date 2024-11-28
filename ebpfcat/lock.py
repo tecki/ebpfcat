@@ -1,6 +1,9 @@
 import fcntl
 import os
-from asyncio import Lock, sleep
+from asyncio import Lock, create_task, run, sleep
+from functools import wraps
+from multiprocessing import get_context
+from unittest import TestCase, main
 
 
 class LockFile:
@@ -80,3 +83,37 @@ class ParallelMailboxLock:
         ret = self.counter
         self.counter = ret % 7 + 1
         return ret
+
+def asynctst(f):
+    @wraps(f)
+    def wrapper(self):
+        run(f(self))
+    return wrapper
+
+class Tests(TestCase):
+    @asynctst
+    async def test_bla(self):
+        async def locker(n):
+            async with lock:
+                self.assertEqual(lock.next_counter(), n)
+        task = create_task(locker(1))
+        lock = MailboxLock()
+        async with lock:
+            await sleep(0.001)
+            self.assertEqual(lock.next_counter(), 0)
+        await task
+        task = create_task(locker(1))  # round-robin to 1
+        async with lock:
+            await sleep(0.001)
+            self.assertEqual(lock.next_counter(), 2)
+            for i in range(3, 8):
+                await sleep(0.001)
+                self.assertEqual(lock.next_counter(), i)
+        await task
+
+    def spawn(self):
+        ctx = get_context('spawn')
+
+
+if __name__ == '__main__':
+    main()
