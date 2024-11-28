@@ -1014,10 +1014,13 @@ class Automation1Device(Device):
     actualVelocity = TerminalVar()
     error = TerminalVar()
     status = TerminalVar()
+    enabled = TerminalVar()
+    homed = TerminalVar()
 
     targetPosition_term = TerminalVar()
     targetVelocity_term = TerminalVar()
     command_term = TerminalVar()
+
     targetPosition = DeviceVar('d')
     targetVelocity = DeviceVar('d')
     command = DeviceVar('i')
@@ -1033,6 +1036,22 @@ class Automation1(EtherCATDevice):
                    assignment=Assignment.MANDATORY)
     actualPosition = Float(
         displayedName='Actual Position',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    homed = Int32(
+        displayedName='Homed',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    enabled = Int32(
+        displayedName='Enabled',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    error = Int32(
+        displayedName='Error Code',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    status = Int32(
+        displayedName='Status',
         accessMode=AccessMode.READONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     targetPosition = Float(
@@ -1053,6 +1072,8 @@ class Automation1(EtherCATDevice):
         self.device.command_term = self.motor_term.command
         self.device.error = self.motor_term.error
         self.device.status = self.motor_term.status
+        self.device.enabled = self.motor_term.enabled
+        self.device.homed = self.motor_term.homed
 
     @Slot()
     async def on(self):
@@ -1076,9 +1097,24 @@ class Automation1(EtherCATDevice):
         self.device.targetVelocity = self.targetVelocity.value
         self.device.command = 1
 
+    @Slot()
+    async def update(self):
+        self.device.targetPosition = self.targetPosition.value
+        self.device.targetVelocity = self.targetVelocity.value
+        self.device.command = 2
+
     def update_properties(self):
         self.actualPosition = self.device.actualPosition
         self.actualVelocity = self.device.actualVelocity
+        self.enabled = self.device.enabled
+        self.homed = self.device.homed
+        self.status = self.device.status
+        self.error = self.device.error
 
         if self.device.error != 0:
             self.state = State.ERROR
+        else:
+            if self.device.enabled == 1:
+                self.state = State.ON
+            else:
+                self.state = State.OFF

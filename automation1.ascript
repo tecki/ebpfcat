@@ -1,0 +1,87 @@
+var $AbsVelocity as real
+var $RealVelocity as real
+var $RealPosition as real
+
+
+program
+	$PositionLag = 0
+	$InPosition = 0
+	$Enabled = 0
+	$Homed = 0
+	$Error = 0
+	$Status = 0
+	Disable(X)
+	$RealPosition = StatusGetAxisItem(X, AxisStatusItem.PositionFeedback)
+	$ActualPosition = $RealPosition
+	$RealVelocity = StatusGetAxisItem(X, AxisStatusItem.VelocityFeedback)
+	$ActualVelocity = $RealVelocity
+	while ($EmergencyStop != 1)
+		$RealPosition = StatusGetAxisItem(X, AxisStatusItem.PositionFeedback)
+		$ActualPosition = 0.9 * $ActualPosition + 0.1 * $RealPosition
+		$RealVelocity = StatusGetAxisItem(X, AxisStatusItem.VelocityFeedback)
+		$ActualVelocity = 0.9 * $ActualVelocity + 0.1 * $RealVelocity
+		$AbsVelocity = Abs($ActualVelocity)
+		$PositionLag = Abs($TargetPosition-$ActualPosition)
+		if ($Status == 0)
+			if ($Error == 0)
+				switch ($Command)
+					case 1
+						if ($TargetPosition < -30.01)
+							$Error = 1
+							AppMessageDisplay("TargetPosition < -30")
+						elseif ($TargetPosition > 30.01)
+							$Error = 2
+							AppMessageDisplay("TargetPosition > 30")
+						elseif ($TargetVelocity < 0.001)
+							$Error = 3
+							AppMessageDisplay("TargetVelocity < 0.001")
+						elseif ($TargetVelocity > 60.1)
+							$Error = 4
+							AppMessageDisplay("TargetVelocity > 60")
+						elseif ($Homed == 0)
+							$Error = 5
+							AppMessageDisplay("Motor not Homed")
+						elseif ($Enabled == 0)
+							$Error = 6
+							AppMessageDisplay("Motor not Enabled")
+						elseif ($PositionLag < 0.01)
+							$Status = 0
+							$InPosition = 1
+						else
+							$Status = 1
+							MoveAbsolute(X, $TargetPosition, $TargetVelocity)
+							$InPosition = 0
+						end
+					case 3
+						if ($Enabled == 0)
+							AppMessageDisplay("Motor not Enabled")
+						elseif ($Homed == 1)
+							$Homed = 1
+						else
+							Home(X)
+							$Homed = 1
+						end
+					case 4
+						Enable(X)
+						$Enabled = 1
+					case 5
+						Disable(X)
+						$Enabled = 0
+				end
+			else
+				if ($Command == 2)
+					$Error = 0
+				end
+			end	// Error
+		else
+			if ($ActualVelocity < 0.5) && ($PositionLag < 0.01)
+				$InPosition = 1
+				$Status = 0
+			end
+
+		end // Status
+
+		Dwell(0.001)
+	end
+	Disable(X)
+end
