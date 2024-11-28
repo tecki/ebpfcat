@@ -4,21 +4,22 @@ from asyncio import Lock, sleep
 
 
 class LockFile:
+    """A lock file for all mailboxes in an EtherCAT loop"""
     def __init__(self, filename, minimum, maximum):
         self.filename = filename
         self.minimum = minimum
         self.maximum = maximum
         os.makedirs(filename.rsplit('/', 1)[0], exist_ok=True)
         try:
-            self.file = open(self.filename, 'xb')
+            self.fd = os.open(self.filename, os.O_CREAT | os.O_RDWR
+                                             | os.O_EXCL | os.O_CLOEXEC)
         except FileExistsError:
-            self.file = open(self.filename, 'r+b')
+            self.fd = os.open(self.filename, os.O_RDWR | os.O_CLOEXEC)
         else:
-            self.file.write(bytes(maximum - minimum))
-        self.fd = self.file.fileno()
+            os.write(self.fd, bytes(maximum - minimum))
 
     def close(self):
-        self.file.close()
+        os.close(self.fd)
 
     def remove(self):
         os.remove(self.filename)
@@ -31,6 +32,11 @@ class LockFile:
 
 
 class MailboxLock(Lock):
+    """A simple lock that keeps a mailbox counter up-to-date
+
+    Used for a single process program to assure two asyncio tasks
+    do not use a mailbox at the same time, and keep the counter correct.
+    """
     def __init__(self):
         super().__init__()
         self.counter = 0
@@ -43,6 +49,11 @@ class MailboxLock(Lock):
 
 
 class ParallelMailboxLock:
+    """A lock for the mailbox counter for multi-process programs
+
+    Write the mailbox counter to a :class:`LockFile`, such that different
+    processes can access the mailbox in order.
+    """
     def __init__(self, lock_file, no):
         self.lock_file = lock_file
         assert self.lock_file.minimum <= no < self.lock_file.maximum
