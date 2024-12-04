@@ -997,6 +997,7 @@ class EtherCATSCPIMaster(EtherCATDevice):
         self.device = Serial(self.channel)
 
     initialized = False
+    allowLF = False
 
     def update_properties(self):
         async def initialize():
