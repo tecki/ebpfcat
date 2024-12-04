@@ -744,6 +744,8 @@ class ValveDevice(Device):
     divisor = DeviceVar('I')
     delay = DeviceVar('f')
 
+    lastGood = 0
+
     def update(self):
         if self.divisor > 0:
             ts = get_timestamp(Timestamp(time() - self.delay))
