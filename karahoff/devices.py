@@ -744,7 +744,7 @@ class ValveDevice(Device):
     divisor = DeviceVar('I')
     delay = DeviceVar('f')
 
-    lastGood = 0
+    lastGood = None
 
     def update(self):
         if self.divisor > 0:
@@ -757,7 +757,7 @@ class ValveDevice(Device):
         if inPosition and isCorrect:
             self.lastGood = monotonic()
             self.coil = self.target
-        elif monotonic() - self.lastGood < self.movingTime:
+        elif self.lastGood is None or monotonic() - self.lastGood < self.movingTime:
             self.coil = self.target
         else:
             self.error = True
