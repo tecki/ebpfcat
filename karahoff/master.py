@@ -329,7 +329,7 @@ class EtherCATTerminal(Device):
             self.ethercat.term_by_addr[addr] = self.terminal
             await self.terminal.initialize(absolute=addr)
             if isSet(self.watchdog):
-                d = int(self.watchdog / (100 * unit.microsecond))
+                wd = int(self.watchdog / (100 * unit.microsecond))
                 await self.terminal.set_watchdog(wd, wd)
 
             self.vendorId = self.terminal.vendorId
