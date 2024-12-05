@@ -17,6 +17,7 @@
 
 import asyncio
 import os
+from multiprocessing.context import get_spawning_popen
 from .ebpfcat import Device, TerminalVar
 
 
@@ -44,6 +45,11 @@ class Serial(Device):
         self.in_read, self.in_write = os.pipe2(os.O_NONBLOCK)
         self.out_read, self.out_write = os.pipe2(os.O_NONBLOCK)
 
+    def __getstate__(self):
+        get_spawning_popen().duplicate_for_child(self.in_write)
+        get_spawning_popen().duplicate_for_child(self.out_read)
+        return super().__getstate__()
+
     connected = False
 
     async def connect(self):
@@ -56,6 +62,8 @@ class Serial(Device):
                                                   open(self.out_write, 'wb'))
 
         init = await reader.readexactly(1)
+        os.close(self.in_write)
+        os.close(self.out_read)
         assert init == b'A'
         return reader, writer
 
