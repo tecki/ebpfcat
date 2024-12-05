@@ -15,7 +15,8 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from asyncio import ensure_future, Event, Future, Queue, StreamReader, gather
+import asyncio
+import os
 from .ebpfcat import Device, TerminalVar
 
 
@@ -40,19 +41,23 @@ class Serial(Device):
         self.init_request = channel.init_request
         self.out_string = channel.out_string
 
-        self.buffer = Queue()
+        self.in_read, self.in_write = os.pipe2(os.O_NONBLOCK)
+        self.out_read, self.out_write = os.pipe2(os.O_NONBLOCK)
 
-    def write(self, data):
-        if data:
-            self.buffer.put_nowait(data)
-
-    connected = None
+    connected = False
 
     async def connect(self):
-        self.connected = Future()
-        self.reader = StreamReader()
-        await self.connected
-        return self.reader, self
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader()
+        await loop.connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(reader),
+            open(self.in_read, 'rb'))
+        writer, _ = await loop.connect_write_pipe(asyncio.Protocol,
+                                                  open(self.out_write, 'wb'))
+
+        init = await reader.readexactly(1)
+        assert init == b'A'
+        return reader, writer
 
     last_transmit_request = False
     last_receive_accept = False
@@ -61,11 +66,10 @@ class Serial(Device):
 
     def update(self):
         self.init_request = False
-        if self.connected is None:
-            return
-        if not self.connected.done():
+        if not self.connected:
             if self.init_accept:
-                self.connected.set_result(None)
+                self.connected = True
+                os.write(self.in_write, b'A')
                 self.last_transmit_accept = self.transmit_accept
                 self.last_receive_request = self.receive_request
             else:
@@ -73,7 +77,7 @@ class Serial(Device):
             return
 
         if self.last_receive_request != self.receive_request:
-            self.reader.feed_data(self.in_string)
+            os.write(self.in_write, self.in_string)
             self.last_receive_accept = not self.last_receive_accept
             self.receive_accept = self.last_receive_accept
         self.last_receive_request = self.receive_request
@@ -82,24 +86,15 @@ class Serial(Device):
             self.current_transmit = None
             self.last_transmit_accept = self.transmit_accept
 
-        if self.current_transmit is None \
-                and (self.remainder or not self.buffer.empty()):
-            n = len(self.remainder)
-            ret = [self.remainder]
-            while not self.buffer.empty():
-                nxt = self.buffer.get_nowait()
-                n += len(nxt)
-                if n > 22:
-                    ret.append(nxt[:22-n])
-                    self.remainder = nxt[22-n:]
-                    break
-                else:
-                    ret.append(nxt)
+        if self.current_transmit is None:
+            try:
+                data = os.read(self.out_read, 22)
+            except BlockingIOError:
+                pass
             else:
-                self.remainder = b''
-            self.current_transmit = b''.join(ret)
-            self.last_transmit_request = not self.last_transmit_request
-
-        self.transmit_request = self.last_transmit_request
+                if data:
+                    self.current_transmit = data
+                    self.last_transmit_request = not self.last_transmit_request
         if self.current_transmit is not None:
             self.out_string = self.current_transmit
+        self.transmit_request = self.last_transmit_request
