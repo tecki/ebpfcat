@@ -15,8 +15,8 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-from .ethercat import ServiceDesc, Struct, SyncManager
-from .ebpfcat import EBPFTerminal, PacketDesc, ProcessDesc
+from .ethercat import ECCmd, ServiceDesc, Struct, SyncManager
+from .ebpfcat import BaseType, EBPFTerminal, PacketDesc, ProcessDesc
 
 
 class Generic(EBPFTerminal):
@@ -305,3 +305,38 @@ class Bronkhorst(EBPFTerminal):
     controller_output = ProcessDesc(0x6410, 1)
     control_byte = ProcessDesc(0x6425, 1)
     status_word = ProcessDesc(0x6427, 1)
+
+
+class AerotechBase(EBPFTerminal):
+    """A base class for Aerotech devices
+
+    Aerotech defines a huge PDO, so big it is hard to even put into one
+    packet. So we define our own packet size.
+
+    The PDO is not actually defined, the user can define it at will on
+    the Aerotech controller side.
+    Subclass this class, add :class:`PacketDesc`s to the child class
+    to match what you defined in the controller. Then define the class
+    variables ``in_size`` and ``out_size`` to define the packet sizes
+    needed to transfer your data.
+    """
+
+    in_size = None
+    out_size = None
+
+    def allocate(self, packet, readwrite):
+        bases = {}
+        if self.pdo_in_sz:
+            bases[SyncManager.IN] = (BaseType.FMMU_IN, packet.fmmu_in_size)
+            packet.fmmu_in_size += self.in_size
+            packet.fmmu_in_count += 1
+
+            packet.append(ECCmd.FPRD, b"0", 0,
+                          self.position, self.pdo_in_off + self.pdo_in_sz - 1)
+        if readwrite and self.pdo_out_sz:
+            bases[SyncManager.OUT] = (BaseType.NO_FMMU, packet.size)
+            packet.append_writer(ECCmd.FPWR, b"\0" * self.out_size, 0,
+                                 self.position, self.pdo_out_off)
+            packet.append_writer(ECCmd.FPWR, b"3", 0, self.position,
+                                 self.pdo_out_off + self.pdo_out_sz - 1)
+        return bases
