@@ -984,6 +984,8 @@ class EtherCATSCPIMaster(EtherCATDevice):
     terminal = String(accessMode=AccessMode.INITONLY,
                       assignment=Assignment.MANDATORY)
 
+    allowLF = False  # duck-typing an SCPI Master
+
     def __init__(self, configuration):
         from scpiDevices.scpi import GenericSCPIMaster
 
@@ -996,20 +998,14 @@ class EtherCATSCPIMaster(EtherCATDevice):
         self.channel = self.find_channel(self.terminal)
         self.device = Serial(self.channel)
 
-    initialized = False
-    allowLF = False
-
-    def update_properties(self):
         async def initialize():
             self.reader, self.writer = await self.device.connect()
             self.lock = Lock()
             self.connectEvent.set()
             self.state = State.ON
 
-        if not self.initialized:
-            self.state = State.INIT
-            background(initialize())
-            self.initialized = True
+        self.state = State.INIT
+        background(initialize())
 
 
 class Automation1Device(Device):
