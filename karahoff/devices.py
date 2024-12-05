@@ -1034,30 +1034,22 @@ class Automation1(EtherCATDevice):
     motor = String(accessMode=AccessMode.INITONLY,
                    assignment=Assignment.MANDATORY)
     actualPosition = Float(
-        displayedName='Actual Position',
-        accessMode=AccessMode.READONLY,
+        displayedName='Actual Position', accessMode=AccessMode.READONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-    homed = Int32(
-        displayedName='Homed',
-        accessMode=AccessMode.READONLY,
-        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-    enabled = Int32(
-        displayedName='Enabled',
-        accessMode=AccessMode.READONLY,
-        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    actualVelocity = Float(
+        displayedName='Actual Velocity', accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER_PER_SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI)
+    homed = Bool(
+        displayedName='Homed', accessMode=AccessMode.READONLY)
     error = Int32(
         displayedName='Error Code',
-        accessMode=AccessMode.READONLY,
-        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-    status = Int32(
-        displayedName='Status',
-        accessMode=AccessMode.READONLY,
-        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+        accessMode=AccessMode.READONLY)
     targetPosition = Float(
         displayedName='Target Position',
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     targetVelocity = Float(
-        displayedName='Target Velocity',
+        displayedName='Target Velocity', defaultValue=1, minExc=0,
         unitSymbol=Unit.METER_PER_SECOND, metricPrefixSymbol=MetricPrefix.MILLI)
 
     async def join(self, syncGroup):
@@ -1074,46 +1066,47 @@ class Automation1(EtherCATDevice):
         self.device.enabled = self.motor_term.enabled
         self.device.homed = self.motor_term.homed
 
-    @Slot()
+    @Slot(allowedStates={State.OFF})
     async def on(self):
         self.device.command = 4
 
-    @Slot()
+    @Slot(allowedStates={State.ON})
     async def off(self):
         self.device.command = 5
 
-    @Slot()
+    @Slot(allowedStates={State.ERROR})
     async def reset(self):
         self.device.command = 2
 
-    @Slot()
+    @Slot(allowedStates={State.ON})
     async def home(self):
         self.device.command = 3
 
-    @Slot()
+    @Slot(allowedStates={State.ON, State.MOVING})
     async def move(self):
         self.device.targetPosition = self.targetPosition.value
         self.device.targetVelocity = self.targetVelocity.value
         self.device.command = 1
 
-    @Slot()
-    async def update(self):
-        self.device.targetPosition = self.targetPosition.value
-        self.device.targetVelocity = self.targetVelocity.value
-        self.device.command = 2
+    @Slot(allowedStates={State.MOVING})
+    async def stop(self):
+        self.device.command = 6
 
     def update_properties(self):
         self.actualPosition = self.device.actualPosition
         self.actualVelocity = self.device.actualVelocity
-        self.enabled = self.device.enabled
         self.homed = self.device.homed
-        self.status = self.device.status
-        self.error = self.device.error
 
-        if self.device.error != 0:
-            self.state = State.ERROR
-        else:
-            if self.device.enabled == 1:
-                self.state = State.ON
-            else:
-                self.state = State.OFF
+        self.state = (State.OFF, State.ON, State.MOVING, State.ERROR) \
+            [self.device.status]
+
+        if self.error != self.device.error:
+            self.error = self.device.error
+            self.status = (
+                "All OK",
+                "Lower Limit",
+                "Upper Limit",
+                "Too slow",
+                "Too fast",
+                "Not homed",
+            )[self.device.error]
