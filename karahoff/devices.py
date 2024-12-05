@@ -1092,6 +1092,20 @@ class Automation1(EtherCATDevice):
     async def stop(self):
         self.device.command = 6
 
+    stepSize = Float(
+        displayedName='Step Size', minExc=0, defaultValue=1,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+
+    @Slot(allowedStates={State.ON})
+    async def stepUp(self):
+        self.targetPosition = self.actualPosition + self.stepSize
+        await self.move()
+
+    @Slot(allowedStates={State.ON})
+    async def stepDown(self):
+        self.targetPosition = self.actualPosition - self.stepSize
+        await self.move()
+
     def update_properties(self):
         self.actualPosition = self.device.actualPosition
         self.actualVelocity = self.device.actualVelocity
