@@ -100,16 +100,21 @@ method of the device is called, in which one can evaluate the
 Three methods of control
 ------------------------
 
-The communication with the terminals can happen in three different ways:
+The communication with the terminals can happen in four different ways:
 
 - asynchronous: the communication happens ad-hoc whenever needed. This is
   done during initialization and for reading and writing configuration data,
   like CoE.
 - slow: the data is sent, received and processed via Python. This is good
-  enough to around 100 Hz operation.
+  enough to around 100 Hz operation, depending on the overall load on the
+  system
+- parallel: the slow communication, but in a separate process. This is
+  useful if the program needs to perform other tasks as well, which would
+  block the event loop for too long to reach stable operation. Also
+  got to some 100 Hz.
 - fast: the data is sent, received and processed using XDP in the Linux
-  Kernel. Only very limited operations can be done, but the loop cycle
-  frequency exceeds 10 kHz.
+  Kernel. Only very limited operations can be done, namely integer arithmetic
+  only, but the loop cycle frequency exceeds 10 kHz.
 
 Adding new terminals
 --------------------
@@ -143,9 +148,9 @@ parameters one want to use synchronously. The parameters available for
 synchronous operations can be found with the ``--pdo`` parameter of the
 ``ec-info`` command. The class should inherit from
 :class:`~ebpfcat.EBPFTerminal` and define a set of tuples called
-``comptibility``. The tuples should be the pairs of Ethercat product and vendor
-id for all terminals supported by this class. Those can be found out with the
-``--ids`` parameter of the ``ec-info`` command.
+``compatibility``. The tuples should be the pairs of Ethercat product and
+vendor id for all terminals supported by this class. Those can be found out
+with the ``--ids`` parameter of the ``ec-info`` command.
 
 Within the class, the synchronous parameters are defined via
 :class:`~ebpfcat.ProcessDesc`. This descriptor takes the two parts of the CoE
@@ -239,7 +244,9 @@ EEPROM once as text and once as a hexadecimal representation::
     60: b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00\x06\x00\x00\x00\x00\x00'
         000000000000000000000000000000000000050000000000000000000000000000000000000000030100060000000000
 
-Using the ``--pdo`` (or ``-p``) parameter one can inspect the current PDO configuration, this are the CoE parameters available for synchronous read and write::
+Using the ``--pdo`` (or ``-p``) parameter one can inspect the current PDO
+configuration, this are the CoE parameters available for synchronous read and
+write::
 
     $ sudo ec-info eth0 -p -t12
     terminal no 12
