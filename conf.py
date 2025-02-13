@@ -12,8 +12,8 @@ project = 'EBPFCat'
 copyright = '2020, Martin Teichmann'
 author = 'Martin Teichmann'
 
-release = "0.1"
-version = "0.1.0"
+release = "0.6"
+version = "0.6.0"
 language = "en"
 exclude_patterns = ['_build']
 pygments_style = 'sphinx'
