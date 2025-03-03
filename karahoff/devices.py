@@ -744,8 +744,6 @@ class ValveDevice(Device):
     divisor = DeviceVar('I')
     delay = DeviceVar('f')
 
-    lastGood = None
-
     def update(self):
         if self.divisor > 0:
             ts = get_timestamp(Timestamp(time() - self.delay))
@@ -757,7 +755,7 @@ class ValveDevice(Device):
         if inPosition and isCorrect:
             self.lastGood = monotonic()
             self.coil = self.target
-        elif self.lastGood is None or monotonic() - self.lastGood < self.movingTime:
+        elif monotonic() - self.lastGood < self.movingTime:
             self.coil = self.target
         else:
             self.error = True
@@ -795,6 +793,7 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
             self.device.closeSwitch = self.find_channel(self.closeSwitch)
         self.device.movingTime = self.movingTime.value
         self.device.safeState = self.safeState.value
+        self.device.lastGood = monotonic()
 
     @Slot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
     async def open(self):
