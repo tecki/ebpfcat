@@ -474,6 +474,10 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         displayedName='Encoder Stepsize',
         accessMode=AccessMode.INITONLY, defaultValue=5e-5,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    motorStep = Float(
+        displayedName='Motor Stepsize',
+        accessMode=AccessMode.INITONLY, defaultValue=5e-5,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     offset = Float(
         accessMode=AccessMode.INITONLY, defaultValue=0,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
@@ -485,8 +489,10 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         displayedName='Actual Position',
         accessMode=AccessMode.READONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-    actualVelocity = Int32(
+    actualVelocity = Float(
         displayedName='Actual Velocity',
+        unitSymbol=Unit.METER_PER_SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI,
         accessMode=AccessMode.READONLY)
 
     motor_term = encoder_term = None
@@ -500,7 +506,10 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
     qstatus = UInt16(accessMode=AccessMode.READONLY)
 
-    targetVelocity = Int32(displayedName='Target Velocity', defaultValue=1000)
+    targetVelocity = Float(
+        displayedName='Target Velocity', defaultValue=1,
+        unitSymbol=Unit.METER_PER_SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI)
     targetPosition = Float(
         displayedName='Target Position',
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
@@ -564,17 +573,28 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         await sleep(0.2)
         self.device.set_enable = 0
 
+    lastvelocity = lastposition = None
+
     def update_properties(self):
-        self.actualPosition = (self.device.encoder * self.encodeStep
-                               + self.offset) * now()
-        self.actualVelocity = self.device.velocity
-        self.qstatus = self.device.tstatus
-        self.isCCWLimit = self.device.low_switch
-        self.isCWLimit = self.device.high_switch
+        if self.device.encoder != self.lastposition:
+            self.actualPosition = (self.device.encoder * self.encodeStep
+                                   + self.offset) * now()
+            self.lastposition = self.device.encoder
+        if self.device.velocity != self.lastvelocity:
+            self.actualVelocity = \
+                self.device.velocity * self.motorStep * unit.Hz * now()
+            self.lastvelocity = self.device.velocity
+        #self.qstatus = self.device.tstatus
+        if self.device.low_switch != self.isCCWLimit:
+            self.isCCWLimit = self.device.low_switch
+        if self.device.high_switch != self.isCWLimit:
+            self.isCWLimit = self.device.high_switch
 
         self.device.deadband_exceeded = 0
-        self.device.max_velocity = self.targetVelocity
-        self.device.proportional = int(self.proportional * (1 << 16))
+        self.device.max_velocity = \
+            min(0x7fff, int(self.targetVelocity / self.motorStep / unit.Hz))
+        self.device.proportional = int(self.proportional * self.encodeStep
+                                       / self.motorStep * (1 << 16))
         self.device.deadband = int(self.deadband // self.encodeStep)
 
         if (ret := super().update_properties()) is not None:
