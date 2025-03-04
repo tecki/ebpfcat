@@ -1,5 +1,6 @@
 from asyncio import Event, Lock, sleep
 from math import sqrt
+from numpy import polyfit
 from struct import pack, unpack
 from time import time, monotonic
 
@@ -426,6 +427,7 @@ class MotorDevice(Device):
     reset = TerminalVar()
     error = TerminalVar()
     reduced_current = TerminalVar()
+    stepcounter = TerminalVar()
 
     tstatus = TerminalVar()
     encoder_error = TerminalVar()
@@ -478,13 +480,16 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         displayedName='Motor Stepsize',
         accessMode=AccessMode.INITONLY, defaultValue=5e-5,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    motorStepMeasured = Float(
+        displayedName='Motor Stepsize as Measured',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     offset = Float(
         accessMode=AccessMode.INITONLY, defaultValue=0,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     deadband = Float(
         defaultValue=1e-3,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
-
     actualPosition = Float(
         displayedName='Actual Position',
         accessMode=AccessMode.READONLY,
@@ -533,10 +538,14 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         else:
             self.device.encoder = self.encoder_term
             self.terminals = dict(M=self.motor_term, E=None)
+        if hasattr(self.motor_term, 'stepcounter'):
+            self.device.stepcounter = self.motor_term.stepcounter
         self.device.enable = self.motor_term.enable
         self.device.error = self.motor_term.error
         self.device.reset = self.motor_term.reset
         self.device.reduced_current = self.motor_term.reduced_current
+        self.counts = []
+        self.encoders = []
 
     @Slot(displayedName='Move')
     async def move(self):
@@ -596,6 +605,15 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.proportional = int(self.proportional * self.encodeStep
                                        / self.motorStep * (1 << 16))
         self.device.deadband = int(self.deadband // self.encodeStep)
+
+        if self.state == State.MOVING:
+            self.counts.append(self.device.stepcounter)
+            self.encoders.append(self.device.encoder)
+            if len(self.counts) >= 100:
+                slope, _ = polyfit(self.encoders, self.counts, 1)
+                self.motorStepMeasured = slope * self.encodeStep
+                self.counts = []
+                self.encoders = []
 
         if (ret := super().update_properties()) is not None:
             return ret
