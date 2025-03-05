@@ -572,6 +572,13 @@ class Expression:
     def __exit__(self, exc_type, exc, tb):
         return self.as_comparison.__exit__(exc_type, exc, tb)
 
+    def load(self, dst, src, offset, fmt, long):
+         self.ebpf.append(Opcode.LD + fmt_to_opcode(fmt), dst, src, offset, 0)
+         if isinstance(fmt, str) and (fmt in "hb" or long and fmt == 'i'):
+             shift = (64 if long else 32) - calcsize(fmt) * 8
+             regs = self.ebpf.sr if long else self.ebpf.sw
+             regs[dst] = (regs[dst] << shift) >> shift
+
     @contextmanager
     def calculate(self, dst, long, force=False):
         """issue the code that calculates the value of this expression
@@ -598,8 +605,7 @@ class Expression:
         """
         with self.ebpf.get_free_register(dst) as dst:
             with self.get_address(dst, long) as (src, fmt):
-                self.ebpf.append(Opcode.LD + fmt_to_opcode(fmt),
-                                 dst, src, 0, 0)
+                self.load(dst, src, 0, fmt, long)
                 yield dst, long
 
     @contextmanager
@@ -919,9 +925,8 @@ class Memory(Expression):
         with ExitStack() as exitStack:
             if isinstance(self.address, Sum):
                 dst = exitStack.enter_context(self.ebpf.get_free_register(dst))
-                opcode = fmt_to_opcode(self.fmt)
-                self.ebpf.append(Opcode.LD + opcode, dst, self.address.left.no,
-                                 self.address.right.value, 0)
+                self.load(dst, self.address.left.no, self.address.right.value,
+                          self.fmt, long)
             else:
                 dst, _ = exitStack.enter_context(
                     super().calculate(dst, long, force))

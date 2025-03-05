@@ -157,6 +157,8 @@ class Tests(TestCase):
              Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
              Instruction(opcode=121, dst=5, src=3, off=-7, imm=0),
              Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
+             Instruction(opcode=O.LSH+O.LONG, dst=5, src=0, off=0, imm=56),
+             Instruction(opcode=O.ARSH+O.LONG, dst=5, src=0, off=0, imm=56),
              Instruction(opcode=O.LONG+O.ARSH, dst=5, src=0, off=0, imm=2),
              Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
              Instruction(opcode=O.LONG+O.RSH, dst=5, src=0, off=0, imm=2),
@@ -433,6 +435,32 @@ class Tests(TestCase):
             Instruction(opcode=O.W+O.LD, dst=3, src=10, off=-12, imm=0),
             Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=7)])
 
+    def test_sign_extend(self):
+        class Local(EBPF):
+            a = LocalVar('b')
+            b = LocalVar('H')
+            c = LocalVar('i')
+            d = LocalVar('Q')
+
+        e = Local(ProgType.XDP, "GPL")
+        e.b = e.a + e.c
+        e.d = e.b + e.c
+
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
+            Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=24),
+            Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=24),
+            Instruction(opcode=O.W+O.LD, dst=2, src=10, off=-8, imm=0),
+            Instruction(opcode=O.REG+O.ADD, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
+            Instruction(opcode=O.REG+O.LD, dst=0, src=10, off=-4, imm=0),
+            Instruction(opcode=O.W+O.LD, dst=2, src=10, off=-8, imm=0),
+            Instruction(opcode=O.LSH+O.LONG, dst=2, src=0, off=0, imm=32),
+            Instruction(opcode=O.ARSH+O.LONG, dst=2, src=0, off=0, imm=32),
+            Instruction(opcode=O.REG+O.ADD+O.LONG, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=O.STX+O.DW, dst=10, src=0, off=-16, imm=0),
+        ])
+
     def test_lock_add(self):
         class Local(EBPF):
             a = LocalVar('I')
@@ -464,6 +492,8 @@ class Tests(TestCase):
            Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-16, imm=0),
            Instruction(opcode=O.XADD+O.DW, dst=1, src=1, off=0, imm=0),
            Instruction(opcode=O.LD+O.REG, dst=0, src=10, off=-18, imm=0),
+           Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=16),
+           Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=16),
            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=3),
            Instruction(opcode=O.STX+O.REG, dst=10, src=0, off=-18, imm=0),
            Instruction(opcode=O.B+O.LD, dst=0, src=1, off=0, imm=0),
