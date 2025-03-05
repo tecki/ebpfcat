@@ -353,14 +353,20 @@ class EtherXDP(XDP):
     """The EtherCat packet dispatcher
 
     This class creates an EBPF program that receives EtherCAT packet
-    from the network and dispatches them to the sync group they belong
-    to, or passes them on to user space if they do not belong to them.
+    from the network and dispatches them to the EBPF program of the fast
+    sync group they belong to, or passes them on to user space if they
+    do not belong to any fast sync group.
 
-    For each sync group, there are always two packets on the wire, one
-    that only reads value from the terminals, the other one also writes.
-    Usually only the read-write packet is handed over to the sync group's
-    program. If, however, that packet gets lost, the next read-only
-    packet is handed over.
+    The additional information needed is put into a first, internal
+    datagram in the EtherCAT packet, marked as no-op. It also contains
+    an ethertype that should be used once the packet is handed over to
+    user space, so it can be dispatched to the correct listener.
+
+    For each fast sync group, there are always two packets on the wire,
+    one that only reads value from the terminals, the other one also
+    writes.  Usually only the read-write packet is handed over to the
+    sync group's program. If, however, that packet gets lost, the next
+    read-only packet is handed over.
 
     User space is supposed to constantly feed in new packets, and the
     then-superfluous packets are sent back to user space. This way user
@@ -379,10 +385,10 @@ class EtherXDP(XDP):
     INDEX0 = 17
 
     ethertype = XDPPacketVar(12, "!H")
-    addr0 = XDPPacketVar(18, "I")
-    cmd0 = XDPPacketVar(16, "B")
-    index0 = XDPPacketVar(INDEX0, "B")
-    data0 = XDPPacketVar(26, "H")
+    addr0 = XDPPacketVar(18, "I")  # indicates the fast sync group number
+    cmd0 = XDPPacketVar(16, "B")  # 0 is a noop, internal datagram
+    index0 = XDPPacketVar(INDEX0, "B")  # the loop counter
+    data0 = XDPPacketVar(26, "H")  # the ethertype to use
 
     def program(self):
         with prandom(self.ebpf) & 0xffff < self.rate:
@@ -462,6 +468,18 @@ class FastEtherCat(SimpleEtherCat):
 
 
 class ParallelEtherCat(FastEtherCat):
+    """A multi-processing EtherCAT loop
+
+    If several programs want to access an EtherCAT loop at the same time, they
+    need to negotiate where the packets go. This class installs an XDP program
+    that dispatches the packets to the right consumer. The dispatch is done by
+    modifying the ethertype of the packet, as this is what we can bind to.
+
+    The first program connecting to the loop installs the XDP program, the last
+    one leaving uninstalls it. We put lock files into ``/run/lock`` to
+    synchronize that, and put a map of XDP programs into ``/sys/fs/bpf``, where
+    all participants can put their programs.
+    """
     def get_ethertype(self, lockdir):
         while True:
             try:
