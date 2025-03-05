@@ -440,9 +440,9 @@ class MotorDevice(Device):
     target = DeviceVar('q')
     proportional = DeviceVar('q')
 
-    def program(self):
-        self.reset = self.set_enable > 1
-        self.enable = self.set_enable > 0
+    def program(self, leader=None):
+        self.reset = (self.set_enable & 2) != 0
+        self.enable = (self.set_enable & 1) != 0
         with abs(self.target - self.encoder) < self.deadband as Else:
             self.reduced_current = True
         with Else:
@@ -451,6 +451,11 @@ class MotorDevice(Device):
         with self.ebpf.stmp:
             self.ebpf.stmp = (self.proportional
                               * (self.target - self.encoder)) >> 16
+            if leader is not None:
+                with (self.set_enable & 4) != 0:
+                    self.ebpf.stmp += \
+                        (int(self.motors_factor * self.follow_factor
+                             * (1 << 16)) * leader.velocity) >> 16
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
@@ -465,6 +470,8 @@ class MotorDevice(Device):
 
 
 class Motor(OptionalKeepOnMixin, EtherCATDevice):
+    baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of an EL7041
+
     motor = String(accessMode=AccessMode.INITONLY,
                    assignment=Assignment.MANDATORY)
     encoder = String(accessMode=AccessMode.INITONLY,
@@ -522,9 +529,11 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         displayedName='Step Size', defaultValue=1,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
+    Device = MotorDevice
+
     async def join(self, syncGroup):
         await super().join(syncGroup)
-        self.device = MotorDevice()
+        self.device = self.Device()
         self.motor_term = self.find_channel(self.motor)
         self.encoder_term = self.find_channel(self.encoder)
         self.device.velocity = self.motor_term.velocity
@@ -590,8 +599,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
                                    + self.offset) * now()
             self.lastposition = self.device.encoder
         if self.device.velocity != self.lastvelocity:
-            self.actualVelocity = \
-                self.device.velocity * self.motorStep * unit.Hz * now()
+            self.actualVelocity = self.device.velocity * self.motorStep \
+                    * self.baseFrequency * now()
             self.lastvelocity = self.device.velocity
         #self.qstatus = self.device.tstatus
         if self.device.low_switch != self.isCCWLimit:
@@ -601,7 +610,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
         self.device.deadband_exceeded = 0
         self.device.max_velocity = \
-            min(0x7fff, int(self.targetVelocity / self.motorStep / unit.Hz))
+            min(0x7fff, int(self.targetVelocity / self.motorStep
+                            / self.baseFrequency))
         self.device.proportional = int(self.proportional * self.encodeStep
                                        / self.motorStep * (1 << 16))
         self.device.deadband = int(self.deadband // self.encodeStep)
@@ -610,7 +620,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             self.counts.append(self.device.stepcounter)
             self.encoders.append(self.device.encoder)
             if len(self.counts) >= 100:
-                slope, _ = polyfit(self.encoders, self.counts, 1)
+                slope, _ = polyfit(self.counts, self.encoders, 1)
                 self.motorStepMeasured = slope * self.encodeStep
                 self.counts = []
                 self.encoders = []
@@ -627,6 +637,49 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             return State.MOVING
         else:
             return State.ON
+
+
+class FollowerDevice(MotorDevice):
+    follow_offset = DeviceVar('q')
+
+    def program(self):
+        with (self.set_enable & 4) != 0:
+            self.target = ((self.leader.encoder
+                           * int(self.follow_factor * (1 << 16))) >> 16) \
+                        + self.follow_offset
+            with abs(self.target - self.encoder) > self.follow_lag:
+                self.set_enable = 0
+                self.leader.set_enable = 0
+        super().program(self.leader)
+
+class MotorFollower(Motor):
+    Device = FollowerDevice
+
+    leader = String(assignment=Assignment.MANDATORY)
+    factor = Float(accessMode=AccessMode.INITONLY, defaultValue=1)
+    maxLag = Float(accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
+                   metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0.1)
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        leader = self.getLocalDevice(self.leader)
+        self.device.leader = leader.device
+        self.device.follow_factor = self.factor.value
+        self.device.motors_factor = (leader.motorStep / self.motorStep).value
+        self.device.follow_lag = int(self.maxLag // self.encodeStep)
+
+    @Slot(allowedStates={State.ON})
+    async def couple(self):
+        self.device.follow_offset = \
+            int(self.device.encoder - self.device.leader.encoder * self.factor)
+        self.device.set_enable = 5
+        await self.state_change.wait()
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if ret in (State.MOVING, State.ON) and self.device.set_enable & 4:
+            return State.INTERLOCKED
+        return ret
 
 
 class BronkhorstDevice(Device):
