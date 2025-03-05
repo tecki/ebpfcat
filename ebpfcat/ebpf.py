@@ -1242,10 +1242,13 @@ class SimulatedEBPF(EBPFBase):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        for k, v in self.__class__.__dict__.items():
-            if isinstance(v, Map):
-                size = v.collect(self)
-                setattr(self, k, self.get_array(size))
+        unique = set()
+        for cls in self.__class__.__mro__:
+            for k, v in cls.__dict__.items():
+                if k not in unique and isinstance(v, Map):
+                    size = v.collect(self)
+                    setattr(self, k, self.get_array(size))
+                    unique.add(k)
 
 
 class EBPF(EBPFBase):

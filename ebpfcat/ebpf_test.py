@@ -1180,6 +1180,28 @@ class SimulatedTests(TestCase):
         p.program()
         self.assertEqual(p.a, 10)
 
+    def test_inheritance(self):
+        class A(SimulatedEBPF):
+            map = ArrayMap()
+            a = map.globalVar()
+
+            def get_array(self, size):
+                return bytearray(size)
+
+        class B(A):
+            b = A.map.globalVar()
+
+            def program(self):
+                self.a += 3
+                self.b += 4
+
+        p = B()
+        self.assertEqual(p.a, 0)
+        self.assertEqual(p.b, 0)
+        p.program()
+        self.assertEqual(p.a, 3)
+        self.assertEqual(p.b, 4)
+
     def test_process(self):
         from multiprocessing import get_context
         ctx = get_context('spawn')

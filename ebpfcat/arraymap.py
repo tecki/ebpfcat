@@ -83,10 +83,13 @@ class ArrayMap(Map):
         collection = []
 
         for prog in chain([ebpf], ebpf.subprograms):
-            for k, v in prog.__class__.__dict__.items():
-                if isinstance(v, ArrayGlobalVarDesc):
-                    collection.append((8 if v.fmt == "x" else calcsize(v.fmt),
-                                       prog, k))
+            for cls in prog.__class__.__mro__:
+                unique = set()
+                for k, v in cls.__dict__.items():
+                    if isinstance(v, ArrayGlobalVarDesc) and k not in unique:
+                        collection.append((8 if v.fmt == "x"
+                                           else calcsize(v.fmt), prog, k))
+                        unique.add(k)
         collection.sort(key=lambda t: t[0], reverse=True)
         position = 0
         for size, prog, name in collection:
