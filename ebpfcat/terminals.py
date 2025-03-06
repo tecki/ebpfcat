@@ -158,6 +158,7 @@ class EL5042(EBPFTerminal):
         status = ProcessDesc(0x6000, 1, "H")
         invalid = ProcessDesc(0x6000, 0xE)
 
+        invert_position = ServiceDesc(0x8008, 1)
         statusbits = ServiceDesc(0x8008, 2)
         crc_invert = ServiceDesc(0x8008, 3)
         multiturn = ServiceDesc(0x8008, 0x15)
