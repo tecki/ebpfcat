@@ -15,6 +15,8 @@ from ebpfcat.devices import (
     AnalogInput as AnalogInputDevice, DigitalOutput as DigitalOutputDevice)
 from ebpfcat.serial import Serial
 
+from .interlock import SingleInterlock
+
 
 def now():
     return QuantityValue(1, timestamp=get_timestamp())
@@ -191,11 +193,13 @@ class OptionalSwitchMixin(OptionalMixin):
 
 class OptionalKeepOnMixin(OptionalMixin):
     def update_properties(self):
+        ret = super().update_properties()
         if self.switchDevice is None:
-            return
+            return ret
         if self.switchDevice.value == 2:
             return State.ERROR
         self.switchDevice.value = 1
+        return ret
 
     @Slot()
     async def reset(self):
@@ -859,7 +863,7 @@ class ValveDevice(Device):
         self.lastGood = monotonic()
 
 
-class Valve(OptionalKeepOnMixin, EtherCATDevice):
+class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
     coil = String(accessMode=AccessMode.INITONLY,
                   assignment=Assignment.MANDATORY)
     openSwitch = String(accessMode=AccessMode.INITONLY)
@@ -917,7 +921,12 @@ class Valve(OptionalKeepOnMixin, EtherCATDevice):
             self.isOpened = self.device.openSwitch
         if self.closeSwitch and self.device.closeSwitch != self.isClosed:
             self.isClosed = self.device.closeSwitch
-        if (ret := super().update_properties()) is not None:
+        ret = super().update_properties()
+        if isinstance(ret, tuple) and ret[0] == State.INTERLOCKED:
+            self.device.target = self.safeState
+            self.device.divisor = 0
+            return ret
+        elif ret is not None:
             return ret
         if self.device.error:
             self.set_state(State.ERROR)
