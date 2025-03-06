@@ -42,9 +42,13 @@ class AnalogInput(EtherCATDevice):
                      assignment=Assignment.MANDATORY)
 
     value = Double(accessMode=AccessMode.READONLY)
+    lastvalue = None
 
     def update_properties(self):
-        self.value = self.device.value * self.the_channel.factor + self.the_channel.offset
+        if self.device.value != self.lastvalue:
+            self.value = self.device.value * self.the_channel.factor \
+                    + self.the_channel.offset
+            self.lastvalue = self.device.value
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
