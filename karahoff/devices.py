@@ -1,21 +1,21 @@
 from asyncio import Event, Lock, sleep
 from math import sqrt
-from numpy import polyfit
 from struct import pack, unpack
-from time import time, monotonic
+from time import monotonic, time
 
-from karabo.middlelayer import (
-    AccessMode, Assignment, String, Int16, Slot, isSet, background, State,
-    Float, Int32, Int16, UInt16, UInt32, UInt64, UInt8, Double, Unit, unit,
-    MetricPrefix, Bool, Overwrite, QuantityValue, get_timestamp, Timestamp)
-from .master import EtherCATDevice
+from ebpfcat.devices import AnalogInput as AnalogInputDevice
+from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
 from ebpfcat.ebpf import ktime
-from ebpfcat.ebpfcat import Device, TerminalVar, DeviceVar, Struct
-from ebpfcat.devices import (
-    AnalogInput as AnalogInputDevice, DigitalOutput as DigitalOutputDevice)
+from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
+from karabo.middlelayer import (
+    AccessMode, Assignment, Bool, Double, Float, Int16, Int32, MetricPrefix,
+    Overwrite, QuantityValue, Slot, State, String, Timestamp, UInt8, UInt16,
+    UInt32, UInt64, Unit, background, get_timestamp, isSet, unit)
+from numpy import polyfit
 
 from .interlock import SingleInterlock
+from .master import EtherCATDevice
 
 
 def now():
