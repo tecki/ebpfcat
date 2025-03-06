@@ -447,6 +447,7 @@ class MotorDevice(Device):
     deadband = DeviceVar('q')
     target = DeviceVar('q')
     proportional = DeviceVar('q')
+    modulo = None
 
     def program(self, leader=None):
         self.reset = (self.set_enable & 2) != 0
@@ -457,8 +458,11 @@ class MotorDevice(Device):
             self.reduced_current = False
             self.deadband_exceeded = 1
         with self.ebpf.stmp:
-            self.ebpf.stmp = (self.proportional
-                              * (self.target - self.encoder)) >> 16
+            self.ebpf.stmp = self.target - self.encoder
+            if self.modulo:
+                self.ebpf.stmp = (self.ebpf.stmp + self.modulo) \
+                                 % (2 * self.modulo) - self.modulo
+            self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
             if leader is not None:
                 with (self.set_enable & 4) != 0:
                     self.ebpf.stmp += \
@@ -468,10 +472,11 @@ class MotorDevice(Device):
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
-            with ((self.low_switch != 0) & (self.ebpf.stmp < 0)):
-                self.ebpf.stmp = 0
-            with ((self.high_switch != 0) & (self.ebpf.stmp > 0)):
-                self.ebpf.stmp = 0
+            if not self.isLimitless:
+                with ((self.low_switch != 0) & (self.ebpf.stmp < 0)):
+                    self.ebpf.stmp = 0
+                with ((self.high_switch != 0) & (self.ebpf.stmp > 0)):
+                    self.ebpf.stmp = 0
             with self.encoder_error:
                 self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
@@ -517,6 +522,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
     motor_term = encoder_term = None
 
+    isLimitless = Bool(defaultValue=False, accessMode=AccessMode.INITONLY)
     isCWLimit = Bool(
         displayedName='At Positive Limit?',
         accessMode=AccessMode.READONLY)
@@ -545,6 +551,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.motor_term = self.find_channel(self.motor)
         self.encoder_term = self.find_channel(self.encoder)
         self.device.velocity = self.motor_term.velocity
+        self.device.isLimitless = self.isLimitless.value
         self.device.low_switch = self.motor_term.low_switch
         self.device.high_switch = self.motor_term.high_switch
         self.device.tstatus = self.motor_term.status
@@ -645,6 +652,36 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             return State.MOVING
         else:
             return State.ON
+
+
+class RotationMotor(Motor):
+    encodeStep = Overwrite(unitSymbol=Unit.DEGREE,
+                           metricPrefixSymbol=MetricPrefix.NONE)
+    motorStep = Overwrite(unitSymbol=Unit.DEGREE,
+                          metricPrefixSymbol=MetricPrefix.NONE)
+    motorStepMeasured = Overwrite(unitSymbol=Unit.DEGREE,
+                                  metricPrefixSymbol=MetricPrefix.NONE)
+    offset = Overwrite(unitSymbol=Unit.DEGREE,
+                       metricPrefixSymbol=MetricPrefix.NONE)
+    deadband = Overwrite(unitSymbol=Unit.DEGREE,
+                         metricPrefixSymbol=MetricPrefix.NONE)
+    actualPosition = Overwrite(unitSymbol=Unit.DEGREE,
+                               metricPrefixSymbol=MetricPrefix.NONE)
+    actualVelocity = Overwrite(unitSymbol=Unit.HERTZ,
+                               metricPrefixSymbol=MetricPrefix.NONE)
+    targetVelocity = Overwrite(unitSymbol=Unit.HERTZ,
+                               metricPrefixSymbol=MetricPrefix.NONE)
+    targetPosition = Overwrite(unitSymbol=Unit.DEGREE,
+                               metricPrefixSymbol=MetricPrefix.NONE)
+    stepSize = Overwrite(unitSymbol=Unit.DEGREE,
+                         metricPrefixSymbol=MetricPrefix.NONE)
+    modulo = Float(unitSymbol=Unit.DEGREE, defaultValue=360,
+                   accessMode=AccessMode.INITONLY)
+
+
+    async def join(self, syncGroup):
+        await super().join(syncGroup)
+        self.device.modulo = int(self.modulo // (2 * self.encodeStep))
 
 
 class FollowerDevice(MotorDevice):
