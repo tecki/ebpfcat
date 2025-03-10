@@ -37,7 +37,7 @@ from .ethercat import (
     Struct, SyncManager)
 from .ebpf import (
     EBPFBase, FuncId, MemoryDesc, SimulatedEBPF, SubProgram, prandom)
-from .lock import ParallelMailboxLock, LockFile
+from .lock import FMMULock, LockFile, ParallelMailboxLock
 from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
 from .bpf import (
     MapType, ProgType, create_map, delete_elem, lookup_elem, obj_pin, obj_get,
@@ -494,6 +494,9 @@ class ParallelEtherCat(FastEtherCat):
     def get_mbx_lock(self, no):
         return ParallelMailboxLock(self.mbx_lock_file, no)
 
+    def get_fmmu_addr(self):
+        return self.fmmu_lock_file.get_next_addr()
+
     @asynccontextmanager
     async def run(self):
         lockdir = f'/run/lock/ebpf.{self.addr[0]}.lock'
@@ -539,6 +542,7 @@ class ParallelEtherCat(FastEtherCat):
                 raise
         self.mbx_lock_file = LockFile(f'/run/ebpf/{self.addr[0]}',
                                       *self.terminal_addr_range)
+        self.fmmu_lock_file = FMMULock(f'/run/ebpf/{self.addr[0]}.fmmu')
         try:
             await self.ebpf.attach(self.addr[0])
             self.ebpf.close()
@@ -555,6 +559,7 @@ class ParallelEtherCat(FastEtherCat):
                 await self.ebpf.detach(self.addr[0])
                 os.remove(programs)
                 self.mbx_lock_file.remove()
+                self.fmmu_lock_file.remove()
 
     def __getstate__(self):
         return self.addr[0]
@@ -565,7 +570,6 @@ class ParallelEtherCat(FastEtherCat):
 
 class SterilePacket(Packet):
     """a sterile packet has all its sets exchanged by NOPs"""
-    next_logical_addr = 0  # global for all packets
     logical_addr_inc = 0x800
 
     def __init__(self):
@@ -589,8 +593,8 @@ class SterilePacket(Packet):
             ret[pos] = ECCmd.NOP.value
         return ret
 
-    def append_fmmu(self):
-        SterilePacket.next_logical_addr += 2 * self.logical_addr_inc
+    def append_fmmu(self, logical_addr):
+        self.next_logical_addr = logical_addr
         fmmu_in_pos = self.size
         if self.fmmu_in_size:
             self.append(ECCmd.LRD, b"\0" * self.fmmu_in_size, 0,
@@ -715,7 +719,8 @@ class SyncGroupBase:
         self.packet = SterilePacket()
         terminals = {t: t.allocate(self.packet, rw)
                      for t, rw in self.terminals.items()}
-        in_pos, out_pos, logical_in, logical_out = self.packet.append_fmmu()
+        in_pos, out_pos, logical_in, logical_out = \
+            self.packet.append_fmmu(self.ec.get_fmmu_addr())
         offsets = {BaseType.NO_FMMU: 0,
                    BaseType.FMMU_IN: in_pos, BaseType.FMMU_OUT: out_pos}
         self.terminals = {t: {sm: offsets[base] + off + Packet.DATAGRAM_HEADER

@@ -84,6 +84,33 @@ class ParallelMailboxLock:
         self.counter = ret % 7 + 1
         return ret
 
+
+class FMMULock:
+    def __init__(self, filename):
+        self.filename = filename
+        os.makedirs(filename.rsplit('/', 1)[0], exist_ok=True)
+        try:
+            self.fd = os.open(self.filename, os.O_CREAT | os.O_RDWR
+                                             | os.O_EXCL | os.O_CLOEXEC)
+        except FileExistsError:
+            self.fd = os.open(self.filename, os.O_RDWR | os.O_CLOEXEC)
+        else:
+            os.write(self.fd, b'      4096')
+
+    def get_next_addr(self):
+        fcntl.lockf(self.fd, fcntl.LOCK_EX)
+        try:
+            ret = int(os.pread(self.fd, 10, 0).decode())
+            os.pwrite(self.fd, f"{ret + 0x1000:10}".encode(), 0)
+        finally:
+            fcntl.lockf(self.fd, fcntl.LOCK_UN)
+        return ret
+
+    def remove(self):
+        os.close(self.fd)
+        os.remove(self.filename)
+
+
 def asynctst(f):
     @wraps(f)
     def wrapper(self):
