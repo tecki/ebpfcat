@@ -7,6 +7,7 @@ pattern = re.compile('[A-Z0-9]{1,6}_[A-Z0-9]{1,6}_[A-Z0-9]{1,9}(-[0-9])?'
 
 myglobals = {}
 exec('from numpy import *', myglobals)
+exec('from karabo.middlelayer import *', myglobals)
 
 
 def replace(deviceId):
