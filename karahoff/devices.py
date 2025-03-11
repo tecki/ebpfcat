@@ -609,18 +609,19 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
     @Slot()
     async def reset(self):
+        await super().reset()
         self.device.set_enable = 2
         await sleep(0.2)
         self.device.set_enable = 0
 
-    lastvelocity = lastposition = None
+    lastvelocity = lastposition = 0
 
     def update_properties(self):
-        if self.device.encoder != self.lastposition:
+        if abs(self.device.encoder - self.lastposition) > 3:
             self.actualPosition = (self.device.encoder * self.encodeStep
                                    + self.offset) * now()
             self.lastposition = self.device.encoder
-        if self.device.velocity != self.lastvelocity:
+        if abs(self.device.velocity - self.lastvelocity) > 3:
             self.actualVelocity = self.device.velocity * self.motorStep \
                     * self.baseFrequency * now()
             self.lastvelocity = self.device.velocity
@@ -643,7 +644,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             self.encoders.append(self.device.encoder)
             if len(self.counts) >= 100:
                 slope, _ = polyfit(self.counts, self.encoders, 1)
-                self.motorStepMeasured = slope * self.encodeStep
+                self.motorStepMeasured = slope * self.encodeStep * now()
                 self.counts = []
                 self.encoders = []
 
