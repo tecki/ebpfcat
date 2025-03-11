@@ -367,8 +367,12 @@ class EtherCATTerminal(Device):
             self.ethercat.terminalsInitializingCount -= 1
             if self.ethercat.terminalsInitializingCount == 0:
                 self.ethercat.terminalsInitialized.set()
+                self.ethercat.terminalsInitialized.clear()
         self.state = State.ON
         self.status = 'ready'
+
+    async def onDestruction(self):
+        del self.ethercat.term_by_name[self.deviceId.split('/')[-1]]
 
     @classmethod
     def sdo_setter(cls, attr):
