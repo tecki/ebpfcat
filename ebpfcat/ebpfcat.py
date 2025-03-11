@@ -681,11 +681,13 @@ class SyncGroupBase:
     async def run(self):
         data = self.asm_packet
         async with self.map_fmmu():
+            lasttime = monotonic()
+            await gather(*[t.to_operational(MachineState.SAFE_OPERATIONAL)
+                           for t in self.terminals])
+            self.ec.send_packet(data)
             task = ensure_future(self.to_operational())
             try:
-                lasttime = monotonic()
                 while self.running:
-                    self.ec.send_packet(data)
                     try:
                         data = await wait_for(
                                 self.ec.receive_index(self.packet_index),
@@ -695,6 +697,7 @@ class SyncGroupBase:
                         logging.warning(
                             "%s: did not receive Ethercat response in time %i",
                             self.name, self.missed_counter)
+                        self.ec.send_packet(data)
                         continue
                     data = self.update_devices(data)
                     newtime = monotonic()
@@ -708,6 +711,7 @@ class SyncGroupBase:
                                         self.name, (newtime - lasttime) * 1000)
                     lasttime = newtime
                     assert not task.done()
+                    self.ec.send_packet(data)
             finally:
                 task.cancel()
                 try:
