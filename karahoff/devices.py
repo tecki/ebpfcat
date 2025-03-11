@@ -165,51 +165,51 @@ class OptionalMixin(EtherCATDevice):
 
     def get_devices(self):
         ret = super().get_devices()
-        if self.switchChannel:
-            return ret + (self.switchDevice,)
-        else:
-            return ret
+        return ret + tuple(self.switchDevices)
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
         if self.switchChannel:
-            self.switchDevice = optionalFusedOutput(
-                self.find_channel(self.switchChannel))
+            self.switchDevices = tuple(
+                optionalFusedOutput(self.find_channel(c))
+                for c in self.switchChannel.split(','))
         else:
-            self.switchDevice = None
+            self.switchDevices = ()
 
 
 class OptionalSwitchMixin(OptionalMixin):
     def update_properties(self):
-        if self.switchDevice is not None and self.switchDevice.value == 2:
-            return State.ERROR
+        for d in self.switchDevices:
+            if d.value == 2:
+                return State.ERROR
 
     @Slot()
     async def on(self):
-        self.switchDevice.value = 1
+        for d in self.switchDevices:
+            d.value = 1
         await self.state_change.wait()
 
     @Slot()
     async def off(self):
-        self.switchDevice.value = 0
+        for d in self.switchDevices:
+            d.value = 0
         await self.state_change.wait()
 
 
 class OptionalKeepOnMixin(OptionalMixin):
     def update_properties(self):
         ret = super().update_properties()
-        if self.switchDevice is None:
-            return ret
-        if self.switchDevice.value == 2:
-            return State.ERROR
-        self.switchDevice.value = 1
+        for d in self.switchDevices:
+            if d.value == 2:
+                return State.ERROR
+            d.value = 1
         return ret
 
     @Slot()
     async def reset(self):
-        if self.switchDevice is not None:
-            self.switchDevice.value = 1
-            await self.state_change.wait()
+        for d in self.switchDevices:
+            d.value = 1
+        await self.state_change.wait()
 
 
 class DigitalOutput(OptionalSwitchMixin):
@@ -217,14 +217,21 @@ class DigitalOutput(OptionalSwitchMixin):
     startupValue = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
 
     def get_devices(self):
-        return (self.switchDevice,)
+        return self.switchDevices
 
     def update_properties(self):
-        if super().update_properties() is None:
-            return State.ON if self.switchDevice.data else State.OFF
+        ret = super().update_properties()
+        if ret is not None:
+            return ret
+        if all(d.data for d in self.switchDevices):
+            return State.ON
+        if any(d.data for d in self.switchDevices):
+            return State.CHANGING
+        return State.OFF
 
     def initialize(self):
-        self.switchDevice.value = self.startupValue.value
+        for d in self.switchDevices:
+            d.value = self.startupValue.value
 
     on = Overwrite(allowedStates={State.OFF})
     off = Overwrite(allowedStates={State.ON})
