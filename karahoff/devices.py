@@ -884,9 +884,9 @@ class Inficon(EtherCATDevice):
         self.device.valid = self.gauge_term.valid
 
     def update_properties(self):
+        self.value = self.device.value
         if self.device.valid:
             return State.ON
-            self.value = self.device.value
         else:
             return State.OFF
 
