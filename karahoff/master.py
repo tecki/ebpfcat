@@ -1,3 +1,18 @@
+"""
+The core of KaraHoff
+--------------------
+
+These are the base classes for everything KaraHoff.
+
+.. autoclass:: EtherCATMaster
+    :members:
+
+.. autoclass:: FastEtherCATSyncGroup
+    :members:
+
+.. autoclass:: ProcessEtherCATSyncGroup
+    :members:
+"""
 from asyncio import Event, gather, get_event_loop, sleep
 from contextlib import AsyncExitStack
 from itertools import chain
@@ -50,15 +65,39 @@ class CoETable(ml.Configurable):
 
 
 class EtherCATMaster(Device):
+    """A device to keep up the connection to the bus
+
+    This device holds the connection to the EtherCAT bus. This means
+    only housekeeping tasks, the actual heavy lifting is done in the
+    sync groups. There should only be one master per device server.
+    There may be more than one master and device server per EtherCAT
+    loop, as long as they do not use the same terminals both.
+
+    Upon instantiation, the master will read out all the serial numbers
+    from the terminals, which we usually set to the QR code number
+    unless they already have another one. For terminals which do not
+    have a serial number yet, one may be written with
+    :meth:`writeSerial`.
+    """
     instances = {}
     terminalsInitializingCount = 0
 
     interface = String(accessMode=AccessMode.INITONLY,
                        assignment=Assignment.MANDATORY)
-    serialNumbers = VectorInt64(accessMode=AccessMode.READONLY)
-    targetTerminal = Int64()
-    targetSerial = ml.UInt32()
-    information = String(accessMode=AccessMode.READONLY)
+    serialNumbers = VectorInt64(
+        accessMode=AccessMode.READONLY, displayedName='Serial Numbers',
+        description="""The serial numbers of the termials in the order
+        they have been found on the bus. Negative numbers indicate that
+        no serial number has been set for this terminal.""")
+
+    targetTerminal = Int64(
+        displayedName='Target Terminal',
+        description="""The serial number of the terminal to be used for
+        other commands, or a negative number for the number on the bus""")
+    targetSerial = ml.UInt32(displayedName='Target Serial Number',
+                             description='The serial number to write')
+    information = String(accessMode=AccessMode.READONLY,
+                         description='The information read from the terminal')
 
     def __init__(self, configuration):
         super().__init__(configuration)
@@ -68,9 +107,6 @@ class EtherCATMaster(Device):
         self.term_by_addr = {}
 
     async def onInitialization(self):
-        #loop = get_event_loop()
-        #loop.set_debug(True)
-        #loop.slow_callback_duration = 0.01
         self.instances[self.deviceId] = self
 
         self.ethercat = ParallelEtherCat(self.interface.value)
@@ -103,6 +139,7 @@ class EtherCATMaster(Device):
 
     @Slot(displayedName='Scan Bus')
     async def scanBus(self):
+        """Scan the bus and read the terminal serial numbers"""
         count = await self.ethercat.count()
         self.status = f"counted {count} terminals"
         self.serialNumbers = \
@@ -208,14 +245,23 @@ class EtherCATSyncGroup(EtherCATSyncGroupBase):
 
 
 class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
+    """A fast sync group where the code runs as EBPF
+
+    Use this sync group for fast control loops, as needed for motors."""
     SyncGroup = FastSyncGroup
 
 
 class ProcessEtherCATSyncGroup(EtherCATSyncGroupBase):
+    """A sync group that runs in a different process
+
+    This is a general purpose sync group for all slow needs, like
+    vacuum.
+    """
     SyncGroup = ProcessSyncGroup
 
 
 class EtherCATDevice(Device):
+    """The base class for all EtherCAT-Karabo devices"""
     instances = {}
     terminals = None
 

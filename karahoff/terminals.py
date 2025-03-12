@@ -1,3 +1,10 @@
+"""
+A collection of terminals
+-------------------------
+
+.. autoclass:: GenericTerminal
+    :members:
+"""
 from karabo.middlelayer import (
     AccessMode, Assignment, Bool, Node, Int16, MetricPrefix, UInt16, UInt32,
     UInt8, Unit, String)
@@ -8,8 +15,11 @@ from ebpfcat.ethercat import SyncManager
 
 
 class GenericTerminal(EtherCATTerminal):
+    """A Karabo device able to represent simple KaraHoff terminals"""
+
     @String(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
     async def terminalType(self, value):
+        """Set this to the name of a terminal class from KaraHoff"""
         self.Base = getattr(terminals, value)
         self.terminalType = value
 

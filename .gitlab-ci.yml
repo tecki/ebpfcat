@@ -1,0 +1,14 @@
+image: sphinxdoc/sphinx
+before_script: []
+pages:
+  script:
+    - pip3 install pint
+    - pip3 install numpy
+    - pip3 install karabo
+    - pip3 install . --user
+    - sphinx-build -b html . public
+  pages: True
+  artifacts:
+    paths:
+      - public
+
