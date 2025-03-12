@@ -984,15 +984,18 @@ class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
             self.isClosed = self.device.closeSwitch
         ret = super().update_properties()
         if isinstance(ret, tuple) and ret[0] == State.INTERLOCKED:
-            self.device.target = self.safeState
+            self.device.target = False
             self.device.divisor = 0
-            return ret
+            if self.device.error:
+                return State.ERROR
+            else:
+                return ret
         elif ret is not None:
             return ret
         if self.device.error:
-            self.set_state(State.ERROR)
+            return State.ERROR
         elif self.device.divisor > 0:
-            self.set_state(State.MOVING)
+            return State.MOVING
         elif self.device.coil == self.safeState:
             if (self.closeSwitch and not self.device.closeSwitch
                     or self.openSwitch and self.device.openSwitch):
