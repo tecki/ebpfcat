@@ -826,6 +826,7 @@ class TurboVac(EtherCATDevice):
                   assignment=Assignment.MANDATORY)
     speed = UInt16(accessMode=AccessMode.READONLY)
     current = UInt16(accessMode=AccessMode.READONLY)
+    onSpeed = UInt16(accessMode=AccessMode.INITONLY, defaultValue=990)
 
     @Slot()
     async def start(self):
@@ -836,9 +837,20 @@ class TurboVac(EtherCATDevice):
         self.device.set_pump_on = False
 
     def update_properties(self):
-        self.current = self.device.current
-        self.speed = self.device.speed
-        return State.ON if self.device.pump_is_on else State.OFF
+        if self.current != self.device.current:
+            self.current = self.device.current
+        if self.speed != self.device.speed:
+            self.speed = self.device.speed
+        if self.device.pump_is_on:
+            if self.device.speed >= self.onSpeed:
+                return State.ON
+            else:
+                return State.STARTING
+        else:
+            if self.device.speed > 1:
+                return State.STOPPING
+            else:
+                return State.OFF
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
