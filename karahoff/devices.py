@@ -383,6 +383,7 @@ class CounterDevice(Device):
     counter = DeviceVar()
     maxtime = DeviceVar(size='Q')
     lasttime = DeviceVar(size='Q')
+    error = DeviceVar()
 
     def program(self):
         self.counter += 1
@@ -394,10 +395,15 @@ class CounterDevice(Device):
 
     def update(self):
         self.counter += 1
-        tmp = monotonic()
+        tmp = int(monotonic() * 1e6)
         if tmp - self.lasttime > self.maxtime:
-            self.maxtime = int((tmp - self.lasttime) * 1e6)
-        self.lasttime = int(tmp)
+            self.maxtime = tmp - self.lasttime
+        self.lasttime = tmp
+
+        import time
+        if self.error:
+            time.sleep(self.error / 1000)
+            self.error = 0
 
 
 class Counter(EtherCATDevice):
@@ -429,8 +435,7 @@ class Counter(EtherCATDevice):
 
     @Slot()
     async def error(self):
-        import time
-        time.sleep(self.errorSleep.value / 1000)
+        self.device.error = int(self.errorSleep.value)
 
 
 class MotorDevice(Device):
