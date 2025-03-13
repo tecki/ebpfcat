@@ -550,6 +550,12 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         displayedName='Step Size', defaultValue=1,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
+    @Float()
+    async def stepLength(self, value):
+        """Legacy version of stepSize"""
+        if isSet(value):
+            self.stepLength = self.stepSize = value.value
+
     Device = MotorDevice
 
     async def join(self, syncGroup):
