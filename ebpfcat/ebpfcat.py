@@ -29,6 +29,7 @@ import os
 from random import randint
 import shutil
 from struct import pack, unpack, calcsize, pack_into, unpack_from
+import struct
 import tempfile
 from time import monotonic
 from .arraymap import ArrayMap, ArrayGlobalVarDesc
@@ -136,26 +137,44 @@ class PacketVar(MemoryDesc):
         if device.sync_group.current_data is None:
             super().__set__(device, value)
         else:
-            data = device.sync_group.current_data
             start = self._start(device)
             if isinstance(self.size, int):
-                if value:
-                    data[start] |= 1 << self.size
-                else:
-                    data[start] &= ~(1 << self.size)
+                mask = 1 << self.size
+                def set(instance, value):
+                    assert instance is device
+                    data = device.sync_group.current_data
+                    if value:
+                        data[start] |= mask
+                    else:
+                        data[start] &= ~mask
             else:
-                pack_into("<" + self.size, data, start, value)
+                mystruct = struct.Struct('<' + self.size)
+                def set(instance, value):
+                    assert instance is device
+                    data = device.sync_group.current_data
+                    mystruct.pack_into(data, start, value)
+            self.set = set
+            set(device, value)
 
     def get(self, device):
         if device.sync_group.current_data is None:
             return super().__get__(device, None)
         else:
-            data = device.sync_group.current_data
             start = self._start(device)
             if isinstance(self.size, int):
-                return bool(data[start] & (1 << self.size))
+                mask = 1 << self.size
+                def get(instance):
+                    assert instance is device
+                    data = instance.sync_group.current_data
+                    return bool(data[start] & mask)
             else:
-                return unpack_from("<" + self.size, data, start)[0]
+                mystruct = struct.Struct("<" + self.size)
+                def get(instance):
+                    assert instance is device
+                    data = instance.sync_group.current_data
+                    return mystruct.unpack_from(data, start)[0]
+            self.get = get
+            return get(device)
 
     def _start(self, device):
         return device.sync_group.terminals[self.terminal][self.sm] \
