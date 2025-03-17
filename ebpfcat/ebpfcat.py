@@ -23,6 +23,7 @@ from asyncio import (
 from collections import defaultdict
 from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
 from enum import Enum
+import gc
 import logging
 from multiprocessing import Array, Process, Value, get_context
 import os
@@ -710,7 +711,7 @@ class SyncGroupBase:
                     try:
                         data = await wait_for(
                                 self.ec.receive_index(self.packet_index),
-                                timeout=0.05)
+                                timeout=0.02)
                     except TimeoutError:
                         self.missed_counter += 1
                         logging.warning(
@@ -809,6 +810,13 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
         return self.runningValue.value
 
     def subprocess_run(self):
+        gc.collect()
+        gc.disable()
+        param = os.sched_param(os.sched_get_priority_max(os.SCHED_RR))
+        os.sched_setscheduler(0, os.SCHED_RR, param)
+        if self.name != 'No Name':
+            with open('/proc/self/comm', 'w') as fout:
+                fout.write(self.name[-15:])
         asyncio.run(self.subprocess_loop())
 
     async def subprocess_loop(self):
