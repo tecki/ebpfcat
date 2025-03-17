@@ -181,7 +181,7 @@ class OptionalSwitchMixin(OptionalMixin):
     def update_properties(self):
         for d in self.switchDevices:
             if d.value == 2:
-                return State.ERROR
+                return State.ERROR, 'fuse reported error'
 
     @Slot()
     async def on(self):
@@ -260,11 +260,10 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
         semiRaw = self.device.value * self.the_channel.factor \
                 + self.the_channel.offset
         if semiRaw < self.minimum.value:
-            self.set_state(State.OFF)
+            return State.OFF
         elif semiRaw > self.maximum.value:
-            self.set_state(State.ERROR)
+            return State.ERROR, 'gauge reported error'
         else:
-            self.set_state(State.ON)
             newtime = monotonic()
             if abs(self.old_value - self.device.value) \
                     > 10 / (newtime - self.old_time):
@@ -272,12 +271,12 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
                     * unit.mbar * now()
                 self.old_value = self.device.value
                 self.old_time = newtime
+            return State.ON
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
-        self.state = State.ON
 
 
 class AnalogOutputDevice(Device):
