@@ -7,7 +7,7 @@ from ebpfcat import devices, terminals
 from ebpfcat.ebpfcat import (
     FastSyncGroup, ParallelEtherCat, ProcessSyncGroup, Struct,
     SyncGroup, Terminal)
-from ebpfcat.ethercat import EEPROM, EtherCatError, SyncManager
+from ebpfcat.ethercat import EEPROM, EtherCatError, MachineState, SyncManager
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
     AccessMode, Assignment, Configurable, Device, Float, Int64, MetricPrefix,
@@ -44,6 +44,7 @@ class TerminalTable(ml.Configurable):
 class CoETable(ml.Configurable):
     index = ml.UInt16(displayType='hex')
     subIndex = ml.UInt8(displayType='hex')
+    comment = ml.String()
     format = ml.String()
     value = ml.Int64()
 
@@ -310,6 +311,7 @@ class EtherCATTerminal(Device):
                             assignment=Assignment.MANDATORY)
     coe = VectorHash(accessMode=AccessMode.INITONLY, rows=CoETable,
                      defaultValue=[])
+    currentCoE = VectorHash(accessMode=AccessMode.READONLY, rows=CoETable)
     watchdog = ml.Float(accessMode=AccessMode.INITONLY,
                         unitSymbol=Unit.SECOND,
                         metricPrefixSymbol=MetricPrefix.MILLI)
@@ -385,6 +387,24 @@ class EtherCATTerminal(Device):
             setattr(self, attr.key, await entry.read())
 
         return setter
+
+    @Slot()
+    async def readCoE(self):
+        await self.terminal.to_operational(MachineState.PRE_OPERATIONAL)
+        odlist = await self.terminal.read_ODlist()
+        coe = []
+        for k, v in odlist.items():
+            for kk, vv in v.entries.items():
+                try:
+                    value = await vv.read()
+                except EtherCatError as e:
+                    coe.append((k, kk, str(vv), f"Error {e.args[0]}", 0))
+                else:
+                    if isinstance(value, int):
+                        coe.append((k, kk, str(vv), '', value))
+                    else:
+                        coe.append((k, kk, str(vv), repr(value), 0))
+        self.currentCoE = coe
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
