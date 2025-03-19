@@ -239,6 +239,7 @@ class EtherCATDevice(Device):
         terminal, *channel = name.split(".")
         ret = self.ethercat.term_by_name.get(terminal)
         if ret is None:
+            self.status = f'missing terminal {name}'
             raise TerminalUnknownError(name)
         for c in channel:
             ret = getattr(ret, c)
@@ -319,16 +320,20 @@ class EtherCATTerminal(Device):
 
     async def onInitialization(self):
         self.status = "waiting for master"
-        master = await getDevice(self.master)
+        await getDevice(self.master)
         self.ethercat = self.getLocalDevice(self.master)
-        await waitUntil(lambda: master.state == State.ON)
-        self.ethercat.terminalsInitializingCount += 1
-
+        await waitUntil(lambda: self.ethercat.state == State.ON)
         try:
             addr = self.ethercat.addr_by_serial[self.serialNumber.value]
-            self.terminal = self.Base(self.ethercat.ethercat)
-            self.terminal.name = self.deviceId.value
-            self.ethercat.term_by_addr[addr] = self.terminal
+        except KeyError:
+            self.logger.exception('no terminal with serial number %i',
+                                  self.serialNumber.value)
+            raise
+        self.terminal = self.Base(self.ethercat.ethercat)
+        self.terminal.name = self.deviceId.value
+        self.ethercat.term_by_addr[addr] = self.terminal
+        self.ethercat.terminalsInitializingCount += 1
+        try:
             await self.terminal.initialize(absolute=addr)
             if isSet(self.watchdog):
                 wd = int(self.watchdog / (100 * unit.microsecond))
