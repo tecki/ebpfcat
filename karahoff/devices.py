@@ -551,8 +551,9 @@ class MotorDevice(Device):
                     self.ebpf.stmp = 0
                 with ((self.high_switch != 0) & (self.ebpf.stmp > 0)):
                     self.ebpf.stmp = 0
-            with self.encoder_error:
-                self.ebpf.stmp = 0
+            if self.encoder_error is not None:
+                with self.encoder_error:
+                    self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
 
 
