@@ -411,7 +411,8 @@ class EtherCATTerminal(Device):
                     coe['index'], coe['subIndex'])
                 ret = await self.terminal.sdo_read(coe['index'],
                                                    coe['subIndex'])
-                new_coes.append((coe['index'], coe['subIndex'], coe['format'],
+                new_coes.append((coe['index'], coe['subIndex'],
+                                 coe['comment'], coe['format'],
                                  unpack(coe['format'], ret)[0]))
             self.coe = new_coes
             self.ethercat.term_by_name[self.deviceId.split('/')[-1]] = \
