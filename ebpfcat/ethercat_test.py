@@ -22,18 +22,36 @@ from functools import wraps
 from itertools import count
 from struct import pack
 from unittest import TestCase, main, skip
+from unittest.mock import Mock
 
 from .devices import AnalogInput, AnalogOutput, Motor
 from .terminals import EL4104, EL3164, EK1814, Skip
 from .ethercat import ECCmd, MachineState, Terminal
 from .ebpfcat import (
     FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc,
-    SterilePacket)
+    SterilePacket, SimpleEtherCat, SyncManager)
 from .ebpf import Instruction, Opcode as O
 
 
 H = bytes.fromhex
 ZERO = 0.01  # near-zero time to fool broken Python
+
+
+class SimpleTests(TestCase):
+    def test_device(self):
+        ec = SimpleEtherCat('test network')
+        ec.next_logical_addr = 7
+        term = EL4104(ec)
+        term.position = 3
+        term.pdos = {(0x7000, 1): (SyncManager.OUT, 3, 'h')}
+        term.pdo_in_sz = 0
+        term.pdo_out_sz = 12
+        device = AnalogOutput(term.ch1_value)
+        sg = SyncGroup(ec, [device])
+        sg.allocate()
+        sg.current_data = bytearray(b'abcdefghijklmnopqrstuvwxyzABCDEFG')
+        device.data = 0x3333
+        self.assertEqual(sg.current_data, b'abcdefghijklmnopqrstuvwxyzABC33FG')
 
 
 class MockEtherCatBase:
