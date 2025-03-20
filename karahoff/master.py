@@ -2,16 +2,26 @@
 The core of KaraHoff
 --------------------
 
-These are the base classes for everything KaraHoff.
+These are the core devices that need to run an EtherCAT loop:
 
-.. autoclass:: EtherCATMaster
+.. autoclass:: EtherCATMaster()
     :members:
 
-.. autoclass:: FastEtherCATSyncGroup
+.. autoclass:: FastEtherCATSyncGroup()
     :members:
 
-.. autoclass:: ProcessEtherCATSyncGroup
+.. autoclass:: ProcessEtherCATSyncGroup()
     :members:
+
+Base clases
+-----------
+
+If you want to extend KaraHoff by writing your own devices or
+terminals, these are the base classes to inherit from:
+
+.. autoclass:: EtherCATDevice()
+    :members:
+
 """
 from asyncio import CancelledError, Event, gather, get_event_loop, sleep
 from contextlib import AsyncExitStack
@@ -268,7 +278,21 @@ class ProcessEtherCATSyncGroup(EtherCATSyncGroupBase):
 
 
 class EtherCATDevice(Device):
-    """The base class for all EtherCAT-Karabo devices"""
+    """The base class for all EtherCAT-Karabo devices
+
+    .. attribute:: device
+
+        This contains the :class:`~ebpfcat.ebpfcat.Device` we are using in the
+        background. If there is more than one, overwrite :meth:`get_devices`
+        instead.
+
+    .. attribute:: state_change
+
+        This :class:`~asyncio.Event` is set every time the state is set - no
+        matter whether it changed or not.
+
+    """
+
     instances = {}
     terminals = None
 
@@ -278,11 +302,30 @@ class EtherCATDevice(Device):
         self.state_change = Event()
 
     def get_devices(self):
+        """return the :class:`~ebpfcat.ebpfcat.Device`\ s used by this device
+
+        return a tuple of the :class:`~ebpfcat.ebpfcat.Device`\ s used by us. By
+        default just return the single :attr:`device`.
+        """
         return (self.device,)
 
     def set_state(self, state, status=None):
-        if state != self.state or (status is not None
-                                   and status != self.status):
+        """Set a new state and status message
+
+        Use this method to set a the state or status message.
+
+        This is an important part of the Karabo protocol: Karabo
+        :class:`~karabo.middlelayer.Slot`\ s are supposed to first set their new
+        state before they return (if applicable). As the business logic is done
+        asynchronously in :meth:`update_properties`, it is most easy to just
+        wait until the state changes at the end of a slot. To this end, a
+        :class:`~karabo.middlelayer.Slot` usually ends with ``await
+        self.state_change.wait()``, and this :attr:`state_change` is evoked
+        here.
+        """
+
+        if state != self.state or (status is not None and status !=
+                                   self.status):
             self.state = state
             self.status = status
         self.state_change.set()
@@ -299,16 +342,33 @@ class EtherCATDevice(Device):
         return ret
 
     def update_properties(self):
-        pass
+        """The business logic
+
+        This is the core functionality of the device, on the Karabo side. This
+        method gets called cyclically and should do the communication between
+        the EBPFCat device and Karabo.
+
+        The method may return the state this device is in after the call, or a
+        pair of new state and status message. Returning ``None`` indicates the
+        state should not change (but feel free to change the state elsewhere).
+        This is useful to be used in a ``super()``-chain: mixins may return an
+        error that they have detected, and the class using the mixin may or may
+        not propagate this.
+        """
 
     async def join(self, syncGroup):
-        """Let this device join a sync group"""
+        """Let this device join a sync group
+
+        This is where the :class:`~ebpfcat.ebpfcat.Device`\ s are created and
+        linked to their :class:`~ebpfcat.ebpfcat.Terminal`\ s or channels
+        thereof. Note that this might happen more than once, the device needs
+        to be able to deal with that. Also don't forget to call ``super()``.
+        """
         self.syncGroup = syncGroup
         self.ethercat = syncGroup.ethercat
 
     def initialize(self):
         """called once everything is set up"""
-        return
 
 
 class Channel(Configurable):
@@ -352,16 +412,35 @@ class Channel(Configurable):
 
 
 class EtherCATTerminal(Device):
-    """Base class for Karabo devices representing a single terminal"""
+    """Base class for Karabo devices representing a single terminal
+
+    .. attribute:: Base
+
+        The subclass of :class:`~ebpfcat.ebpfcat.Terminal` that this device
+        represents. Usually set as a class variable.
+
+    .. attribute:: terminal
+
+        The instance of the :class:`~ebpfcat.ebpfcat.Terminal`.
+    """
+
     master = String(accessMode=AccessMode.INITONLY,
                     assignment=Assignment.MANDATORY)
-    vendorId = ml.Int32(accessMode=AccessMode.READONLY)
-    productCode = ml.Int32(accessMode=AccessMode.READONLY)
-    revisionNo = ml.Int32(accessMode=AccessMode.READONLY)
-    serialNumber = ml.Int32(accessMode=AccessMode.INITONLY,
-                            assignment=Assignment.MANDATORY)
-    coe = VectorHash(accessMode=AccessMode.INITONLY, rows=CoETable,
-                     defaultValue=[])
+    vendorId = ml.Int32(displayedName='Vendor ID',
+                        accessMode=AccessMode.READONLY)
+    productCode = ml.Int32(displayedName='Product Code',
+                           accessMode=AccessMode.READONLY)
+    revisionNo = ml.Int32(displayedName='Revision Number',
+                          accessMode=AccessMode.READONLY)
+    serialNumber = ml.Int32(
+        displayedName='Serial Number', accessMode=AccessMode.INITONLY,
+        description="""The serial number of the terminal this device should
+        control. Use negative numbers to indicate the position on the bus if
+        no serial number is known (or set). At XFEL, this serial number is
+        usually the QR code.""", assignment=Assignment.MANDATORY)
+    coe = VectorHash(
+        description="Additional CoE paramters to be set upon intialization",
+        accessMode=AccessMode.INITONLY, rows=CoETable, defaultValue=[])
     currentCoE = VectorHash(accessMode=AccessMode.READONLY, rows=CoETable)
     watchdog = ml.Float(accessMode=AccessMode.INITONLY,
                         unitSymbol=Unit.SECOND,
@@ -444,8 +523,9 @@ class EtherCATTerminal(Device):
 
         return setter
 
-    @Slot()
+    @Slot(displayedName="Read CoE parameters")
     async def readCoE(self):
+        """read the CoE parameters from the terminal"""
         await self.terminal.to_operational(MachineState.PRE_OPERATIONAL)
         odlist = await self.terminal.read_ODlist()
         coe = []

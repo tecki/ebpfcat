@@ -14,7 +14,7 @@ A collection of simple devices
 .. autoclass:: Motor()
     :members:
 
-.. autoclass:: RotoationMotor()
+.. autoclass:: RotationMotor()
     :members:
 
 .. autoclass:: Shutter()
@@ -183,7 +183,11 @@ def optionalFusedOutput(channel):
 
 
 class OptionalMixin(EtherCATDevice):
-    switchChannel = String(accessMode=AccessMode.INITONLY)
+    switchChannel = String(
+        accessMode=AccessMode.INITONLY,
+        description="""List here the digital output channels (comma separated)
+        that need to be on for this device to function. Leave empty if there
+        are none""")
 
     def get_devices(self):
         ret = super().get_devices()

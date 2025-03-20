@@ -2,7 +2,7 @@
 A collection of terminals
 -------------------------
 
-.. autoclass:: GenericTerminal
+.. autoclass:: GenericTerminal()
     :members:
 """
 from karabo.middlelayer import (
