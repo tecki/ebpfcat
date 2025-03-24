@@ -13,7 +13,7 @@ These are the base classes for everything KaraHoff.
 .. autoclass:: ProcessEtherCATSyncGroup
     :members:
 """
-from asyncio import Event, gather, get_event_loop, sleep
+from asyncio import CancelledError, Event, gather, get_event_loop, sleep
 from contextlib import AsyncExitStack
 from itertools import chain
 from struct import pack, unpack
@@ -228,16 +228,21 @@ class EtherCATSyncGroupBase(Device):
                                 d.set_state(newstate)
                             else:
                                 d.set_state(*newstate)
-                        d.update()
                         await sleep(self.interval.value / len(self.devs))
                 else:
                     await sleep(self.interval.value)
             self.syncGroup.task.result()  # raises error if problem
+        except CancelledError:
+            pass
         except Exception as e:
             self.status = str(e)
+            self.logger.exception('Sync group %s failed', self.deviceId)
             raise
         finally:
             self.state = State.ERROR
+            for d in self.devs:
+                d.state = State.UNKNOWN
+                d.status = f'Sync Group {self.deviceId} Stopped'
 
 
 class EtherCATSyncGroup(EtherCATSyncGroupBase):
@@ -302,9 +307,6 @@ class EtherCATDevice(Device):
     def initialize(self):
         """called once everything is set up"""
         return
-
-    def setChildValue(self, key, value, desc):
-        self._sethash[key] = value, desc
 
 
 class Channel(Configurable):
