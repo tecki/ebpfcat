@@ -905,6 +905,7 @@ class TurboVacDevice(Device):
     pump_on = TerminalVar()
     reset = TerminalVar()
     error_status = TerminalVar()
+    speed_status = TerminalVar()
     pump_is_on = TerminalVar()
     speed = TerminalVar()
     current = TerminalVar()
@@ -918,9 +919,10 @@ class TurboVacDevice(Device):
 class TurboVac(EtherCATDevice):
     pump = String(accessMode=AccessMode.INITONLY,
                   assignment=Assignment.MANDATORY)
-    speed = UInt16(accessMode=AccessMode.READONLY)
-    current = UInt16(accessMode=AccessMode.READONLY)
-    onSpeed = UInt16(accessMode=AccessMode.INITONLY, defaultValue=990)
+    speed = UInt16(accessMode=AccessMode.READONLY, unitSymbol=Unit.HERTZ)
+    current = Float(accessMode=AccessMode.READONLY,
+                    unitSymbol=Unit.AMPERE)
+    statusbits = UInt16(accessMode=AccessMode.READONLY)
 
     @Slot()
     async def start(self):
@@ -930,21 +932,38 @@ class TurboVac(EtherCATDevice):
     async def stop(self):
         self.device.set_pump_on = False
 
+    @Slot()
+    async def reset(self):
+        self.device.set_pump_on = False
+        self.device.reset = True
+        await sleep(0.3)
+        self.device.reset = False
+
+    lastcurrent = None
+    laststatus = None
+
     def update_properties(self):
-        if self.current != self.device.current:
-            self.current = self.device.current
+        if self.lastcurrent != self.device.current:
+            self.lastcurrent = self.device.current
+            self.current = self.device.current / 10
         if self.speed != self.device.speed:
             self.speed = self.device.speed
-        if self.device.pump_is_on:
-            if self.device.speed >= self.onSpeed:
-                return State.ON
-            else:
-                return State.STARTING
+        if self.laststatus != self.device.speed_status:
+            self.statusbits = self.laststatus = self.device.speed_status
+        if self.device.error_status & 7:
+            return State.ERROR, f'error status {self.device.error_status}'
+        elif self.device.speed_status & 0x10:
+            return State.OFF
+        elif self.device.speed_status & 0x40:
+            return State.STARTED
+        elif self.device.speed_status & 0x20:
+            return State.STARTING
+        elif self.device.speed_status & 0x80:
+            return State.STOPPING
+        elif self.device.speed_status & 1:
+            return State.ON
         else:
-            if self.device.speed > 1:
-                return State.STOPPING
-            else:
-                return State.OFF
+            return State.UNKNOWN, f'unknown state {self.device.speed_status:x}'
 
     async def join(self, syncGroup):
         await super().join(syncGroup)
@@ -952,7 +971,9 @@ class TurboVac(EtherCATDevice):
         self.pump_term = self.find_channel(self.pump)
         self.device.pump_on = self.pump_term.pump_on
         self.device.error_status = self.pump_term.error_status
+        self.device.speed_status = self.pump_term.speed_status
         self.device.pump_is_on = self.pump_term.pump_is_on
+        self.device.reset = self.pump_term.reset
         self.device.speed = self.pump_term.speed
         self.device.current = self.pump_term.current
 
