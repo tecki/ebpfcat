@@ -196,6 +196,8 @@ class EtherCATSyncGroupBase(Device):
         self.status = "waiting for devices to join"
         if self.ethercat.terminalsInitializingCount != 0:
             await self.ethercat.terminalsInitialized.wait()
+        for d in self.devs:
+            d.status = f'joining {self.deviceId}'
         while True:
             try:
                 await gather(*[d.join(self) for d in self.devs])
