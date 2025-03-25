@@ -653,31 +653,37 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.counts = []
         self.encoders = []
 
-    @Slot(displayedName='Move')
+    @Slot(displayedName='Move',
+          allowedStates={State.OFF, State.ON, State.MOVING})
     async def move(self):
         self.device.target = int((self.targetPosition - self.offset)
                                  // self.encodeStep)
         self.device.set_enable = True
 
-    @Slot(displayedName='Stop')
+    @Slot(displayedName='Stop',
+          allowedStates={State.ON, State.MOVING})
     async def stop(self):
         self.device.target = self.device.encoder
 
-    @Slot(displayedName='On')
+    @Slot(displayedName='On',
+          allowedStates={State.OFF, State.ON, State.MOVING, State.INTERLOCKED})
     async def on(self):
         self.targetPosition = self.actualPosition
         await self.move()
 
-    @Slot(displayedName='Off')
+    @Slot(displayedName='Off',
+          allowedStates={State.ON, State.MOVING, State.INTERLOCKED})
     async def off(self):
         self.device.set_enable = False
 
-    @Slot(displayedName='Step Up')
+    @Slot(displayedName='Step Up',
+          allowedStates={State.OFF, State.ON, State.MOVING})
     async def stepUp(self):
         self.targetPosition = self.actualPosition + self.stepSize
         await self.move()
 
-    @Slot(displayedName='Step Down')
+    @Slot(displayedName='Step Down',
+          allowedStates={State.OFF, State.ON, State.MOVING})
     async def stepDown(self):
         self.targetPosition = self.actualPosition - self.stepSize
         await self.move()
@@ -783,6 +789,7 @@ class FollowerDevice(MotorDevice):
                 self.set_enable = 0
                 self.leader.set_enable = 0
         super().program(self.leader)
+
 
 class MotorFollower(Motor):
     """A stepper motor that may follow another motor"""
