@@ -538,7 +538,7 @@ class MotorDevice(Device):
                                  % (2 * self.modulo) - self.modulo
             self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
             if leader is not None:
-                with (self.set_enable & 4) != 0:
+                with ((self.set_enable & 4) != 0) & ((leader.set_enable & 1) != 0):
                     self.ebpf.stmp += \
                         (int(self.motors_factor * self.follow_factor
                              * (1 << 16)) * leader.velocity) >> 16
@@ -806,6 +806,10 @@ class MotorFollower(Motor):
     @Slot(allowedStates={State.ON})
     async def couple(self):
         """start following the leader at this positon"""
+        leader = self.getLocalDevice(self.leader)
+        if leader.state != State.ON:
+            self.status = 'cannot couple if leader is not ON'
+            return
         self.device.follow_offset = \
             int(self.device.encoder - self.device.leader.encoder * self.factor)
         self.device.set_enable = 5
