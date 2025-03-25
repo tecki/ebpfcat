@@ -695,7 +695,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         await sleep(0.2)
         self.device.set_enable = 0
 
-    lastvelocity = lastposition = 0
+    lastvelocity = lastposition = 100j  # always far away from the real value
 
     def update_properties(self):
         baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
