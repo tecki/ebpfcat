@@ -2,8 +2,8 @@ project = 'KaraHoff'
 copyright = '2025, SCS, European XFEL GmbH'
 author = 'Martin Teichmann'
 
-version = '0.7.0'
-release = '0.7.0'
+version = '0.8.0'
+release = '0.8.0'
 
 extensions = [
     'sphinx.ext.autodoc',
