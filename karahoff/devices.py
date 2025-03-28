@@ -663,6 +663,10 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.target = int((self.targetPosition - self.offset)
                                  // self.encodeStep)
         self.device.set_enable = True
+        # just in case await twice, to guarantee the device goes to the right
+        # state. Not sure whether that's actually necessay, didn't test
+        await self.state_change.wait()
+        await self.state_change.wait()
 
     @Slot(displayedName='Stop',
           allowedStates={State.ON, State.MOVING})
