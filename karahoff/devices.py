@@ -237,7 +237,7 @@ class OptionalKeepOnMixin(OptionalMixin):
         ret = super().update_properties()
         for d in self.switchDevices:
             if d.value == 2:
-                return State.ERROR
+                return State.ERROR, "fuse failed"
             d.value = 1
         return ret
 
