@@ -1,6 +1,8 @@
 import re
+from time import monotonic
 
-from karabo.middlelayer import AccessMode, Bool, Device, State, String
+from karabo.middlelayer import (
+    AccessMode, Bool, Device, Float, State, String, Unit)
 
 pattern = re.compile('[A-Z0-9]{1,6}_[A-Z0-9]{1,6}_[A-Z0-9]{1,9}(-[0-9])?'
                      '/[A-Z0-9]{1,6}/[A-Z0-9_]{1,24}')
@@ -25,6 +27,8 @@ class SingleInterlock(Device):
     interlockCondition = String(accessMode=AccessMode.INITONLY,
                                 defaultValue='False')
     interlockOverride = Bool(defaultValue=False)
+    interlockTimeout = Float(defaultValue=0, unitSymbol=Unit.SECOND)
+    interlock_lastgood = 0
 
     async def join(self, syncgroup):
         cond, subs = replace(self.interlockCondition.value)
@@ -49,10 +53,14 @@ class SingleInterlock(Device):
                 msg = f'error in interlock: {e}'
                 interlock = True
         ret = super().update_properties()
+        if not interlock:
+            self.interlock_lastgood = monotonic()
         if self.interlockOverride and not interlock:
             self.interlockOverride = False
             return ret
-        elif interlock and not self.interlockOverride:
+        elif interlock and not self.interlockOverride \
+                and monotonic() - self.interlock_lastgood \
+                    > self.interlockTimeout.value:
             return State.INTERLOCKED, msg
         else:
             return ret
