@@ -356,6 +356,11 @@ class EtherCATDevice(Device):
         not propagate this.
         """
 
+    syncGroupDevice = String(
+        displayedName='Sync Group',
+        description='The Sync Group this device is member of',
+        accessMode=AccessMode.READONLY)
+
     async def join(self, syncGroup):
         """Let this device join a sync group
 
@@ -365,6 +370,7 @@ class EtherCATDevice(Device):
         to be able to deal with that. Also don't forget to call ``super()``.
         """
         self.syncGroup = syncGroup
+        self.syncGroupDevice = syncGroup.deviceId
         self.ethercat = syncGroup.ethercat
 
     def initialize(self):
