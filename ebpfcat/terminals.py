@@ -213,7 +213,7 @@ class EL6022(EBPFTerminal):
 class EL7041(EBPFTerminal):
     compatibility = {(2, 461451346), (2, 461455442), (2, 460795986)}
     out_pdos = [0x1601, 0x1602, 0x1604]
-    in_pdos = [0x1A01, 0x1a03]
+    in_pdos = [0x1A01, 0x1A03]
     velocity = ProcessDesc(0x7010, 0x21, "h")
     enable = ProcessDesc(0x7010, 1)
     reset = ProcessDesc(0x7010, 2)
