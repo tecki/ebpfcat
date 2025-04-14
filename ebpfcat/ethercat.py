@@ -844,11 +844,14 @@ class Terminal:
     def has_mailbox(self):
         return self.mbx_out_off is not None and self.mbx_in_off is not None
 
-    async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
+    async def mbx_send(self, type, *args, data=None,
+                       address=0, priority=0, channel=0):
         """send data to the mailbox"""
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
-            raise EtherCatError("mailbox full, read first")
+            etype, edata = await self.mbx_recv()
+            logging.error('terminal %s received unexpected mail %s "%s"',
+                          self.name, etype, edata)
         assert self.mbx_out_off is not None, "not send mailbox defined"
         await self.write(self.mbx_out_off, "HHBB",
                                 datasize(args, data),
