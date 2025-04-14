@@ -691,14 +691,18 @@ class SyncGroupBase:
     async def map_fmmu(self):
         async with AsyncExitStack() as stack:
             for terminal, bases in self.fmmu_maps.items():
-                base = bases.get(SyncManager.OUT)
-                if base is not None:
-                    await stack.enter_async_context(
-                            terminal.map_fmmu(base, True))
-                base = bases.get(SyncManager.IN)
-                if base is not None:
-                    await stack.enter_async_context(
-                            terminal.map_fmmu(base, False))
+                try:
+                    base = bases.get(SyncManager.OUT)
+                    if base is not None:
+                        await stack.enter_async_context(
+                                terminal.map_fmmu(base, True))
+                    base = bases.get(SyncManager.IN)
+                    if base is not None:
+                        await stack.enter_async_context(
+                                terminal.map_fmmu(base, False))
+                except Exception as e:
+                    e.add_note(f'while fmmu-mapping {terminal.name}')
+                    raise
             yield
 
     async def run(self):
