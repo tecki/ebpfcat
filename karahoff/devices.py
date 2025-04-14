@@ -52,8 +52,8 @@ class GenericInput(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.value
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel)
         self.state = State.ON
@@ -72,8 +72,8 @@ class AnalogInput(EtherCATDevice):
                     + self.the_channel.offset
             self.lastvalue = self.device.value
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
         self.state = State.ON
@@ -144,8 +144,8 @@ class AnalogStatistics(EtherCATDevice):
         self.device.trigger = 1
 
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogStatisticsDevice()
         self.device.value = self.the_channel.value
@@ -193,8 +193,8 @@ class OptionalMixin(EtherCATDevice):
         ret = super().get_devices()
         return ret + tuple(self.switchDevices)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         if self.switchChannel:
             self.switchDevices = tuple(
                 optionalFusedOutput(self.find_channel(c))
@@ -324,8 +324,8 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
                 self.old_time = newtime
             return State.ON
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.the_channel = self.find_channel(self.channel)
         self.device = AnalogInputDevice(self.the_channel.value)
 
@@ -354,8 +354,8 @@ class AnalogOutput(EtherCATDevice):
         self.device.set_value = int(value)
         self.value = value
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = AnalogOutputDevice()
         self.device.owner = self
         self.device.value = self.find_channel(self.channel)
@@ -420,8 +420,8 @@ class MonitoredOutput(EtherCATDevice):
         description="ramp the output voltage by this speed. "
         "Put 0 for immediate setting")
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = MonitoredOutputDevice()
         self.device.lastTime = monotonic() * unit.second
         self.device.owner = self
@@ -482,8 +482,8 @@ class Counter(EtherCATDevice):
     def update_properties(self):
         self.value = self.device.current_value
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.state = State.ON
         self.device = CounterDevice()
         self.lasttime = monotonic()
@@ -631,8 +631,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
 
     Device = MotorDevice
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = self.Device()
         self.motor_term = self.find_channel(self.motor)
         self.encoder_term = self.find_channel(self.encoder)
@@ -780,8 +780,8 @@ class RotationMotor(Motor):
         unitSymbol=Unit.DEGREE, defaultValue=360,
         accessMode=AccessMode.INITONLY)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device.modulo = int(self.modulo // (2 * self.encodeStep))
 
 
@@ -810,8 +810,8 @@ class MotorFollower(Motor):
         accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
         metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0.1)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         leader = self.getLocalDevice(self.leader)
         self.device.leader = leader.device
         self.device.follow_factor = self.factor.value
@@ -869,8 +869,8 @@ class Bronkhorst(EtherCATDevice):
         self.current_value = self.device.current_value
         self.controller_output = self.device.controller_output
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.the_terminal = self.find_channel(self.terminal)
         self.device = BronkhorstDevice()
         self.device.owner = self
@@ -879,7 +879,7 @@ class Bronkhorst(EtherCATDevice):
         self.device.controller_output = self.the_terminal.controller_output
         self.device.control_byte = self.the_terminal.control_byte
         self.device.status_word = self.the_terminal.status_word
-        await self.set_mode(None)
+        #await self.set_mode(None)
 
     async def set_mode(self, mode):
         if mode is not None:
@@ -973,8 +973,8 @@ class TurboVac(EtherCATDevice):
         else:
             return State.UNKNOWN, f'unknown state {self.device.speed_status:x}'
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = TurboVacDevice()
         self.pump_term = self.find_channel(self.pump)
         self.device.pump_on = self.pump_term.pump_on
@@ -999,8 +999,8 @@ class Inficon(EtherCATDevice):
                    assignment=Assignment.MANDATORY)
     value = Float(accessMode=AccessMode.READONLY)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = InficonDevice()
         self.gauge_term = self.find_channel(self.gauge)
         self.device.value = self.gauge_term.value
@@ -1073,8 +1073,8 @@ class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
     delay = Float(defaultValue=0, unitSymbol=Unit.SECOND,
                   metricPrefixSymbol=MetricPrefix.MILLI)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = ValveDevice()
         self.device.coil = self.find_channel(self.coil)
         if self.openSwitch:
@@ -1152,8 +1152,8 @@ class SlowRoughingValve(Valve):
         ret = super().get_devices()
         return ret + (self.slowDevice,)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.slowDevice = optionalFusedOutput(
             self.find_channel(self.slowCoil))
 
@@ -1240,8 +1240,8 @@ class Shutter(EtherCATDevice):
         accessMode=AccessMode.INITONLY, defaultValue=3, minInc=0,
         description="The speed to set the motor to for opening and closing")
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = ShutterDevice()
         self.device.reset()
         self.device.velocity = self.find_channel(self.velocity)
@@ -1292,8 +1292,8 @@ class EtherCATSCPIMaster(EtherCATDevice):
         self.connectEvent = GenericSCPIMaster.instances.setdefault(
             self.deviceId.value, Event())
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.channel = self.find_channel(self.terminal)
         self.device = Serial(self.channel)
 
@@ -1351,8 +1351,8 @@ class Automation1(EtherCATDevice):
         displayedName='Target Velocity', defaultValue=1, minExc=0,
         unitSymbol=Unit.METER_PER_SECOND, metricPrefixSymbol=MetricPrefix.MILLI)
 
-    async def join(self, syncGroup):
-        await super().join(syncGroup)
+    def join(self, syncGroup):
+        super().join(syncGroup)
         self.device = Automation1Device()
         self.motor_term = self.find_channel(self.motor)
         self.device.actualPosition = self.motor_term.actualPosition

@@ -210,7 +210,12 @@ class EtherCATSyncGroupBase(Device):
             d.status = f'joining {self.deviceId}'
         while True:
             try:
-                await gather(*[d.join(self) for d in self.devs])
+                for d in self.devs:
+                    try:
+                        d.join(self)
+                    except Exception as e:
+                        e.add_note(f'while {d.deviceId} is joining')
+                        raise
                 break
             except TerminalUnknownError as e:
                 self.status = f"Terminal {e.args[0]} missing"
@@ -361,7 +366,7 @@ class EtherCATDevice(Device):
         description='The Sync Group this device is member of',
         accessMode=AccessMode.READONLY)
 
-    async def join(self, syncGroup):
+    def join(self, syncGroup):
         """Let this device join a sync group
 
         This is where the :class:`~ebpfcat.ebpfcat.Device`\ s are created and

@@ -81,7 +81,7 @@ class Interlock(EtherCATDevice):
                 setattr(cls, f'{k}Interlock', Node(InterlockCondition))
         super().__init_subclass__(**kwargs)
 
-    async def join(self, syncgroup):
+    def join(self, syncgroup):
         self.interlock_conditions = []
         for attr in self._allattrs:
             v = getattr(self.__class__, attr)
@@ -105,13 +105,13 @@ class SingleInterlock(Device):
     interlockTimeout = Float(defaultValue=0, unitSymbol=Unit.SECOND)
     interlock_lastgood = 0
 
-    async def join(self, syncgroup):
+    def join(self, syncgroup):
         cond, subs = replace(self.interlockCondition.value)
         self.interlock_locals = {k: self.getLocalDevice(v)
                                  for k, v in subs.items()}
         self.interlock_locals['self'] = self
         self.interlock_condition = compile(cond, self.deviceId.value, 'eval')
-        await super().join(syncgroup)
+        super().join(syncgroup)
 
     def update_properties(self):
         msg = None
