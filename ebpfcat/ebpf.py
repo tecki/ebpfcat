@@ -1120,6 +1120,8 @@ class PseudoFd(Expression):
 
 class ktime(Expression):
     """a function that returns the current ktime in ns"""
+    signed = False
+
     def __init__(self, ebpf):
         self.ebpf = ebpf
         self.fixed = False
