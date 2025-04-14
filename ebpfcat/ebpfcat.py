@@ -327,12 +327,15 @@ class EBPFTerminal(Terminal):
         self.pdo_in_sz = int((inbits + 7) // 8)
         assert not self.pdo_in_sz or self.pdo_in_off
         await self.write_pdo_sm()
+        # going to SAFE_OPERATIONAL checks the correctness of our setup
+        # we could do that later, but doing it here we get a better clue
+        # where the problem could be
+        await self.to_operational(MachineState.SAFE_OPERATIONAL)
 
     async def write_pdos(self, index, values):
         await self.sdo_write(pack('B', 0), index, 0)
         for i, v in enumerate(values, 1):
             await self.sdo_write(pack('<H', v), index, i)
-        await self.sdo_write(pack('<H', 0), index, i + 1)
         await self.sdo_write(pack('B', len(values)), index, 0)
 
     def allocate(self, packet, readwrite):
