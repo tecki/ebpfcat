@@ -559,6 +559,8 @@ class ParallelEtherCat(FastEtherCat):
                 else:
                     logging.error('an old programs file was still at %s',
                                   programs)
+                await self.ebpf.attach(self.addr[0])
+                self.ebpf.close()
                 obj_pin(programs, self.programs)
             except Exception:
                 shutil.rmtree(lockdir)
@@ -567,8 +569,6 @@ class ParallelEtherCat(FastEtherCat):
                                       *self.terminal_addr_range)
         self.fmmu_lock_file = FMMULock(f'/run/ebpf/{self.addr[0]}.fmmu')
         try:
-            await self.ebpf.attach(self.addr[0])
-            self.ebpf.close()
             yield
         finally:
             for v in self.sync_groups.values():
