@@ -486,6 +486,8 @@ class EtherCat(Protocol):
         future = self.wait_futures.get(index)
         if future is not None and not future.done():
             future.set_result(data)
+        else:
+            logging.warning('received unknown packet %i (%x)', index, data[3])
 
 
 class ServiceDesc:
