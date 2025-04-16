@@ -27,7 +27,7 @@ from time import monotonic, time
 
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
 from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
-from ebpfcat.ebpf import ktime
+from ebpfcat.ebpf import LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
@@ -521,13 +521,22 @@ class MotorDevice(Device):
     set_enable = DeviceVar('B')
     deadband_exceeded = DeviceVar('b')
     max_velocity = DeviceVar('q')
-    max_acceleration = DeviceVar('i')
+    last_velocity = DeviceVar('q')
+    max_acceleration = DeviceVar('Q')
     deadband = DeviceVar('q')
     target = DeviceVar('q')
     proportional = DeviceVar('q')
+    lasttime = DeviceVar('Q')
+    velocity_diff = LocalVar('q')
     modulo = None
 
     def program(self, leader=None):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            self.velocity_diff = (self.max_acceleration * (self.ebpf.tmp - self.lasttime)) >> 32
+            with self.velocity_diff > 0 as Else:
+                self.lasttime = self.ebpf.tmp
+
         self.reset = (self.set_enable & 2) != 0
         self.enable = (self.set_enable & 1) != 0
         with abs(self.target - self.encoder) < self.deadband as Else:
@@ -559,6 +568,14 @@ class MotorDevice(Device):
                 with self.encoder_error:
                     self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
+            with self.ebpf.stmp > self.last_velocity + self.velocity_diff as Else:
+                self.velocity = self.last_velocity + self.velocity_diff
+            with Else, self.last_velocity > self.ebpf.stmp + self.velocity_diff:
+                self.velocity = self.last_velocity - self.velocity_diff
+            with self.enable as Else:
+                self.last_velocity = self.velocity
+            with Else:
+                self.last_velocity = 0
 
 
 class Motor(OptionalKeepOnMixin, EtherCATDevice):
@@ -611,6 +628,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     isCCWLimit = Bool(
         displayedName='At Negative Limit?',
         accessMode=AccessMode.READONLY)
+    maxAcceleration = Float(defaultValue=10)
 
     targetVelocity = Float(
         displayedName='Target Velocity', defaultValue=1,
@@ -708,6 +726,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     def update_properties(self):
         baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
 
+        self.device.max_acceleration = \
+            int((self.maxAcceleration/ self.motorStep / 1e9 * 2**32).value)
         if abs(self.device.encoder - self.lastposition) > 3:
             self.actualPosition = (self.device.encoder * self.encodeStep
                                    + self.offset) * now()
