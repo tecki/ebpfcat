@@ -864,6 +864,72 @@ class MotorFollower(Motor):
         return ret
 
 
+class SynchronizeDevice(MotorDevice):
+    trigtime = DeviceVar('Q')
+    trigposition = DeviceVar('i')
+    set_velocity = DeviceVar('h')
+    lastswitch = DeviceVar('B')
+
+    def calculate_speed(self):
+        super().calculate_speed()
+        with (self.set_enable & 4) != 0 as Else:
+            self.ebpf.stmp = self.set_velocity
+
+    def program(self):
+        with (self.high_switch == 0) & (self.lastswitch == 1):
+            self.trigtime = ktime(self.ebpf)
+            self.trigposition = self.encoder
+        self.lastswitch = self.high_switch
+        super().program()
+
+
+class SynchronizedMotor(RotationMotor):
+    Device = SynchronizeDevice
+
+    targetPhase = Float(defaultValue=0)
+    lasttrigtime = 0
+    timediff = int((monotonic() - time()) * 1e9)
+
+    integral = Float(unitSymbol=Unit.HERTZ, accessMode=AccessMode.READONLY)
+    triggerPosition = Float(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
+    triggerPhase = Float(accessMode=AccessMode.READONLY)
+
+    proportionalTerm = Float(defaultValue=0)
+    integralTerm = Float(defaultValue=0)
+
+
+    def update_properties(self):
+        baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
+
+        ret = super().update_properties()
+        if self.lasttrigtime != self.device.trigtime:
+            self.lasttrigtime = self.device.trigtime
+            self.triggerPosition = (self.device.trigposition
+                                    * self.motorStep) % (360 * unit.degree)
+            trainId = ((self.device.trigtime - self.timediff
+                        - TimeMixin._time_sec * 1e9
+                        - TimeMixin._time_frac * 1e-9)
+                       / (TimeMixin._period * 1e3)) + TimeMixin._tid
+            error = ((trainId + self.targetPhase.value + 1) % 2 - 1)
+            self.triggerPhase = error
+            if self.device.set_enable & 4:
+                self.integral += \
+                    error * self.integralTerm.value * unit.Hz * now()
+                self.device.set_velocity = \
+                    int((self.proportionalTerm.value * error * unit.Hz
+                         + self.integral) / baseFrequency)
+        return ret
+
+    @Slot()
+    async def synchronize(self):
+        baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
+
+        self.device.set_enable = 5
+        self.integral = 45 * unit.degree \
+                / (100 * unit.millisecond * self.motorStep)
+        self.device.set_velocity = int(self.integral / baseFrequency)
+
+
 class BronkhorstDevice(Device):
     setpoint = TerminalVar()
     current_value = TerminalVar()
