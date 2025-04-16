@@ -723,20 +723,19 @@ class SyncGroupBase:
             lasttime = monotonic()
             await gather(*[t.to_operational(MachineState.SAFE_OPERATIONAL)
                            for t in self.terminals])
-            self.ec.send_packet(data)
+            future = self.ec.roundtrip_packet(data, self.packet_index)
             task = ensure_future(self.to_operational())
             try:
                 while self.running:
                     try:
-                        data = await wait_for(
-                                self.ec.receive_index(self.packet_index),
-                                timeout=0.02)
+                        data = await wait_for(future, timeout=0.02)
                     except TimeoutError:
                         self.missed_counter += 1
                         logging.warning(
                             "%s: did not receive Ethercat response in time %i",
                             self.name, self.missed_counter)
-                        self.ec.send_packet(data)
+                        future = self.ec.roundtrip_packet(data,
+                                                          self.packet_index)
                         continue
                     data = self.update_devices(data)
                     newtime = monotonic()
@@ -750,7 +749,7 @@ class SyncGroupBase:
                                         self.name, (newtime - lasttime) * 1000)
                     lasttime = newtime
                     assert not task.done()
-                    self.ec.send_packet(data)
+                    future = self.ec.roundtrip_packet(data, self.packet_index)
             finally:
                 task.cancel()
                 try:
@@ -902,8 +901,13 @@ class FastSyncGroup(SyncGroupBase, XDP):
             self.asm_packet = self.packet.sterile(self.packet_index,
                                                   self.ec.ethertype)
             # prime the pump: two packets to get things going
-            self.ec.send_packet(self.asm_packet)
-            self.ec.send_packet(self.asm_packet)
+            self.ec.roundtrip_packet(self.asm_packet,
+                                     self.packet_index).cancel()
+
+            await sleep(0)
+            self.ec.roundtrip_packet(self.asm_packet,
+                                     self.packet_index).cancel()
+            await sleep(0)
             await super().run()
 
     def update_devices(self, data):

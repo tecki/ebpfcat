@@ -373,29 +373,25 @@ class EtherCat(Protocol):
             logging.exception("process_packet failed")
             raise
 
-    async def roundtrip_packet(self, packet):
+    def roundtrip_packet(self, packet, index=None):
         """Send a packet and return the response
 
         Send the `packet` to the loop and wait that it comes back,
         and return that to the caller. """
-        index = randint(2000, 1000000000)
-        while index in self.wait_futures:
+        if index is None:
             index = randint(2000, 1000000000)
-        self.send_packet(packet.assemble(index, self.ethertype))
-        return await self.receive_index(index)
+            while index in self.wait_futures:
+                index = randint(2000, 1000000000)
+            self.transport.sendto(packet.assemble(index, self.ethertype),
+                                  self.addr)
+        else:
+            assert index not in self.wait_futures
+            self.transport.sendto(packet, self.addr)
 
-    async def receive_index(self, index):
-        """Wait for packet identified by `index`"""
         future = Future()
         self.wait_futures[index] = future
-        try:
-            return await future
-        finally:
-            del self.wait_futures[index]
-
-    def send_packet(self, packet):
-        """simply send the `packet`, fire-and-forget"""
-        self.transport.sendto(packet, self.addr)
+        future.add_done_callback(lambda _: self.wait_futures.pop(index))
+        return future
 
     async def roundtrip(self, cmd, pos, offset, *args, data=None, idx=0):
         """Send a datagram and wait for its response
