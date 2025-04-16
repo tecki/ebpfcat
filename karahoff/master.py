@@ -472,6 +472,7 @@ class EtherCATTerminal(Device):
         self.terminal = self.Base(self.ethercat.ethercat)
         self.terminal.name = self.deviceId.value
         self.ethercat.term_by_addr[addr] = self.terminal
+        self.status = "Initializing"
         self.ethercat.terminalsInitializingCount += 1
         try:
             await self.terminal.initialize(absolute=addr)
@@ -479,6 +480,7 @@ class EtherCATTerminal(Device):
                 wd = int(self.watchdog / (100 * unit.microsecond))
                 await self.terminal.set_watchdog(wd, wd)
 
+            self.status = 'parsing SDOs'
             self.vendorId = self.terminal.vendorId
             self.productCode = self.terminal.productCode
             self.revisionNo = self.terminal.revisionNo
@@ -498,6 +500,7 @@ class EtherCATTerminal(Device):
                 await getattr(self, k)._initialize(
                     getattr(self.terminal, getattr(self.__class__, k).alias))
 
+            self.status = 'setting custom CoE parameters'
             new_coes = []
             for coe in self.coe:
                 await self.terminal.sdo_write(
