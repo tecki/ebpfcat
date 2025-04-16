@@ -32,8 +32,8 @@ from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
     AccessMode, Assignment, Bool, Double, Float, Int16, Int32, MetricPrefix,
-    Overwrite, QuantityValue, Slot, State, String, Timestamp, UInt8, UInt16,
-    UInt32, UInt64, Unit, background, get_timestamp, isSet, unit)
+    Overwrite, QuantityValue, Slot, State, String, TimeMixin, Timestamp,
+    UInt16, UInt64, Unit, background, get_timestamp, isSet, unit)
 from numpy import polyfit
 
 from .interlock import SingleInterlock
@@ -530,7 +530,10 @@ class MotorDevice(Device):
     velocity_diff = LocalVar('q')
     modulo = None
 
-    def program(self, leader=None):
+    def calculate_speed(self):
+        self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
+
+    def program(self):
         with self.ebpf.tmp:
             self.ebpf.tmp = ktime(self.ebpf)
             self.velocity_diff = (self.max_acceleration * (self.ebpf.tmp - self.lasttime)) >> 32
@@ -549,12 +552,7 @@ class MotorDevice(Device):
             if self.modulo:
                 self.ebpf.stmp = (self.ebpf.stmp + self.modulo) \
                                  % (2 * self.modulo) - self.modulo
-            self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
-            if leader is not None:
-                with ((self.set_enable & 4) != 0) & ((leader.set_enable & 1) != 0):
-                    self.ebpf.stmp += \
-                        (int(self.motors_factor * self.follow_factor
-                             * (1 << 16)) * leader.velocity) >> 16
+            self.calculate_speed()
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
             with self.ebpf.stmp + self.max_velocity < 0:
@@ -810,6 +808,13 @@ class RotationMotor(Motor):
 class FollowerDevice(MotorDevice):
     follow_offset = DeviceVar('q')
 
+    def calculate_speed(self):
+        super().calculate_speed()
+        with ((self.set_enable & 4) != 0) \
+                & ((self.leader.set_enable & 1) != 0):
+            self.ebpf.stmp += (int(self.motors_factor * self.follow_factor
+                                   * (1 << 16)) * self.leader.velocity) >> 16
+
     def program(self):
         with (self.set_enable & 4) != 0:
             self.target = ((self.leader.encoder
@@ -818,7 +823,7 @@ class FollowerDevice(MotorDevice):
             with abs(self.target - self.encoder) > self.follow_lag:
                 self.set_enable = 0
                 self.leader.set_enable = 0
-        super().program(self.leader)
+        super().program()
 
 
 class MotorFollower(Motor):
