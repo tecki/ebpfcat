@@ -711,6 +711,8 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         if abs(self.device.encoder - self.lastposition) > 3:
             self.actualPosition = (self.device.encoder * self.encodeStep
                                    + self.offset) * now()
+            if not isSet(self.targetPosition):
+                self.targetPosition = self.actualPosition
             self.lastposition = self.device.encoder
         if abs(self.device.velocity - self.lastvelocity) > 3:
             self.actualVelocity = self.device.velocity * self.motorStep \
