@@ -19,12 +19,13 @@
 A module that wraps the `bpf` system call in Python, using `ctypes`.
 """
 import string
-from ctypes import CDLL, c_int, get_errno, cast, c_void_p, create_string_buffer, c_char_p, addressof, c_char
+from ctypes import (
+    CDLL, addressof, c_char, c_char_p, c_int, c_void_p, cast,
+    create_string_buffer, get_errno)
 from enum import Enum, Flag
-from struct import pack, unpack
-from platform import machine
-
 from os import strerror
+from platform import machine
+from struct import calcsize, pack, unpack
 
 try:
     SYS_BPF = {
@@ -89,6 +90,14 @@ class ProgType(Enum):
     LWT_SEG6LOCAL = 19
     LIRC_MODE2 = 20
 
+
+class UpdateFlags(Flag):
+    ANY = 0
+    NOEXIST = 1
+    EXIST = 2
+    F_LOCK = 4
+
+
 libc = CDLL("libc.so.6", use_errno=True)
 
 def addrof(ptr):
@@ -109,21 +118,22 @@ def create_map(map_type, key_size, value_size, max_entries,
     return bpf(0, "IIIII", map_type.value, key_size, value_size, max_entries,
                attributes.value)[0]
 
-def lookup_elem(fd, key, size):
-    value = bytearray(size)
+def lookup_elem(fd, key, fmt):
+    value = bytearray(calcsize(fmt))
     addr = addressof(c_char.from_buffer(value))
     ret, _ = bpf(1, "IQQQ", fd, addrof(key), addr, 0)
     if ret == 0:
-        return value
+        return unpack(fmt, value)[0]
     else:
         return None
 
-def update_elem(fd, key, value, flags):
+def update_elem(fd, key, value, flags=UpdateFlags.ANY):
+    assert isinstance(flags, UpdateFlags)
     if isinstance(value, bytearray):
         addr = addressof(c_char.from_buffer(value))
     else:
         addr = addrof(value)
-    return bpf(2, "IQQQ", fd, addrof(key), addr, flags)[0]
+    return bpf(2, "IQQQ", fd, addrof(key), addr, flags.value)[0]
 
 def delete_elem(fd, key):
     return bpf(3, "IQ", fd, addrof(key))[0]
@@ -180,11 +190,3 @@ def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
             10, "IIIIQQII20x", fd, 0, len(data_in), len(data_out),
             addrof(data_in), addrof(data_out), repeat, 0)
     return ret, retval, duration, data_out.value, ctx_out.value
-
-if __name__ == "__main__":
-    fd = create_map(MapType.HASH, 4, 4, 10)
-    update_elem(fd, b"asdf", b"ckde", 0)
-    ret = lookup_elem(fd, b"asdf", 4)
-    ret[2:4] = b"kk"
-    update_elem(fd, b"asdf", ret, 0)
-    print(lookup_elem(fd, b"asdf", 4).raw)

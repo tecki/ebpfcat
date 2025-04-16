@@ -59,8 +59,7 @@ class HashGlobalVarDesc:
             return self
         if instance.loaded:
             fd = instance.__dict__[self.name].fd
-            ret = lookup_elem(fd, pack("B", self.count), 4)
-            return unpack(self.fmt, ret)[0]
+            return lookup_elem(fd, pack("B", self.count), self.fmt)
         ret = instance.__dict__.get(self.name, None)
         if ret is None:
             ret = HashGlobalVar(instance, self.count, self.fmt)
@@ -74,7 +73,7 @@ class HashGlobalVarDesc:
         if ebpf.loaded:
             fd = ebpf.__dict__[self.name].fd
             update_elem(fd, pack("B", self.count),
-                        pack("q" if self.fmt.islower() else "Q", value), 0)
+                        pack("q" if self.fmt.islower() else "Q", value))
             return
         with ebpf.save_registers([3]):
             with value.get_address(3, True, True):

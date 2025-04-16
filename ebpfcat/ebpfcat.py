@@ -462,7 +462,7 @@ class FastEtherCat(SimpleEtherCat):
             index = (index + 1) % self.MAX_PROGS
         sg.load()
         update_elem(self.programs, pack("<I", index),
-                    pack("<I", sg.file_descriptor), 0)
+                    pack("<I", sg.file_descriptor))
         sg.close()
         self.sync_groups[index] = sg
         try:
