@@ -40,6 +40,7 @@ async def info():
     parser.add_argument("-v", "--values", action="store_true")
     parser.add_argument("-p", "--pdo", action="store_true")
     parser.add_argument("-e", "--eeprom", action="store_true")
+    parser.add_argument("-r", "--reset", action="store_true")
     args = parser.parse_args()
 
     ec = ParallelEtherCat(args.interface)
@@ -53,7 +54,10 @@ async def info():
                                    for i, t in zip(terminals, terms)))
         else:
             term = Terminal(ec)
-            await term.gentle_initialize(-args.terminal)
+            if args.reset:
+                await term.initialize(-args.terminal)
+            else:
+                await term.gentle_initialize(-args.terminal)
             terms = [term]
 
         for i, t in enumerate(terms, args.terminal if args.terminal else 0):
