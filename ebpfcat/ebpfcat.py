@@ -17,33 +17,36 @@
 
 """The high-level API for EtherCAT loops"""
 import asyncio
-from asyncio import (
-    CancelledError, TimeoutError, ensure_future, gather,
-    get_event_loop, sleep, wait_for)
-from collections import defaultdict
-from contextlib import asynccontextmanager, AsyncExitStack, contextmanager
-from enum import Enum
 import gc
 import logging
-from multiprocessing import Array, Process, Value, get_context
 import os
-from random import randint
 import shutil
-from struct import pack, unpack, calcsize, pack_into, unpack_from
 import struct
 import tempfile
+from asyncio import (
+    CancelledError, TimeoutError, ensure_future, gather, get_event_loop, sleep,
+    wait_for)
+from collections import defaultdict
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
+from enum import Enum
+from multiprocessing import Array, Process, Value, get_context
+from random import randrange
+from struct import calcsize, pack, pack_into, unpack, unpack_from
 from time import monotonic
-from .arraymap import ArrayMap, ArrayGlobalVarDesc
-from .ethercat import (
-    ECCmd, EtherCat, MachineState, Packet, Terminal, EtherCatError,
-    Struct, SyncManager)
+
+from .arraymap import ArrayGlobalVarDesc, ArrayMap
+from .bpf import (
+    MapType, ProgType, create_map, delete_elem, lookup_elem, obj_get, obj_pin,
+    prog_test_run, update_elem)
 from .ebpf import (
     EBPFBase, FuncId, MemoryDesc, SimulatedEBPF, SubProgram, prandom)
+from .ethercat import (
+    ECCmd, EtherCat, EtherCatError, MachineState, Packet, Struct, SyncManager,
+    Terminal)
 from .lock import FMMULock, LockFile, ParallelMailboxLock
-from .xdp import XDP, XDPExitCode, PacketVar as XDPPacketVar
-from .bpf import (
-    MapType, ProgType, create_map, delete_elem, lookup_elem, obj_pin, obj_get,
-    prog_test_run, update_elem)
+from .xdp import XDP
+from .xdp import PacketVar as XDPPacketVar
+from .xdp import XDPExitCode
 
 
 class PacketDesc:
@@ -457,11 +460,19 @@ class FastEtherCat(SimpleEtherCat):
 
     @contextmanager
     def register_sync_group(self, sg):
-        index = len(self.sync_groups)
-        while index in self.sync_groups:
-            index = (index + 1) % self.MAX_PROGS
         sg.load()
-        update_elem(self.programs, pack("<I", index),
+
+        while True:
+            index = randrange(self.MAX_PROGS)
+            key = pack("<I", index)
+
+            try:
+                ret = lookup_elem(self.programs, key, '<I')
+            except OSError as e:
+                if e.errno == 2:  # not found
+                    break
+                raise
+        update_elem(self.programs, key,
                     pack("<I", sg.file_descriptor))
         sg.close()
         self.sync_groups[index] = sg
@@ -469,6 +480,7 @@ class FastEtherCat(SimpleEtherCat):
             yield index
         finally:
             delete_elem(self.programs, pack("<I", index))
+            del self.sync_groups[index]
 
     async def connect(self):
         await super().connect()
@@ -511,7 +523,7 @@ class ParallelEtherCat(FastEtherCat):
                     lf.write(f'{os.getpid():10}\n')
                 return lockfile
             except FileExistsError:
-                self.ethertype = randint(0x3000, 0x6000)
+                self.ethertype = randrange(0x3000, 0x6000)
                 continue
 
     def get_mbx_lock(self, no):
