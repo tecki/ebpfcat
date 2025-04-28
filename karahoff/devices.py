@@ -879,7 +879,8 @@ class SynchronizeDevice(MotorDevice):
             self.ebpf.stmp = self.set_velocity
 
     def program(self):
-        with (self.high_switch == 0) & (self.lastswitch == 1):
+        with (self.high_switch == 0) & (self.lastswitch == 1) \
+                & (self.last_velocity > 0):
             self.trigtime = ktime(self.ebpf)
             self.trigposition = self.encoder
         self.lastswitch = self.high_switch
@@ -892,6 +893,8 @@ class SynchronizedMotor(RotationMotor):
     targetPhase = Float(defaultValue=0)
     lasttrigtime = 0
     timediff = int((monotonic() - time()) * 1e9)
+
+    offset = Double(defaultValue=0, unitSymbol=Unit.DEGREE)
 
     integral = Float(unitSymbol=Unit.HERTZ, accessMode=AccessMode.READONLY)
     triggerPosition = Float(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
@@ -915,6 +918,7 @@ class SynchronizedMotor(RotationMotor):
                        / (TimeMixin._period * 1e3)) + TimeMixin._tid
             error = ((trainId + self.targetPhase.value + 1) % 2 - 1)
             self.triggerPhase = error
+            self.offset = -self.device.trigposition * self.encodeStep
             if self.device.set_enable & 4:
                 self.integral += \
                     error * self.integralTerm.value * unit.Hz * now()
