@@ -550,8 +550,11 @@ class MotorDevice(Device):
         with self.ebpf.stmp:
             self.ebpf.stmp = self.target - self.encoder
             if self.modulo:
-                self.ebpf.stmp = (self.ebpf.stmp + self.modulo) \
-                                 % (2 * self.modulo) - self.modulo
+                # we need to add a huge number to avoid signed modulo
+                self.ebpf.stmp = (
+                    self.ebpf.stmp
+                    + (self.modulo + 2 * (0x80000000 // self.modulo + 1)
+                       * self.modulo)) % (2 * self.modulo) - self.modulo
             self.calculate_speed()
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
