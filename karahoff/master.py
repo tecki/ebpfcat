@@ -194,10 +194,13 @@ class EtherCATSyncGroupBase(Device):
     async def onInitialization(self):
         self.status = "waiting for master"
         master = await getDevice(self.master)
+        assert master.serverId == self.serverId, f'server {master.serverId}'
         self.ethercat = self.getLocalDevice(self.master)
         assert isinstance(self.ethercat, EtherCATMaster)
         self.status = "waiting for devices"
         devs = await gather(*[getDevice(d) for d in self.devices])
+        for d in devs:
+            assert d.serverId == self.serverId, f'{d.deviceId} on {d.serverId}'
         self.status = "waiting for master to go to ON state"
         with master:
             await waitUntil(lambda: master.state == State.ON)
@@ -460,7 +463,8 @@ class EtherCATTerminal(Device):
 
     async def onInitialization(self):
         self.status = "waiting for master"
-        await getDevice(self.master)
+        dev = await getDevice(self.master)
+        assert dev.serverId == self.serverId, f'wrong server {dev.serverId}'
         self.ethercat = self.getLocalDevice(self.master)
         await waitUntil(lambda: self.ethercat.state == State.ON)
         try:
