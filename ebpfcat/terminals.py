@@ -222,7 +222,7 @@ class EL7041(EBPFTerminal):
     error = ProcessDesc(0x6010, 4)
     high_switch = ProcessDesc(0x6010, 0xc)
     low_switch = ProcessDesc(0x6010, 0xd)
-    stepcounter = ProcessDesc(0x6000, 0x11)
+    stepcounter = ProcessDesc(0x6000, 0x11, 'i')
 
     max_current = ServiceDesc(0x8010, 1)
     max_voltage = ServiceDesc(0x8010, 3)
