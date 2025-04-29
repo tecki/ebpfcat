@@ -528,7 +528,6 @@ class MotorDevice(Device):
     proportional = DeviceVar('q')
     lasttime = DeviceVar('Q')
     velocity_diff = LocalVar('q')
-    modulo = None
 
     def calculate_speed(self):
         self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
@@ -536,7 +535,8 @@ class MotorDevice(Device):
     def program(self):
         with self.ebpf.tmp:
             self.ebpf.tmp = ktime(self.ebpf)
-            self.velocity_diff = (self.max_acceleration * (self.ebpf.tmp - self.lasttime)) >> 32
+            self.velocity_diff = (self.max_acceleration
+                                  * (self.ebpf.tmp - self.lasttime)) >> 32
             with self.velocity_diff > 0 as Else:
                 self.lasttime = self.ebpf.tmp
 
@@ -549,12 +549,6 @@ class MotorDevice(Device):
             self.deadband_exceeded = 1
         with self.ebpf.stmp:
             self.ebpf.stmp = self.target - self.encoder
-            if self.modulo:
-                # we need to add a huge number to avoid signed modulo
-                self.ebpf.stmp = (
-                    self.ebpf.stmp
-                    + (self.modulo + 2 * (0x80000000 // self.modulo + 1)
-                       * self.modulo)) % (2 * self.modulo) - self.modulo
             self.calculate_speed()
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
@@ -775,8 +769,21 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             return State.ON
 
 
+class RotationDevice(MotorDevice):
+    def calculate_speed(self):
+        if self.modulo:
+            # we need to add a huge number to avoid signed modulo
+            self.ebpf.stmp = (
+                self.ebpf.stmp
+                + (self.modulo + 2 * (0x80000000 // self.modulo + 1)
+                   * self.modulo)) % (2 * self.modulo) - self.modulo
+        super().calculate_speed()
+
+
 class RotationMotor(Motor):
     """A stepper motor with degrees as unit"""
+    Device = RotationDevice
+
     encodeStep = Overwrite(unitSymbol=Unit.DEGREE,
                            metricPrefixSymbol=MetricPrefix.NONE)
     motorStep = Overwrite(unitSymbol=Unit.DEGREE,
@@ -867,7 +874,7 @@ class MotorFollower(Motor):
         return ret
 
 
-class SynchronizeDevice(MotorDevice):
+class SynchronizeDevice(RotationDevice):
     trigtime = DeviceVar('Q')
     trigposition = DeviceVar('i')
     set_velocity = DeviceVar('h')
@@ -875,7 +882,7 @@ class SynchronizeDevice(MotorDevice):
 
     def calculate_speed(self):
         super().calculate_speed()
-        with (self.set_enable & 4) != 0 as Else:
+        with (self.set_enable & 4) != 0:
             self.ebpf.stmp = self.set_velocity
 
     def program(self):
@@ -918,7 +925,7 @@ class SynchronizedMotor(RotationMotor):
                        / (TimeMixin._period * 1e3)) + TimeMixin._tid
             error = ((trainId + self.targetPhase.value + 1) % 2 - 1)
             self.triggerPhase = error
-            self.offset = -self.device.trigposition * self.encodeStep
+            self.offset = -self.device.trigposition * self.encodeStep * now()
             if self.device.set_enable & 4:
                 self.integral += \
                     error * self.integralTerm.value * unit.Hz * now()
