@@ -717,10 +717,9 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.set_enable = 0
 
     lastvelocity = lastposition = 100j  # always far away from the real value
+    baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
 
     def update_properties(self):
-        baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
-
         self.device.max_acceleration = \
             int((self.maxAcceleration/ self.motorStep / 1e9 * 2**32).value)
         if abs(self.device.encoder - self.lastposition) > 3:
@@ -731,7 +730,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             self.lastposition = self.device.encoder
         if abs(self.device.velocity - self.lastvelocity) > 3:
             self.actualVelocity = self.device.velocity * self.motorStep \
-                    * baseFrequency * now()
+                    * self.baseFrequency * now()
             self.lastvelocity = self.device.velocity
         if self.device.low_switch != self.isCCWLimit:
             self.isCCWLimit = self.device.low_switch
@@ -741,7 +740,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.deadband_exceeded = 0
         self.device.max_velocity = \
             min(0x7fff, int(self.targetVelocity / self.motorStep
-                            / baseFrequency))
+                            / self.baseFrequency))
         self.device.proportional = int(self.proportional * self.encodeStep
                                        / self.motorStep * (1 << 16))
         self.device.deadband = int(self.deadband // self.encodeStep)
@@ -912,8 +911,6 @@ class SynchronizedMotor(RotationMotor):
 
 
     def update_properties(self):
-        baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
-
         ret = super().update_properties()
         if self.lasttrigtime != self.device.trigtime:
             self.lasttrigtime = self.device.trigtime
@@ -931,17 +928,15 @@ class SynchronizedMotor(RotationMotor):
                     error * self.integralTerm.value * unit.Hz * now()
                 self.device.set_velocity = \
                     int((self.proportionalTerm.value * error * unit.Hz
-                         + self.integral) / baseFrequency)
+                         + self.integral) / self.baseFrequency)
         return ret
 
     @Slot()
     async def synchronize(self):
-        baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
-
         self.device.set_enable = 5
         self.integral = 45 * unit.degree \
                 / (100 * unit.millisecond * self.motorStep)
-        self.device.set_velocity = int(self.integral / baseFrequency)
+        self.device.set_velocity = int(self.integral / self.baseFrequency)
 
 
 class BronkhorstDevice(Device):
