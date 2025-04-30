@@ -1123,14 +1123,13 @@ class ValveDevice(Device):
 
     error = DeviceVar('?')
     target = DeviceVar('?')
-    modulo = DeviceVar('I')
-    divisor = DeviceVar('I')
-    delay = DeviceVar('f')
+    divisor = DeviceVar('d')
+    opentime = DeviceVar('d')
+    delay = DeviceVar('d')
 
     def update(self):
         if self.divisor > 0:
-            ts = get_timestamp(Timestamp(time() - self.delay))
-            self.target = ts.tid % self.divisor == self.modulo
+            self.target = (time() - self.delay) % self.divisor < self.opentime
         inPosition = self.openSwitch != self.closeSwitch
         isCorrect = ((self.closeSwitch or not self.openSwitch)
                      if (self.coil == self.safeState)
@@ -1186,33 +1185,40 @@ class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
         self.device.movingTime = self.movingTime.value
         self.device.safeState = self.safeState.value
         self.device.lastGood = monotonic()
+        self.chopping = False
 
     @Slot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
     async def open(self):
-        self.device.divisor = 0
+        self.chopping = False
         self.device.target = not self.safeState
         await self.state_change.wait()
 
     @Slot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
     async def close(self):
-        self.device.divisor = 0
+        self.chopping = False
         self.device.target = self.safeState
         await self.state_change.wait()
 
     @Slot(allowedStates={State.OPENED, State.MOVING, State.CLOSED})
-    async def rock(self):
+    async def chopper(self):
         """open and close the valve regularly"""
-        self.device.divisor = self.divisor.value
-        self.device.modulo = self.modulo.value
-        self.device.delay = (self.delay / unit.second).value
+        self.chopping = True
         await self.state_change.wait()
 
     @Slot(allowedStates={State.ERROR})
     async def reset(self):
         await super().reset()
+        self.chopping = False
         self.device.reset()
 
     def update_properties(self):
+        if self.chopping:
+            self.device.divisor = self.divisor * TimeMixin._period * 1e-6
+            self.device.delay = TimeMixin._time_sec + TimeMixin._time_frac * 1e-18 \
+                    + self.delay / unit.s + self.modulo * TimeMixin._period * 1e-6
+            self.device.opentime = TimeMixin._period * 1e-6
+        else:
+            self.device.divisor = 0
         if self.openSwitch and self.device.openSwitch != self.isOpened:
             self.isOpened = self.device.openSwitch
         if self.closeSwitch and self.device.closeSwitch != self.isClosed:
@@ -1229,7 +1235,7 @@ class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
             return ret
         if self.device.error:
             return State.ERROR
-        elif self.device.divisor > 0:
+        elif self.chopping:
             return State.MOVING
         elif self.device.coil == self.safeState:
             if (self.closeSwitch and not self.device.closeSwitch
