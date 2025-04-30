@@ -35,6 +35,7 @@ from karabo.middlelayer import (
     Overwrite, QuantityValue, Slot, State, String, TimeMixin, Timestamp,
     UInt16, UInt64, Unit, background, get_timestamp, isSet, unit)
 from numpy import polyfit
+from numpy.linalg import LinAlgError
 
 from .interlock import SingleInterlock
 from .master import EtherCATDevice
@@ -749,10 +750,14 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             self.counts.append(self.device.stepcounter)
             self.encoders.append(self.device.encoder)
             if len(self.counts) >= 100:
-                slope, _ = polyfit(self.counts, self.encoders, 1)
-                self.motorStepMeasured = slope * self.encodeStep * now()
-                self.counts = []
-                self.encoders = []
+                try:
+                    slope, _ = polyfit(self.counts, self.encoders, 1)
+                except LinAlgError:
+                    pass
+                else:
+                    self.motorStepMeasured = slope * self.encodeStep * now()
+                    self.counts = []
+                    self.encoders = []
 
         if (ret := super().update_properties()) is not None:
             return ret
