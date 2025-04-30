@@ -1104,7 +1104,8 @@ class InficonDevice(Device):
 class Inficon(EtherCATDevice):
     gauge = String(accessMode=AccessMode.INITONLY,
                    assignment=Assignment.MANDATORY)
-    value = Float(accessMode=AccessMode.READONLY)
+    value = Float(accessMode=AccessMode.READONLY,
+                  unitSymbol=Unit.BAR, metricPrefixSymbol=MetricPrefix.MILLI)
 
     def join(self, syncGroup):
         super().join(syncGroup)
@@ -1114,7 +1115,7 @@ class Inficon(EtherCATDevice):
         self.device.valid = self.gauge_term.valid
 
     def update_properties(self):
-        self.value = self.device.value
+        self.value = self.device.value * unit.Pa
         if self.device.valid:
             return State.ON
         else:
