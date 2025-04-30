@@ -767,7 +767,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             return State.ERROR, 'motor reported error'
         elif not self.device.enable:
             return State.OFF
-        elif self.device.velocity != 0 and self.device.deadband_exceeded:
+        elif self.device.deadband_exceeded:
             return State.MOVING
         else:
             return State.ON
