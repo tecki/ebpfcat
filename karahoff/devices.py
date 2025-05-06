@@ -1314,7 +1314,7 @@ class ShutterDevice(Device):
 
     error = DeviceVar('?')
     target = DeviceVar('?')
-    speed = DeviceVar('h')
+    lastGood = monotonic()
 
     def update(self):
         if (self.openSwitch != self.closeSwitch) \
@@ -1357,14 +1357,12 @@ class Shutter(EtherCATDevice):
     def join(self, syncGroup):
         super().join(syncGroup)
         self.device = ShutterDevice()
-        self.device.reset()
         self.device.velocity = self.find_channel(self.velocity)
         self.device.openSwitch = self.find_channel(self.openSwitch)
         self.device.closeSwitch = self.find_channel(self.closeSwitch)
         self.device.enable = self.find_channel(self.enable)
         self.device.movingTime = self.movingTime.value
         self.device.speed = self.speed.value
-        self.device.target = False
 
     @Slot(allowedStates={State.CLOSED, State.CLOSING})
     async def open(self):
