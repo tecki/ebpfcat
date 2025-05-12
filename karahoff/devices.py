@@ -37,7 +37,7 @@ from karabo.middlelayer import (
 from numpy import polyfit
 from numpy.linalg import LinAlgError
 
-from .interlock import SingleInterlock
+from .interlock import Interlock, InterlockSlot
 from .master import EtherCATDevice
 
 
@@ -1154,7 +1154,7 @@ class ValveDevice(Device):
         self.lastGood = monotonic()
 
 
-class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
+class Valve(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     """A standard valve, one coil and two limit switches"""
     coil = String(accessMode=AccessMode.INITONLY,
                   assignment=Assignment.MANDATORY)
@@ -1193,17 +1193,15 @@ class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
         self.device.lastGood = monotonic()
         self.chopping = False
 
-    @Slot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
-    async def open(self):
+    @InterlockSlot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
+    def open(self):
         self.chopping = False
         self.device.target = not self.safeState
-        await self.state_change.wait()
 
-    @Slot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
-    async def close(self):
+    @InterlockSlot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
+    def close(self):
         self.chopping = False
         self.device.target = self.safeState
-        await self.state_change.wait()
 
     @Slot(allowedStates={State.OPENED, State.MOVING, State.CLOSED})
     async def chopper(self):
@@ -1231,7 +1229,6 @@ class Valve(OptionalKeepOnMixin, SingleInterlock, EtherCATDevice):
             self.isClosed = self.device.closeSwitch
         ret = super().update_properties()
         if isinstance(ret, tuple) and ret[0] == State.INTERLOCKED:
-            self.device.target = False
             self.device.divisor = 0
             if self.device.error:
                 return State.ERROR

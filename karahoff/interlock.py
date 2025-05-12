@@ -26,20 +26,18 @@ def replace(deviceId):
     return ret, subs 
 
 
-def InterlockSlot(**kwargs):
-    def inner(func):
-        @Slot(**kwargs)
+class InterlockSlot(Slot):
+    def __call__(self, func):
         async def wrapper(self):
             func(self)
             await self.state_change.wait()
             await self.state_change.wait()
-        wrapper.synchronous = func
-        return wrapper
-    return inner
+        self.synchronous = func
+        return super().__call__(wrapper)
 
 
 class InterlockCondition(Configurable):
-    condition = String(accessMode=AccessMode.INITONLY)
+    condition = String(accessMode=AccessMode.INITONLY, defaultValue='False')
     override = Bool(defaultValue=False)
     timeout = Float(defaultValue=0, unitSymbol=Unit.SECOND)
 
@@ -61,6 +59,7 @@ class InterlockCondition(Configurable):
         else:
             try:
                 interlock = eval(self.compiled, myglobals, self.locals)
+                msg = f'interlock {self.condition.value}'
             except Exception as e:
                 msg = f'error in interlock: {e}'
                 interlock = True
@@ -71,71 +70,36 @@ class InterlockCondition(Configurable):
             self.override = False
         elif interlock and not self.override \
                 and monotonic() - self.lastgood > self.timeout.value:
-            return 'interlocked'
+            return msg
 
 
 class Interlock(EtherCATDevice):
+    interlock_nodes = []
+
     def __init_subclass__(cls, **kwargs):
-        for k, v, in cls.__dict__.items():
-            if isinstance(v, Slot) and hasattr(v, synchronous):
-                setattr(cls, f'{k}Interlock', Node(InterlockCondition))
+        nodes = [k for k, v in cls.__dict__.items()
+                 if isinstance(v, InterlockSlot)]
+        for k in nodes:
+            node = Node(InterlockCondition)
+            setattr(cls, f'{k}Interlock', node)
+            node.__set_name__(cls, f'{k}Interlock')
+        cls.interlock_nodes = cls.interlock_nodes + nodes
         super().__init_subclass__(**kwargs)
 
     def join(self, syncgroup):
+        super().join(syncgroup)
         self.interlock_conditions = []
-        for attr in self._allattrs:
-            v = getattr(self.__class__, attr)
-            if isinstance(v, Node) and v.cls is InterlockCondition:
-                vv = getattr(self, attr)
-                vv.command = v.synchronous.__get__(self, self.__class__)
-                self.interlock_conditions.append(vv)
-                vv.compile(self)
+        for key in self.interlock_nodes:
+            node = getattr(self, f'{key}Interlock')
+            node.command = getattr(self.__class__, key).synchronous \
+                    .__get__(self, self.__class__)
+            self.interlock_conditions.append(node)
+            node.compile(self)
 
     def update_properties(self):
         for cond in self.interlock_conditions:
             msg = cond.check()
             if msg is not None:
+                cond.command()
                 return State.INTERLOCKED, msg
-
-
-class SingleInterlock(Device):
-    interlockCondition = String(accessMode=AccessMode.INITONLY,
-                                defaultValue='False')
-    interlockOverride = Bool(defaultValue=False)
-    interlockTimeout = Float(defaultValue=0, unitSymbol=Unit.SECOND)
-    interlock_lastgood = 0
-
-    def join(self, syncgroup):
-        cond, subs = replace(self.interlockCondition.value)
-        self.interlock_locals = {k: self.getLocalDevice(v)
-                                 for k, v in subs.items()}
-        self.interlock_locals['self'] = self
-        self.interlock_condition = compile(cond, self.deviceId.value, 'eval')
-        super().join(syncgroup)
-
-    def update_properties(self):
-        msg = None
-        for k, v in self.interlock_locals.items():
-            if k != 'self' and v.state == State.ERROR:
-                interlock = True
-                msg = f'device {v.deviceId.value} in error'
-                break
-        else:
-            try:
-                interlock = eval(self.interlock_condition,
-                                 myglobals, self.interlock_locals)
-            except Exception as e:
-                msg = f'error in interlock: {e}'
-                interlock = True
-        ret = super().update_properties()
-        if not interlock:
-            self.interlock_lastgood = monotonic()
-        if self.interlockOverride and not interlock:
-            self.interlockOverride = False
-            return ret
-        elif interlock and not self.interlockOverride \
-                and monotonic() - self.interlock_lastgood \
-                    > self.interlockTimeout.value:
-            return State.INTERLOCKED, msg
-        else:
-            return ret
+        return super().update_properties()
