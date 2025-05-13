@@ -37,17 +37,34 @@ class InterlockSlot(Slot):
 
 
 class InterlockCondition(Configurable):
-    condition = String(accessMode=AccessMode.INITONLY, defaultValue='False')
+    parent = None
+
+    @String(defaultValue='False')
+    async def condition(self, value):
+        if self.parent is None:
+            self.condition = value
+            return
+        local, compiled = self.compile(value)
+        eval(compiled, myglobals, local)  # check it works at least once
+        self.compiled = compiled
+        self.locals = local
+        self.condition = value
+
+    def setParent(self, parent):
+        self.parent = parent
+        self.locals, self.compiled = self.compile(self.condition)
+
     override = Bool(defaultValue=False)
     timeout = Float(defaultValue=0, unitSymbol=Unit.SECOND)
 
     lastgood = 0
 
-    def compile(self, parent):
-        cond, subs = replace(self.condition)
-        self.locals = {k: parent.getLocalDevice(v) for k, v in subs.items()}
-        self.locals['self'] = parent
-        self.compiled = compile(cond, parent.deviceId.value, 'eval')
+    def compile(self, condition):
+        cond, subs = replace(condition)
+        local = {k: self.parent.getLocalDevice(v)
+                       for k, v in subs.items()}
+        local['self'] = self.parent
+        return local, compile(cond, self.parent.deviceId.value, 'eval')
 
     def check(self):
         msg = None
@@ -94,7 +111,7 @@ class Interlock(EtherCATDevice):
             node.command = getattr(self.__class__, key).synchronous \
                     .__get__(self, self.__class__)
             self.interlock_conditions.append(node)
-            node.compile(self)
+            node.setParent(self)
 
     def update_properties(self):
         for cond in self.interlock_conditions:
