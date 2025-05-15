@@ -510,16 +510,14 @@ class MotorDevice(Device):
     encoder = TerminalVar()
     low_switch = TerminalVar()
     high_switch = TerminalVar()
-    enable = TerminalVar()
-    reset = TerminalVar()
-    error = TerminalVar()
+    enabled = TerminalVar()
+    control_word = TerminalVar()
     reduced_current = TerminalVar()
     stepcounter = TerminalVar()
 
-    tstatus = TerminalVar()
     encoder_error = TerminalVar()
 
-    set_enable = DeviceVar('B')
+    set_control_word = DeviceVar('H')
     deadband_exceeded = DeviceVar('b')
     max_velocity = DeviceVar('q')
     last_velocity = DeviceVar('q')
@@ -541,13 +539,14 @@ class MotorDevice(Device):
             with self.velocity_diff > 0 as Else:
                 self.lasttime = self.ebpf.tmp
 
-        self.reset = (self.set_enable & 2) != 0
-        self.enable = (self.set_enable & 1) != 0
-        with abs(self.target - self.encoder) < self.deadband as Else:
-            self.reduced_current = True
-        with Else:
-            self.reduced_current = False
+        self.control_word = self.set_control_word
+        with abs(self.target - self.encoder) > self.deadband as Else:
+            if self.reduced_current is not None:
+                self.reduced_current = False
             self.deadband_exceeded = 1
+        if self.reduced_current is not None:
+            with Else:
+                self.reduced_current = True
         with self.ebpf.stmp:
             self.ebpf.stmp = self.target - self.encoder
             self.calculate_speed()
@@ -568,7 +567,7 @@ class MotorDevice(Device):
                 self.velocity = self.last_velocity + self.velocity_diff
             with Else, self.last_velocity > self.ebpf.stmp + self.velocity_diff:
                 self.velocity = self.last_velocity - self.velocity_diff
-            with self.enable as Else:
+            with self.enabled as Else:
                 self.last_velocity = self.velocity
             with Else:
                 self.last_velocity = 0
@@ -649,12 +648,23 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         super().join(syncGroup)
         self.device = self.Device()
         self.motor_term = self.find_channel(self.motor)
+        from ebpfcat.terminals import EL7062
+        if isinstance(self.motor_term, EL7062.Channel):
+            self.isServo = True
+            self.FAULT_RESET = 0x80
+            self.SHUTDOWN = 6
+            self.SWITCH_OFF = 7
+            self.ENABLE = 0xf
+        else:
+            self.isServo = False
+            self.FAULT_RESET = 2
+            self.ENABLE = 1
+            self.SWITCH_OFF = self.SHUTDOWN = 0
         self.encoder_term = self.find_channel(self.encoder)
         self.device.velocity = self.motor_term.velocity
         self.device.isLimitless = self.isLimitless.value
         self.device.low_switch = self.motor_term.low_switch
         self.device.high_switch = self.motor_term.high_switch
-        self.device.tstatus = self.motor_term.status
         if isinstance(self.encoder_term, Struct):
             self.device.encoder = self.encoder_term.position
             self.device.encoder_error = self.encoder_term.error
@@ -664,10 +674,11 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             self.terminals = dict(M=self.motor_term, E=None)
         if hasattr(self.motor_term, 'stepcounter'):
             self.device.stepcounter = self.motor_term.stepcounter
-        self.device.enable = self.motor_term.enable
-        self.device.error = self.motor_term.error
-        self.device.reset = self.motor_term.reset
-        self.device.reduced_current = self.motor_term.reduced_current
+        self.device.control_word = self.motor_term.control
+        self.device.enabled = self.motor_term.enabled
+        if hasattr(self.motor_term, 'reduced_current'):
+            self.device.reduced_current = self.motor_term.reduced_current
+
         self.counts = []
         self.encoders = []
 
@@ -676,7 +687,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     async def move(self):
         self.device.target = int((self.targetPosition - self.offset)
                                  // self.encodeStep)
-        self.device.set_enable = True
+        self.device.set_control_word = self.ENABLE
         # just in case await twice, to guarantee the device goes to the right
         # state. Not sure whether that's actually necessay, didn't test
         await self.state_change.wait()
@@ -696,7 +707,7 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     @Slot(displayedName='Off',
           allowedStates={State.ON, State.MOVING, State.INTERLOCKED})
     async def off(self):
-        self.device.set_enable = False
+        self.device.set_control_word = self.SWITCH_OFF
 
     @Slot(displayedName='Step Up',
           allowedStates={State.OFF, State.ON, State.MOVING})
@@ -713,9 +724,16 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
     @Slot()
     async def reset(self):
         await super().reset()
-        self.device.set_enable = 2
+        self.device.set_control_word = self.FAULT_RESET
         await sleep(0.2)
-        self.device.set_enable = 0
+        self.device.set_control_word = self.SHUTDOWN
+
+    keepDisabled = False
+
+    @Slot()
+    async def disable(self):
+        self.device.set_control_word = 0
+        self.keepDisabled = True
 
     lastvelocity = lastposition = 100j  # always far away from the real value
     baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
@@ -763,10 +781,23 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
             return ret
         elif self.terminals["E"] is not None and self.device.encoder_error:
             return State.ERROR, f'encoder reported error'
-        elif self.device.error:
+        elif self.motor_term.error.get(self.device):
             return State.ERROR, 'motor reported error'
-        elif not self.device.enable:
-            return State.OFF
+        elif self.isServo \
+                and not self.motor_term.ready_switch_on.get(self.device):
+            if self.motor_term.switch_on_disabled.get(self.device):
+                if not self.keepDisabled:
+                    self.device.set_control_word = self.SHUTDOWN
+                return State.DISABLED
+            else:
+                return State.STARTING
+        elif not self.motor_term.enabled.get(self.device):
+            if self.isServo \
+                    and not self.motor_term.switched_on.get(self.device):
+                self.device.set_control_word = self.SWITCH_OFF
+                return State.SWITCHING_ON
+            else:
+                return State.OFF
         elif self.device.deadband_exceeded:
             return State.MOVING
         else:
@@ -821,22 +852,24 @@ class RotationMotor(Motor):
 
 class FollowerDevice(MotorDevice):
     follow_offset = DeviceVar('q')
+    doFollow = DeviceVar('B')
 
     def calculate_speed(self):
         super().calculate_speed()
-        with ((self.set_enable & 4) != 0) \
-                & ((self.leader.set_enable & 1) != 0):
+        with (self.doFollow != 0) \
+                & (self.leader.device.enabled != 0):
             self.ebpf.stmp += (int(self.motors_factor * self.follow_factor
-                                   * (1 << 16)) * self.leader.velocity) >> 16
+                                   * (1 << 16)) * self.leader.device.velocity) >> 16
 
     def program(self):
-        with (self.set_enable & 4) != 0:
-            self.target = ((self.leader.encoder
+        with self.doFollow != 0:
+            self.target = ((self.leader.device.encoder
                            * int(self.follow_factor * (1 << 16))) >> 16) \
                         + self.follow_offset
             with abs(self.target - self.encoder) > self.follow_lag:
-                self.set_enable = 0
-                self.leader.set_enable = 0
+                self.set_control_word = self.SWITCH_OFF
+                self.do_follow = 0
+                self.leader.device.set_control_word = self.leader.SWITCH_OFF
         super().program()
 
 
@@ -854,7 +887,7 @@ class MotorFollower(Motor):
     def join(self, syncGroup):
         super().join(syncGroup)
         leader = self.getLocalDevice(self.leader)
-        self.device.leader = leader.device
+        self.device.leader = leader
         self.device.follow_factor = self.factor.value
         self.device.motors_factor = (leader.motorStep / self.motorStep).value
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
@@ -868,12 +901,13 @@ class MotorFollower(Motor):
             return
         self.device.follow_offset = \
             int(self.device.encoder - self.device.leader.encoder * self.factor)
-        self.device.set_enable = 5
+        self.device.do_follow = 1
+        self.device.set_enable = 1
         await self.state_change.wait()
 
     def update_properties(self):
         ret = super().update_properties()
-        if ret in (State.MOVING, State.ON) and self.device.set_enable & 4:
+        if ret in (State.MOVING, State.ON) and self.device.doFollow:
             return State.INTERLOCKED
         return ret
 
@@ -883,10 +917,11 @@ class SynchronizeDevice(RotationDevice):
     trigposition = DeviceVar('i')
     set_velocity = DeviceVar('h')
     lastswitch = DeviceVar('B')
+    doSynchronize = DeviceVar('B')
 
     def calculate_speed(self):
         super().calculate_speed()
-        with (self.set_enable & 4) != 0:
+        with self.doSynchronize != 0:
             self.ebpf.stmp = self.set_velocity
 
     def program(self):
@@ -928,7 +963,7 @@ class SynchronizedMotor(RotationMotor):
             error = ((trainId + self.targetPhase.value + 1) % 2 - 1)
             self.triggerPhase = error
             self.offset = -self.device.trigposition * self.encodeStep * now()
-            if self.device.set_enable & 4:
+            if self.device.doSynchronize:
                 self.integral += \
                     error * self.integralTerm.value * unit.Hz * now()
                 self.device.set_velocity = \
@@ -938,7 +973,8 @@ class SynchronizedMotor(RotationMotor):
 
     @Slot()
     async def synchronize(self):
-        self.device.set_enable = 5
+        self.device.doSynchronize = 1
+        self.device.set_enable = 1
         self.integral = 45 * unit.degree \
                 / (100 * unit.millisecond * self.motorStep)
         self.device.set_velocity = int(self.integral / self.baseFrequency)

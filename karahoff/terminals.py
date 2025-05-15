@@ -50,6 +50,17 @@ class EL7041Terminal(EtherCATTerminal):
     invLogicLim2 = Bool(alias='invLogicLim2')
 
 
+class EL7062Terminal(EtherCATTerminal):
+    Base = terminals.EL7062
+
+    class OneChannel(Channel):
+        operation_mode = UInt8(alias='operation_mode', defaultValue=9)
+        max_current = UInt16(alias='max_current')
+
+    channel1 = Node(OneChannel, alias='channel1')
+    channel2 = Node(OneChannel, alias='channel2')
+
+
 class EL6002Terminal(EtherCATTerminal):
     Base = terminals.EL6002
 

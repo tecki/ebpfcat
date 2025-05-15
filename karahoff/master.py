@@ -407,7 +407,10 @@ class Channel(Configurable):
                 setattr(self, attr.key, value)
                 return
             entry = getattr(self._channel, attr.alias)
-            await entry.write(value.value)
+            try:
+                await entry.write(value.value)
+            except EtherCatError as e:
+                self.get_root().logger.warning('could not write %s', attr.key)
             r = await entry.read()
             setattr(self, attr.key, r)
 
