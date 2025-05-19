@@ -971,7 +971,8 @@ class Terminal:
                 raise EtherCatError(f"requested index {index:x}:{subindex:x}, "
                                     f"got {idx:x}:{subidx:x}")
             if coecmd >> 12 != CoECmd.SDORES.value:
-                raise EtherCatError(f"expected CoE SDORES, got {coecmd>>12:x}")
+                raise EtherCatError(f"expected CoE SDORES, got {coecmd>>12:x} "
+                                    f"for {index:x}:{subindex:x}")
         else:
             async with self.mbx_lock:
                 stop = min(len(data), self.mbx_out_sz - 16)
