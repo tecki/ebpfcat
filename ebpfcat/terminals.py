@@ -215,10 +215,12 @@ class EL7041(EBPFTerminal):
     out_pdos = [0x1601, 0x1602, 0x1604]
     in_pdos = [0x1A01, 0x1A03]
     velocity = ProcessDesc(0x7010, 0x21, "h")
+    control = ProcessDesc(0x7010, 1, 'H')
     enable = ProcessDesc(0x7010, 1)
     reset = ProcessDesc(0x7010, 2)
     reduced_current = ProcessDesc(0x7010, 3)
     status = ProcessDesc(0x6010, 1, "H")
+    enabled = ProcessDesc(0x6010, 2)
     error = ProcessDesc(0x6010, 4)
     high_switch = ProcessDesc(0x6010, 0xc)
     low_switch = ProcessDesc(0x6010, 0xd)
@@ -230,6 +232,36 @@ class EL7041(EBPFTerminal):
     motor_emf = ServiceDesc(0x8010, 5)
     invLogicLim1 = ServiceDesc(0x8012, 0x30)
     invLogicLim2 = ServiceDesc(0x8012, 0x31)
+
+
+class EL7062(EBPFTerminal):
+    compatibility = {(2, 0x1B963052)}
+
+    out_pdos = [0x1600, 0x1601, 0x1680, 0x1681]
+    in_pdos = [0x1A00, 0x1A01, 0x1A10, 0x1A80, 0x1A81, 0x1A90]
+
+    class Channel(Struct):
+        velocity = ProcessDesc(0x7010, 6, 'i')
+        enable = ProcessDesc(0x7010, 1, 1)
+        reset = ProcessDesc(0x7010, 1, 7)
+        control = ProcessDesc(0x7010, 1)
+
+        status = ProcessDesc(0x6010, 1)
+        ready_switch_on = ProcessDesc(0x6010, 1, 0)
+        switched_on = ProcessDesc(0x6010, 1, 1)
+        enabled = ProcessDesc(0x6010, 1, 2)
+        error = ProcessDesc(0x6010, 1, 3)
+        switch_on_disabled = ProcessDesc(0x6010, 1, 6)
+
+        low_switch = ProcessDesc(0x6020, 1)
+        high_switch = ProcessDesc(0x6020, 2)
+        stepcounter = ProcessDesc(0x6000, 0x11, 'i')
+
+        max_current = ServiceDesc(0x8011, 0x34)
+        operation_mode = ServiceDesc(0x7010, 3)
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x100)
 
 
 class EL7332(EBPFTerminal):
