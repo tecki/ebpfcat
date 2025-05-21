@@ -883,10 +883,12 @@ class Terminal:
                 while type is not MBXType.COE:
                     type, data = await self.mbx_recv()
                     if type is not MBXType.COE:
-                        logging.warning(f"expected CoE package, got {type}")
+                        logging.warning(f"expected CoE package, got {type}, "
+                                        f"for terminal {self.name}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
-                    raise EtherCatError(f"expected {odcmd.value}, got {rodcmd}")
+                    raise EtherCatError(f"expected {odcmd.value}, got {rodcmd}, "
+                                        f"for terminal {self.name}")
                 ret.append(data[offset:])
                 offset = 6
             return b"".join(ret)
@@ -907,7 +909,8 @@ class Terminal:
             while type is not MBXType.COE:
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    logging.warning(f"expected CoE package, got {type}")
+                    logging.warning(f"expected CoE package, got {type}, "
+                                    f"for terminal {self.name}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
