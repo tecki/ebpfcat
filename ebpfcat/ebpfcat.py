@@ -615,16 +615,17 @@ class SterilePacket(Packet):
         self.counters = {}
 
     def append_writer(self, cmd, *args, **kwargs):
-        self.on_the_fly.append((self.size, cmd))
+        start = self.size
         self.append(cmd, *args, **kwargs)
+        self.on_the_fly.append((start, self.size, cmd))
 
     def append(self, cmd, *args, counter=1):
-        super().append(cmd, *args)
-        self.counters[self.size - 2] = {counter}
+        super().append(cmd, *args, wkc=counter)
+        self.counters[self.size - 2] = counter
 
     def sterile(self, index, ethertype=0x88A4):
         ret = bytearray(self.assemble(index, ethertype))
-        for pos, cmd in self.on_the_fly:
+        for pos, _, cmd in self.on_the_fly:
             ret[pos] = ECCmd.NOP.value
         return ret
 
@@ -643,8 +644,12 @@ class SterilePacket(Packet):
                 self.next_logical_addr + self.logical_addr_inc)
 
     def activate(self, ebpf):
-        for pos, cmd in self.on_the_fly:
-            ebpf.pB[pos + self.ETHERNET_HEADER] = cmd.value
+        for start, stop, cmd in self.on_the_fly:
+            ebpf.pB[start + self.ETHERNET_HEADER] = cmd.value
+            with ebpf.pH[stop + self.ETHERNET_HEADER - 2] \
+                    != self.counters[stop - 2]:
+                ebpf.ebpf.wkc_errors += 1
+            ebpf.pH[stop + self.ETHERNET_HEADER - 2] = 0
 
 
 class BaseType(Enum):
@@ -662,6 +667,7 @@ class SyncGroupBase:
     current_data = None
     logical_in = logical_out = None
     name = 'No Name'
+    wkc_errors = 0  # working counter mismatch counter
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
@@ -784,11 +790,11 @@ class SyncGroup(SyncGroupBase):
     def update_devices(self, data):
         self.current_data[:] = data
         for pos, counts in self.packet.counters.items():
-            if data[pos] not in counts:
+            if data[pos] != counts:
                 logging.warning(
-                    'EtherCAT datagram processed %i times, should be in %s',
+                    'EtherCAT datagram processed %i times, should be %i',
                     data[pos], counts)
-                counts.add(data[pos])
+                self.wkc_errors += 1
             self.current_data[pos] = 0
         for dev in self.devices:
             dev.update()
@@ -885,6 +891,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
     license = "GPL"
 
     properties = ArrayMap()
+    wkc_errors = properties.globalVar('I')
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(ec, devices, subprograms=devices, **kwargs)

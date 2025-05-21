@@ -231,13 +231,14 @@ class Packet:
         self.data = []
         self.size = self.PACKET_HEADER
 
-    def append(self, cmd, data, idx, *address):
+    def append(self, cmd, data, idx, *address, wkc=0):
         """Append a datagram to the packet
 
         :param cmd: EtherCAT command
         :type cmd: ECCmd
         :param data: the data in the datagram
         :param idx: the datagram index, unchanged by terminals
+        :param wkc: the working counter
 
         Depending on the command, one or two more parameters represent the
         address, either terminal and offset for position or node addressing,
@@ -249,7 +250,7 @@ class Packet:
         elif len(self.data) > 14:
             raise OverflowError("Too many datagrams per packet")
 
-        self.data.append((cmd, data, idx) + address)
+        self.data.append((cmd, data, wkc, idx) + address)
         self.size = newsize
 
     def assemble(self, index, ethertype=0x88A4):
@@ -262,25 +263,25 @@ class Packet:
         """
         ret = [pack("<HBBiHHHH", (self.size-2) | 0x1000, 0, 0,
                     index, 0x8002, 0, ethertype, 0)]
-        for i, (cmd, data, *dgram) in enumerate(self.data, start=1):
+        for i, (cmd, data, wkc, *dgram) in enumerate(self.data, start=1):
             ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
                             cmd.value, *dgram,
                             len(data) | ((i < len(self.data)) << 15), 0))
             ret.append(data)
-            ret.append(b"\0\0")
+            ret.append(pack('<H', wkc))
         if self.size < 46:
             ret.append(b"3" * (46 - self.size))
         return b''.join(ret)
 
     def __str__(self):
         ret = "\n".join(f"{cmd} {data} {idx} {addr}"
-                        for cmd, data, idx, *addr in self.data)
+                        for cmd, data, wkc, idx, *addr in self.data)
         return "Packet([" + ret + "]"
 
     def disassemble(self, data):
         pos = 14 + self.DATAGRAM_HEADER
         ret = []
-        for cmd, bits, *dgram in self.data:
+        for cmd, bits, wkc, *dgram in self.data:
             ret.append(unpack("<Bxh6x", data[pos-self.DATAGRAM_HEADER:pos])
                        + (data[pos:pos+len(bits)],
                         unpack("<H", data[pos+len(bits):pos+len(bits)+2])[0]))
