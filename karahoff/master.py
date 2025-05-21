@@ -190,6 +190,8 @@ class EtherCATSyncGroupBase(Device):
     cycletime = Float(accessMode=AccessMode.INITONLY, defaultValue=10,
                       unitSymbol=Unit.SECOND,
                       metricPrefixSymbol=MetricPrefix.MILLI)
+    last_wkc_errors = 0
+    task = None
 
     async def onInitialization(self):
         self.status = "waiting for master"
@@ -234,13 +236,25 @@ class EtherCATSyncGroupBase(Device):
         self.state = State.OFF
         self.syncGroup.start()
         self.state = State.ON
-        background(self.run())
+        self.task = background(self.run())
+
+    @Slot()
+    async def reset(self):
+        self.last_wkc_errors = self.syncGroup.wkc_errors
 
     async def run(self):
         try:
             self.state = State.RUNNING
 
             while not self.syncGroup.task.done():
+                if self.last_wkc_errors != self.syncGroup.wkc_errors:
+                    self.state = State.ERROR
+                    self.status = 'working counter mismatches: ' \
+                            f'{self.syncGroup.wkc_errors}'
+                    self.last_wkc_errors = self.syncGroup.wkc_errors
+                elif self.state != State.RUNNING:
+                    self.state = State.RUNNING
+                    self.status = ''
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
                         if (newstate := d.update_properties()) is not None:
