@@ -573,7 +573,7 @@ class MotorDevice(Device):
                 self.last_velocity = 0
 
 
-class Motor(OptionalKeepOnMixin, EtherCATDevice):
+class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     """A stepper motor with encoder device
     """
 
@@ -699,14 +699,14 @@ class Motor(OptionalKeepOnMixin, EtherCATDevice):
         self.device.target = self.device.encoder
 
     @Slot(displayedName='On',
-          allowedStates={State.OFF, State.ON, State.MOVING, State.INTERLOCKED})
+          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED})
     async def on(self):
         self.targetPosition = self.actualPosition
         await self.move()
 
-    @Slot(displayedName='Off',
-          allowedStates={State.ON, State.MOVING, State.INTERLOCKED})
-    async def off(self):
+    @InterlockSlot(displayedName='Off',
+                   allowedStates={State.ON, State.MOVING, State.ENGAGED})
+    def off(self):
         self.device.set_control_word = self.SWITCH_OFF
 
     @Slot(displayedName='Step Up',
@@ -892,7 +892,7 @@ class MotorFollower(Motor):
         self.device.motors_factor = (leader.motorStep / self.motorStep).value
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
 
-    @Slot(allowedStates={State.ON})
+    @Slot(displayedName='Engage', allowedStates={State.ON})
     async def couple(self):
         """start following the leader at this positon"""
         leader = self.getLocalDevice(self.leader)
@@ -908,7 +908,7 @@ class MotorFollower(Motor):
     def update_properties(self):
         ret = super().update_properties()
         if ret in (State.MOVING, State.ON) and self.device.doFollow:
-            return State.INTERLOCKED
+            return State.ENGAGED
         return ret
 
 
