@@ -69,7 +69,7 @@ class InterlockCondition(Configurable):
     def check(self):
         msg = None
         for k, v in self.locals.items():
-            if k != 'self' and v.state == State.ERROR:
+            if k != 'self' and v.state in {State.UNKNOWN, State.ERROR}:
                 interlock = True
                 msg = f'device {v.deviceId.value} in error'
                 break

@@ -190,7 +190,10 @@ class EtherCATSyncGroupBase(Device):
     cycletime = Float(accessMode=AccessMode.INITONLY, defaultValue=10,
                       unitSymbol=Unit.SECOND,
                       metricPrefixSymbol=MetricPrefix.MILLI)
-    last_wkc_errors = 0
+    max_wkc_errors = ml.UInt32(
+        displayedName='Working Counter Error Limit',
+        description='Stop the sync group in case of that many WKC errors',
+        defaultValue=5)
     task = None
 
     async def onInitialization(self):
@@ -238,23 +241,23 @@ class EtherCATSyncGroupBase(Device):
         self.state = State.ON
         self.task = background(self.run())
 
-    @Slot()
-    async def reset(self):
-        self.last_wkc_errors = self.syncGroup.wkc_errors
-
     async def run(self):
         try:
-            self.state = State.RUNNING
+            last_wkc_errors = self.syncGroup.wkc_errors
 
             while not self.syncGroup.task.done():
-                if self.last_wkc_errors != self.syncGroup.wkc_errors:
+                if last_wkc_errors < self.syncGroup.wkc_errors:
                     self.state = State.ERROR
                     self.status = 'working counter mismatches: ' \
                             f'{self.syncGroup.wkc_errors}'
-                    self.last_wkc_errors = self.syncGroup.wkc_errors
-                elif self.state != State.RUNNING:
-                    self.state = State.RUNNING
-                    self.status = ''
+                    last_wkc_errors = self.syncGroup.wkc_errors
+                    if last_wkc_errors - last_good_wkc > self.max_wkc_errors:
+                        return
+                else:
+                    last_wkc_errors = last_good_wkc = self.syncGroup.wkc_errors
+                    if self.state != State.RUNNING:
+                        self.state = State.RUNNING
+                        self.status = ''
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
                         if (newstate := d.update_properties()) is not None:
@@ -273,6 +276,8 @@ class EtherCATSyncGroupBase(Device):
             self.logger.exception('Sync group %s failed', self.deviceId)
             raise
         finally:
+            if not self.syncGroup.task.done():
+                self.syncGroup.task.cancel()
             self.state = State.ERROR
             for d in self.devs:
                 d.state = State.UNKNOWN
