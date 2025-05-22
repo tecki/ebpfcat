@@ -318,7 +318,7 @@ class EBPFTerminal(Terminal):
                 (self.vendorId, self.productCode) not in self.compatibility):
             raise EtherCatError(
                 f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
-        await self.to_operational(MachineState.PRE_OPERATIONAL)
+        await self.set_state(MachineState.PRE_OPERATIONAL)
         if self.out_pdos is not None:
             await self.write_pdos(0x1c12, self.out_pdos)
         if self.in_pdos is not None:
@@ -333,7 +333,7 @@ class EBPFTerminal(Terminal):
         # going to SAFE_OPERATIONAL checks the correctness of our setup
         # we could do that later, but doing it here we get a better clue
         # where the problem could be
-        await self.to_operational(MachineState.SAFE_OPERATIONAL)
+        await self.set_state(MachineState.SAFE_OPERATIONAL)
 
     async def write_pdos(self, index, values):
         await self.sdo_write(pack('B', 0), index, 0)
@@ -667,7 +667,6 @@ class SyncGroupBase:
     current_data = None
     logical_in = logical_out = None
     name = 'No Name'
-    wkc_errors = 0  # working counter mismatch counter
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
@@ -683,27 +682,6 @@ class SyncGroupBase:
         self.terminals = {t: rw for t, rw in
                           sorted(terminals.items(),
                                  key=lambda item: item[0].position)}
-
-    async def to_operational(self):
-        await gather(*[t.to_operational() for t in self.terminals])
-
-        while True:
-            try:
-                ok = 0
-                r = await gather(*[t.to_operational() for t in self.terminals])
-                for t, (state, error, status) in zip(self.terminals, r):
-                    if state is not MachineState.OPERATIONAL or status != 0:
-                        logging.warning(
-                            "terminal %s was not operational, status was %i",
-                            t, status)
-                    else:
-                        ok += 1
-                await sleep(1)
-            except CancelledError:
-                raise
-            except Exception:
-                logging.exception('to_operational of sync group %s failed',
-                                  self.name)
 
     @asynccontextmanager
     async def map_fmmu(self):
@@ -727,41 +705,32 @@ class SyncGroupBase:
         data = self.asm_packet
         async with self.map_fmmu():
             lasttime = monotonic()
-            await gather(*[t.to_operational(MachineState.SAFE_OPERATIONAL)
-                           for t in self.terminals])
             future = self.ec.roundtrip_packet(data, self.packet_index)
-            task = ensure_future(self.to_operational())
-            try:
-                while self.running:
-                    try:
-                        data = await wait_for(future, timeout=0.02)
-                    except TimeoutError:
-                        self.missed_counter += 1
-                        logging.warning(
-                            "%s: did not receive Ethercat response in time %i",
-                            self.name, self.missed_counter)
-                        future = self.ec.roundtrip_packet(data,
-                                                          self.packet_index)
-                        continue
-                    data = self.update_devices(data)
-                    newtime = monotonic()
-                    if newtime - lasttime > self.cycletime:
-                        logging.warning('%s: response time exceeded (%.0f ms)',
-                                        self.name, (newtime - lasttime) * 1000)
-                    await sleep(self.cycletime - (newtime - lasttime))
-                    newtime = monotonic()
-                    if newtime - lasttime > 0.05:
-                        logging.warning('%s: excessive cycle time (%.0f ms)',
-                                        self.name, (newtime - lasttime) * 1000)
-                    lasttime = newtime
-                    assert not task.done()
-                    future = self.ec.roundtrip_packet(data, self.packet_index)
-            finally:
-                task.cancel()
+            await gather(*[t.set_state(MachineState.OPERATIONAL)
+                           for t, rw in self.terminals.items() if rw])
+            while self.running:
                 try:
-                    await task  # should be done quickly, just here to not forget
-                except CancelledError:
-                    pass
+                    data = await wait_for(future, timeout=0.02)
+                except TimeoutError:
+                    self.missed_counter += 1
+                    logging.warning(
+                        "%s: did not receive Ethercat response in time %i",
+                        self.name, self.missed_counter)
+                    future = self.ec.roundtrip_packet(data,
+                                                      self.packet_index)
+                    continue
+                data = self.update_devices(data)
+                newtime = monotonic()
+                if newtime - lasttime > self.cycletime:
+                    logging.warning('%s: response time exceeded (%.0f ms)',
+                                    self.name, (newtime - lasttime) * 1000)
+                await sleep(self.cycletime - (newtime - lasttime))
+                newtime = monotonic()
+                if newtime - lasttime > 0.05:
+                    logging.warning('%s: excessive cycle time (%.0f ms)',
+                                    self.name, (newtime - lasttime) * 1000)
+                lasttime = newtime
+                future = self.ec.roundtrip_packet(data, self.packet_index)
 
     def allocate(self):
         self.packet = SterilePacket()
@@ -786,14 +755,15 @@ class SyncGroup(SyncGroupBase):
     """A group of devices communicating at the same time"""
 
     packet_index = 1000
+    wkc_errors = 0  # working counter mismatch counter
 
     def update_devices(self, data):
         self.current_data[:] = data
         for pos, counts in self.packet.counters.items():
             if data[pos] != counts:
                 logging.warning(
-                    'EtherCAT datagram processed %i times, should be %i',
-                    data[pos], counts)
+                    'EtherCAT datagram "%s" processed %i times, should be %i',
+                    self.name, data[pos], counts)
                 self.wkc_errors += 1
             self.current_data[pos] = 0
         for dev in self.devices:
@@ -821,6 +791,7 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
     """
 
     properties = ArrayMap()
+    wkc_errors = properties.globalVar('I')
 
     def __init__(self, ec, devices, **kwargs):
         self.ctx = get_context('spawn')

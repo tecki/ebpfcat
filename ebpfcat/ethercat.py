@@ -576,7 +576,7 @@ class Terminal:
             await self.ec.roundtrip(ECCmd.APWR, relative, 0x10, "H", absolute)
         self.position = absolute
 
-        await self.to_operational(MachineState.INIT)
+        await self.set_state(MachineState.INIT)
 
         fmmu_no, = await self.read(4, "B")
         self.fmmu_used = [None] * fmmu_no
@@ -736,10 +736,10 @@ class Terminal:
                                             vv.index + offset, vv.subidx))
 
     async def set_state(self, state):
-        """try to set the state, and return the new state"""
-        await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H", state)
-        ret, = await self.ec.roundtrip(ECCmd.FPRD, self.position, 0x0130, "H")
-        return ret
+        """try to set the state"""
+        assert isinstance(state, MachineState)
+        await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
+                                state.value)
 
     async def get_state(self):
         """get the current state, error flag and status word"""
