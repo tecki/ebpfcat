@@ -644,6 +644,8 @@ class SterilePacket(Packet):
                 self.next_logical_addr + self.logical_addr_inc)
 
     def activate(self, ebpf):
+        with ebpf.ebpf.wkc_errors == 0:
+            ebpf.ebpf.exit(XDPExitCode.TX)
         for start, stop, cmd in self.on_the_fly:
             ebpf.pB[start + self.ETHERNET_HEADER] = cmd.value
             with ebpf.pH[stop + self.ETHERNET_HEADER - 2] \
@@ -703,34 +705,42 @@ class SyncGroupBase:
 
     async def run(self):
         data = self.asm_packet
+        self.wkc_errors = 0
         async with self.map_fmmu():
             lasttime = monotonic()
+            await gather(*[t.to_operational(MachineState.SAFE_OPERATIONAL)
+                           for t, rw in self.terminals.items()])
             future = self.ec.roundtrip_packet(data, self.packet_index)
             await gather(*[t.set_state(MachineState.OPERATIONAL)
                            for t, rw in self.terminals.items() if rw])
-            while self.running:
-                try:
-                    data = await wait_for(future, timeout=0.02)
-                except TimeoutError:
-                    self.missed_counter += 1
-                    logging.warning(
-                        "%s: did not receive Ethercat response in time %i",
-                        self.name, self.missed_counter)
-                    future = self.ec.roundtrip_packet(data,
-                                                      self.packet_index)
-                    continue
-                data = self.update_devices(data)
-                newtime = monotonic()
-                if newtime - lasttime > self.cycletime:
-                    logging.warning('%s: response time exceeded (%.0f ms)',
-                                    self.name, (newtime - lasttime) * 1000)
-                await sleep(self.cycletime - (newtime - lasttime))
-                newtime = monotonic()
-                if newtime - lasttime > 0.05:
-                    logging.warning('%s: excessive cycle time (%.0f ms)',
-                                    self.name, (newtime - lasttime) * 1000)
-                lasttime = newtime
-                future = self.ec.roundtrip_packet(data, self.packet_index)
+            self.wkc_errors = 1  # write actions are ignored before
+            try:
+                while self.running:
+                    try:
+                        data = await wait_for(future, timeout=0.02)
+                    except TimeoutError:
+                        self.missed_counter += 1
+                        logging.warning(
+                            "%s: did not receive Ethercat response in time %i",
+                            self.name, self.missed_counter)
+                        future = self.ec.roundtrip_packet(data,
+                                                          self.packet_index)
+                        continue
+                    data = self.update_devices(data)
+                    newtime = monotonic()
+                    if newtime - lasttime > self.cycletime:
+                        logging.warning('%s: response time exceeded (%.0f ms)',
+                                        self.name, (newtime - lasttime) * 1000)
+                    await sleep(self.cycletime - (newtime - lasttime))
+                    newtime = monotonic()
+                    if newtime - lasttime > 0.05:
+                        logging.warning('%s: excessive cycle time (%.0f ms)',
+                                        self.name, (newtime - lasttime) * 1000)
+                    lasttime = newtime
+                    future = self.ec.roundtrip_packet(data, self.packet_index)
+            finally:
+                await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL)
+                               for t, rw in self.terminals.items() if rw])
 
     def allocate(self):
         self.packet = SterilePacket()
@@ -755,7 +765,6 @@ class SyncGroup(SyncGroupBase):
     """A group of devices communicating at the same time"""
 
     packet_index = 1000
-    wkc_errors = 0  # working counter mismatch counter
 
     def update_devices(self, data):
         self.current_data[:] = data
@@ -876,6 +885,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     async def run(self):
         with self.ec.register_sync_group(self) as self.packet_index:
+            self.wkc_errors = 0
             self.asm_packet = self.packet.sterile(self.packet_index,
                                                   self.ec.ethertype)
             # prime the pump: two packets to get things going
