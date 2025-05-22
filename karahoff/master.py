@@ -540,8 +540,29 @@ class EtherCATTerminal(Device):
             if self.ethercat.terminalsInitializingCount == 0:
                 self.ethercat.terminalsInitialized.set()
                 self.ethercat.terminalsInitialized.clear()
-        self.state = State.ON
         self.status = 'ready'
+        background(self.monitor())
+
+    async def monitor(self):
+        laststate = None
+        while True:
+            try:
+                state, error, status = await self.terminal.get_state()
+            except EtherCatError as e:
+                error = True
+                status = e
+            if error:
+                self.state = State.ERROR
+                self.status = f'error no {status}'
+                laststate = None
+            elif laststate is not state:
+                self.state = {
+                        MachineState.INIT: State.DISABLED,
+                        MachineState.PRE_OPERATIONAL: State.STARTING,
+                        MachineState.SAFE_OPERATIONAL: State.OFF,
+                        MachineState.OPERATIONAL: State.ON}[state]
+                self.status = ''
+            await sleep(1)
 
     async def onDestruction(self):
         del self.ethercat.term_by_name[self.deviceId.split('/')[-1]]
