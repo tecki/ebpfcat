@@ -868,7 +868,7 @@ class FollowerDevice(MotorDevice):
                         + self.follow_offset
             with abs(self.target - self.encoder) > self.follow_lag:
                 self.set_control_word = self.SWITCH_OFF
-                self.do_follow = 0
+                self.doFollow = 0
                 self.leader.device.set_control_word = self.leader.SWITCH_OFF
         super().program()
 
@@ -888,6 +888,7 @@ class MotorFollower(Motor):
         super().join(syncGroup)
         leader = self.getLocalDevice(self.leader)
         self.device.leader = leader
+        self.device.SWITCH_OFF = self.SWITCH_OFF
         self.device.follow_factor = self.factor.value
         self.device.motors_factor = (leader.motorStep / self.motorStep).value
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
@@ -899,10 +900,11 @@ class MotorFollower(Motor):
         if leader.state != State.ON:
             self.status = 'cannot couple if leader is not ON'
             return
-        self.device.follow_offset = \
-            int(self.device.encoder - self.device.leader.encoder * self.factor)
-        self.device.do_follow = 1
-        self.device.set_enable = 1
+        self.device.follow_offset = int(
+                self.device.encoder
+                - self.device.leader.device.encoder * self.factor)
+        self.device.doFollow = 1
+        self.device.set_control_word = self.ENABLE
         await self.state_change.wait()
 
     def update_properties(self):
@@ -974,7 +976,7 @@ class SynchronizedMotor(RotationMotor):
     @Slot()
     async def synchronize(self):
         self.device.doSynchronize = 1
-        self.device.set_enable = 1
+        self.device.set_control_word = self.ENABLE
         self.integral = 45 * unit.degree \
                 / (100 * unit.millisecond * self.motorStep)
         self.device.set_velocity = int(self.integral / self.baseFrequency)
