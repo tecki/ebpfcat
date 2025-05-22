@@ -973,6 +973,12 @@ class SynchronizedMotor(RotationMotor):
                          + self.integral) / self.baseFrequency)
         return ret
 
+    @Slot(displayedName='Move',
+          allowedStates={State.OFF, State.ON, State.MOVING})
+    async def move(self):
+        self.device.doSynchronize = 0
+        await super().move()
+
     @Slot()
     async def synchronize(self):
         self.device.doSynchronize = 1
