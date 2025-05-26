@@ -219,6 +219,7 @@ class Opcode(Enum):
     JLE = 0xb5
     JSLT = 0xc5
     JSLE = 0xd5
+    SHORT = 1
 
     CALL = 0x85
     EXIT = 0x95
@@ -375,14 +376,23 @@ class SimpleComparison(Comparison):
         self.opcode = opcode
 
     def compare(self, negative):
-        with self.left.calculate(None, None) as (self.dst, _):
+        with self.left.calculate(None, None) as (self.dst, l_long):
             with ExitStack() as exitStack:
                 if not self.right.small_constant:
-                    self.src, _ = exitStack.enter_context(
-                        self.right.calculate(None, None))
+                    self.src, r_long = exitStack.enter_context(
+                        self.right.calculate(
+                            None, self.left.signed and l_long or None))
+                else:
+                    r_long = False
+                self.opcode = self.opcode[negative]
+                if self.left.signed or self.right.signed:
+                    if not l_long and not r_long:
+                        self.opcode += Opcode.SHORT
+                    elif not l_long and r_long:
+                        self.ebpf.r[self.dst] <<= 32
+                        self.ebpf.sr[self.dst] >>= 32
                 self.origin = len(self.ebpf.opcodes)
                 self.ebpf.opcodes.append(None)
-                self.opcode = self.opcode[negative]
         self.owners = self.ebpf.owners.copy()
 
     def target(self, retarget=False):

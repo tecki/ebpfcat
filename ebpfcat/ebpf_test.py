@@ -334,6 +334,31 @@ class Tests(TestCase):
             Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
         ])
 
+    def test_short_comparison(self):
+        e = EBPF()
+        e.owners = {3, 4}
+
+        with e.sw3 < 100:
+            pass
+        with e.sw3 > e.sr4:
+            pass
+        with e.sr3 == e.sw4:
+            pass
+        with 100 < e.sw3:
+            pass
+
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.JSGE+O.SHORT, dst=3, src=0, off=0, imm=100),
+
+            Instruction(opcode=O.LONG+O.LSH, dst=3, src=0, off=0, imm=32),
+            Instruction(opcode=O.LONG+O.ARSH, dst=3, src=0, off=0, imm=32),
+            Instruction(opcode=O.JSLE+O.REG, dst=3, src=4, off=0, imm=0),
+
+            Instruction(opcode=O.JNE+O.REG, dst=3, src=4, off=0, imm=0),
+
+            Instruction(opcode=O.SHORT+O.JSLE, dst=3, src=0, off=0, imm=100),
+            ])
+
     def test_local_bits(self):
         class Local(EBPF):
             a = LocalVar((5, 1))
