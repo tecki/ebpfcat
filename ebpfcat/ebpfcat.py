@@ -181,7 +181,7 @@ class PacketVar(MemoryDesc):
             return get(device)
 
     def _start(self, device):
-        return device.sync_group.terminals[self.terminal][self.sm] \
+        return device.sync_group.pdo_assign[self.terminal][self.sm] \
                + self.position
 
     def fmt_addr(self, device):
@@ -750,9 +750,9 @@ class SyncGroupBase:
             self.packet.append_fmmu(self.ec.get_fmmu_addr())
         offsets = {BaseType.NO_FMMU: 0,
                    BaseType.FMMU_IN: in_pos, BaseType.FMMU_OUT: out_pos}
-        self.terminals = {t: {sm: offsets[base] + off + Packet.DATAGRAM_HEADER
-                              for sm, (base, off) in d.items()}
-                          for t, d in terminals.items()}
+        self.pdo_assign = {t: {sm: offsets[base] + off + Packet.DATAGRAM_HEADER
+                               for sm, (base, off) in d.items()}
+                           for t, d in terminals.items()}
         offsets = {BaseType.FMMU_IN: logical_in,
                    BaseType.FMMU_OUT: logical_out}
         self.fmmu_maps = {t: {sm: offsets[base] + off
