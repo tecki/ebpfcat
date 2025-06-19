@@ -893,6 +893,12 @@ class MotorFollower(Motor):
         self.device.motors_factor = (leader.motorStep / self.motorStep).value
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
 
+    @Slot(displayedName='Move',
+          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED})
+    async def move(self):
+        self.device.doFollow = 0
+        await super().move()
+
     @Slot(displayedName='Engage', allowedStates={State.ON})
     async def couple(self):
         """start following the leader at this positon"""
