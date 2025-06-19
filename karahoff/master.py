@@ -360,7 +360,11 @@ class EtherCATDevice(Device):
 
     def find_channel(self, name):
         terminal, *channel = name.split(".")
-        ret = self.ethercat.term_by_name.get(terminal)
+        device = self.getLocalDevice(terminal)
+        if device is None:
+            ret = self.ethercat.term_by_name.get(terminal)
+        else:
+            ret = device.terminal
         if ret is None:
             self.status = f'missing terminal {name}'
             raise TerminalUnknownError(name)
