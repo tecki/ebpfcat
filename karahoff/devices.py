@@ -924,6 +924,11 @@ class MotorFollower(Motor):
         return ret
 
 
+class RotationFollower(MotorFollower, RotationMotor):
+    maxLag = Overwrite(unitSymbol=Unit.DEGREE,
+                       metricPrefixSymbol=MetricPrefix.NONE)
+
+
 class SynchronizeDevice(RotationDevice):
     trigtime = DeviceVar('Q')
     trigposition = DeviceVar('i')
