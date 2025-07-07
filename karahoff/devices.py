@@ -858,14 +858,15 @@ class FollowerDevice(MotorDevice):
         super().calculate_speed()
         with (self.doFollow != 0) \
                 & (self.leader.device.enabled != 0):
-            self.ebpf.stmp += (int(self.motors_factor * self.follow_factor
-                                   * (1 << 16)) * self.leader.device.velocity) >> 16
+            self.ebpf.stmp += \
+                (int(self.motors_factor * self.follow_factor * (1 << 16)) \
+                * self.leader.device.velocity) >> 16
 
     def program(self):
         with self.doFollow != 0:
             self.target = ((self.leader.device.encoder
-                           * int(self.follow_factor * (1 << 16))) >> 16) \
-                        + self.follow_offset
+                           * int(self.encoders_factor * self.follow_factor
+                                 * (1 << 16))) >> 16) + self.follow_offset
             with abs(self.target - self.encoder) > self.follow_lag:
                 self.set_control_word = self.SWITCH_OFF
                 self.doFollow = 0
@@ -891,6 +892,8 @@ class MotorFollower(Motor):
         self.device.SWITCH_OFF = self.SWITCH_OFF
         self.device.follow_factor = self.factor.value
         self.device.motors_factor = (leader.motorStep / self.motorStep).value
+        self.device.encoders_factor = (leader.encodeStep
+                                       / self.encodeStep).value
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
 
     @Slot(displayedName='Move',
@@ -907,8 +910,9 @@ class MotorFollower(Motor):
             self.status = 'cannot couple if leader is not ON'
             return
         self.device.follow_offset = int(
-                self.device.encoder
-                - self.device.leader.device.encoder * self.factor)
+            self.device.encoder
+            - self.device.leader.device.encoder * self.device.encoders_factor
+            * self.factor)
         self.device.doFollow = 1
         self.device.set_control_word = self.ENABLE
         await self.state_change.wait()
