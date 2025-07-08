@@ -31,7 +31,7 @@ from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from enum import Enum
 from multiprocessing import Array, Process, Value, get_context
 from random import randrange
-from struct import calcsize, pack, pack_into, unpack, unpack_from
+from struct import pack, unpack_from
 from time import monotonic
 
 from .arraymap import ArrayGlobalVarDesc, ArrayMap
@@ -153,10 +153,11 @@ class PacketVar(MemoryDesc):
                         data[start] &= ~mask
             else:
                 mystruct = struct.Struct('<' + self.size)
+                s = slice(start, start + mystruct.size)
                 def set(instance, value):
                     assert instance is device
                     data = device.sync_group.current_data
-                    mystruct.pack_into(data, start, value)
+                    data[s] = mystruct.pack(value)
             self.set = set
             set(device, value)
 

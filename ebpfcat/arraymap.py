@@ -22,10 +22,10 @@ __all__ = ["ArrayMap"]
 
 from itertools import chain
 from mmap import mmap
-from struct import pack_into, unpack_from, calcsize
+from struct import calcsize, pack, pack_into, unpack_from
 
+from .bpf import MapFlags, MapType, create_map, lookup_elem, update_elem
 from .ebpf import Expression, FuncId, Map, MemoryDesc, Opcode, SubProgram
-from .bpf import create_map, lookup_elem, MapType, MapFlags, update_elem
 
 
 class ArrayGlobalVarDesc(MemoryDesc):
@@ -67,8 +67,8 @@ class ArrayGlobalVarDesc(MemoryDesc):
                 value = int(value * Expression.FIXED_BASE)
             if not isinstance(value, tuple):
                 value = value,
-            pack_into(fmt, instance.ebpf.__dict__[self.map.name],
-                      addr, *value)
+            b = pack(fmt, *value)
+            instance.ebpf.__dict__[self.map.name][addr:addr + len(b)] = b
         else:
             super().__set__(instance, value)
 
