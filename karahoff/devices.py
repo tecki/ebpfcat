@@ -685,13 +685,16 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     @Slot(displayedName='Move',
           allowedStates={State.OFF, State.ON, State.MOVING})
     async def move(self):
-        self.device.target = int((self.targetPosition - self.offset)
-                                 // self.encodeStep)
-        self.device.set_control_word = self.ENABLE
+        self._move()
         # just in case await twice, to guarantee the device goes to the right
         # state. Not sure whether that's actually necessay, didn't test
         await self.state_change.wait()
         await self.state_change.wait()
+
+    def _move(self):
+        self.device.target = int((self.targetPosition - self.offset)
+                                 // self.encodeStep)
+        self.device.set_control_word = self.ENABLE
 
     @Slot(displayedName='Stop',
           allowedStates={State.ON, State.MOVING})

@@ -43,6 +43,8 @@ setup(name="KaraHoff",
               "EL7062Terminal = karahoff.terminals:EL7062Terminal",
               "Aerotech = karahoff.terminals:Aerotech",
               "Automation1 = karahoff.devices:Automation1",
+
+              "SCS_XRD_TRF = karahoff.scs:SCS_XRD_TRF",
           ],
       },
       requires=[],
