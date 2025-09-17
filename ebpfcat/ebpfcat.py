@@ -418,6 +418,7 @@ class EtherXDP(XDP):
     data0 = XDPPacketVar(26, "H")  # the ethertype to use
 
     def program(self):
+        self.r8 = self.r1
         with prandom(self.ebpf) & 0xffff < self.rate:
             self.dropcounter += 1
             self.ebpf.exit(XDPExitCode.DROP)
@@ -442,8 +443,12 @@ class EtherXDP(XDP):
                     self.exit(XDPExitCode.PASS)
                 self.index0 = self.mB[self.r[dst]]
                 self.r2 = self.get_fd(self.programs)
+                self.r7 = self.r9
                 self.call(FuncId.tail_call)
-        self.ethertype = self.data0
+                self.r3 = self.r7
+            self.r1 = self.r8
+            with self.packetSize > self.minimumPacketSize:
+                self.ethertype = self.data0
         self.exit(XDPExitCode.PASS)
 
 
