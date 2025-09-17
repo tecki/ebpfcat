@@ -28,6 +28,15 @@ class Skip(EBPFTerminal):
         pass
 
 
+class EL1124(EBPFTerminal):
+    compatibility = {(2, 0x4643052), }
+
+    channel1 = ProcessDesc(0x6000, 1)
+    channel2 = ProcessDesc(0x6010, 1)
+    channel3 = ProcessDesc(0x6020, 1)
+    channel4 = ProcessDesc(0x6030, 1)
+
+
 class EL1808(EBPFTerminal):
     compatibility = {(2, 118501458), (2, 0x3F03052)}
 
