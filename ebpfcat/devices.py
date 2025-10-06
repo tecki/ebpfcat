@@ -238,13 +238,14 @@ class Motor(Device):
         self.enable = self.set_enable
 
     def program(self):
-        with self.ebpf.tmp:
-            self.ebpf.tmp = self.proportional * (self.target - self.encoder)
-            with self.ebpf.tmp > self.velocity + self.max_acceleration:
-                self.ebpf.tmp = self.velocity + self.max_acceleration
-            with self.ebpf.tmp + self.max_acceleration < self.velocity:
-                self.ebpf.tmp = self.velocity - self.max_acceleration
-            self.velocity = self.ebpf.tmp
+        self.enable = self.set_enable
+        with self.ebpf.stmp:
+            self.ebpf.stmp = self.proportional * (self.target - self.encoder)
+            with self.ebpf.stmp > self.velocity + self.max_acceleration:
+                self.ebpf.stmp = self.velocity + self.max_acceleration
+            with self.ebpf.stmp + self.max_acceleration < self.velocity:
+                self.ebpf.stmp = self.velocity - self.max_acceleration
+            self.velocity = self.ebpf.stmp
         with self.velocity > self.max_velocity:
             self.velocity = self.max_velocity
         with self.velocity < -self.max_velocity:
