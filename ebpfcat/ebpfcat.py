@@ -266,6 +266,8 @@ class DeviceVar(ArrayGlobalVarDesc):
     def __get__(self, instance, owner):
         if instance is None:
             return self
+        elif instance.sync_group is None:
+            return instance, self.name
         elif isinstance(instance.sync_group, EBPFBase):
             return super().__get__(instance, owner)
         else:
@@ -284,6 +286,9 @@ class Device(SubProgram):
     A device aggregates data coming in and going to terminals
     to serve a common goal. A terminal may be used by several
     devices. """
+
+    sync_group = None
+
     def get_terminals(self):
         """return the terminals used by this device
 
