@@ -1,17 +1,40 @@
-import asyncio
+"""run an EtherCAT EPICS IOC
+
+this is a minimal library to create an EPICS IOC for EtherCAT loops.
+"""
 import threading
 
-from ebpfcat.ebpfcat import ParallelEtherCat, SyncGroup
-from ebpfcat.devices import AnalogInput, AnalogOutput
-from ebpfcat.terminals import EL4104, EL3164
 from softioc import softioc, builder, asyncio_dispatcher
 
+
 def setter(param):
+    """a generic setter to be used with OUT records
+
+    in order to connect an OUT record to an EtherCAT device paramter,
+    one can write::
+
+        builder.aOut('OUT', on_update=setter(device.value))
+
+    where `device` is an EtherCAT device.
+    """
     def inner(value):
         setattr(*param, int(value))
     return inner
 
 def start_ethercat_ioc(main):
+    """execute the main coroutine for the EtherCAT IOC
+
+    This is supposed to be called from the main module, in the
+    canonical way::
+
+        if __name__ == '__main__':
+            start_ethercat_ioc(main)
+
+    the `async` function `main` is then called with one paramter,
+    usually called `start_ioc`, which should be called by `main` once
+    it is done setting up the IOC, and would like to start the
+    actually control loop.
+    """
     # Create an asyncio dispatcher, the event loop is now running
     dispatcher = asyncio_dispatcher.AsyncioDispatcher()
 
