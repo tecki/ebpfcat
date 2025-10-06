@@ -1,4 +1,6 @@
-"""run an EtherCAT EPICS IOC
+"""\
+:mod:`examples.epics`--- run an EtherCAT EPICS IOC
+==================================================
 
 this is a minimal library to create an EPICS IOC for EtherCAT loops.
 """
@@ -15,7 +17,7 @@ def setter(param):
 
         builder.aOut('OUT', on_update=setter(device.value))
 
-    where `device` is an EtherCAT device.
+    where ``device`` is an EtherCAT device.
     """
     def inner(value):
         setattr(*param, int(value))

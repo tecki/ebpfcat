@@ -12,3 +12,6 @@ ec-scanbus = "ebpfcat.scripts:scanbus"
 ec-info = "ebpfcat.scripts:info"
 ec-eeprom = "ebpfcat.scripts:eeprom"
 ec-create-test = "ebpfcat.scripts:create_test"
+
+[tool.setuptools]
+packages = ['ebpfcat']

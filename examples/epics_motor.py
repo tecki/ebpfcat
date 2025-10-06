@@ -1,4 +1,6 @@
-"""Simple motor example
+"""\
+:mod:`examples.epics_motor` Simple motor example
+================================================
 
 This shows how to integrate a simple stepper motor into EPICS. We loosely try
 to follow EPICS motor record standards, but a full EPICS motor record would be

@@ -1,4 +1,6 @@
-"""A simple analog input/output example
+"""\
+:mod:`examples.epics_aio` --- A simple analog input/output example
+==================================================================
 
 This shows how to write an EPICS IOC that can read from an analog input and
 write to an analog output. Note that this is just an example file, it needs

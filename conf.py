@@ -23,3 +23,4 @@ html_static_path = ['_static']
 htmlhelp_basename = 'EBPFCat'
 
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
+autodoc_mock_imports = ['softioc']

@@ -353,6 +353,7 @@ may be set::
 So in this example, CoE address 7010:21 is a 16 bit integer that sets the drive
 velocity of a stepper motor.
 
+.. currentmodule:: examples
 
 Using EBPFCat with the EPICS control system
 -------------------------------------------
@@ -360,11 +361,18 @@ Using EBPFCat with the EPICS control system
 EBPFCat can be connected to EPICS using `pythonSoftIOC
 <https://diamondlightsource.github.io/pythonSoftIOC/master/index.html>`_, which
 can be easily installed with ``pip install softioc``. There are two examples,
-:mod:`examples.epics_aio` and :mod:`examples.epics_motor`, which are based on a
-minimal binding code :mod:`examples.epics`.
+:mod:`~examples.epics_aio` and :mod:`~examples.epics_motor`, which are based on
+a minimal binding code :mod:`~examples.epics`.
 
 Those can be started with ``python -m examples.epics_aio``, after you
 have adopted the code to the hardware you use.
+
+.. automodule:: examples.epics_aio
+
+.. automodule:: examples.epics_motor
+
+.. automodule:: examples.epics
+   :members:
 
 
 Reference Documentation
