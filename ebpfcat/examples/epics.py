@@ -1,6 +1,6 @@
 """\
-:mod:`examples.epics`--- run an EtherCAT EPICS IOC
-==================================================
+:mod:`!ebpfcat.examples.epics` --- run an EtherCAT EPICS IOC
+============================================================
 
 this is a minimal library to create an EPICS IOC for EtherCAT loops.
 """
@@ -32,8 +32,8 @@ def start_ethercat_ioc(main):
         if __name__ == '__main__':
             start_ethercat_ioc(main)
 
-    the `async` function `main` is then called with one paramter,
-    usually called `start_ioc`, which should be called by `main` once
+    the ``async`` function ``main`` is then called with one paramter,
+    usually called ``start_ioc``, which should be called by ``main`` once
     it is done setting up the IOC, and would like to start the
     actually control loop.
     """

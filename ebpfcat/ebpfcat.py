@@ -15,7 +15,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-"""The high-level API for EtherCAT loops"""
+"""\
+:mod:`!ebpfcat.ebpfcat` --- The high-level API for EtherCAT loops
+=================================================================
+"""
 import asyncio
 import gc
 import logging
@@ -806,8 +809,8 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
     """A :class:`SyncGroup` running in a separate process
 
     In order to lower latency, one may run a sync group in a different
-    process. In this case communication is done via :class:`DeviceVar`s,
-    or reading (but not writing) :class:`TerminalVar`s.
+    process. In this case communication is done via :class:`DeviceVar`\\ s,
+    or reading (but not writing) :class:`TerminalVar`\\ s.
     """
 
     properties = ArrayMap()

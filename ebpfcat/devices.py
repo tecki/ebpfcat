@@ -16,8 +16,8 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """\
-A collection of devices
-=======================
+:mod:`!ebpfcat.devices` --- A collection of devices
+===================================================
 
 This modules contains a collection of devices which may be helpful
 in many projects.

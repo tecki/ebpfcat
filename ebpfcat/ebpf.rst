@@ -75,7 +75,7 @@ program.
 
 For reference, this is the full example:
 
-.. literalinclude:: /examples/count.py
+.. literalinclude:: examples/count.py
 
 Maps
 ----
@@ -83,7 +83,7 @@ Maps
 Maps are used to communicate to the outside world. They look like instance
 variables. They may be used from within the EBPF program, and once it is
 loaded also from Python code. It is possible to write out the maps to a
-bpf file system using :meth:`
+bpf file system using :meth:`ebpf.EBPF.pin_maps`.
 
 There are two flavors: :class:`arraymap.ArrayMap`
 and :class:`hashmap.HashMap`. They have different use cases:

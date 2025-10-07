@@ -64,7 +64,7 @@ output a value like so::
 
 For reference, here is a complete code example:
 
-.. literalinclude:: /examples/ethercat.py
+.. literalinclude:: examples/ethercat.py
 
 
 Writing a device
@@ -97,8 +97,8 @@ method of the device is called, in which one can evaluate the
         self.speed = (self.position - self.target) * self.pConst
 
 
-Three methods of control
-------------------------
+Four methods of control
+-----------------------
 
 The communication with the terminals can happen in four different ways:
 
@@ -190,7 +190,7 @@ A complete example of a four channel terminal looks as follows::
 Inspecting the bus via the command line
 ---------------------------------------
 
-.. highlight:: BashSession
+.. highlight:: shell-session
 
 Using the command line tool ``ec-info`` one can learn many details about the
 terminals on an EtherCat bus. As its first parameter, it always takes the
@@ -353,7 +353,6 @@ may be set::
 So in this example, CoE address 7010:21 is a 16 bit integer that sets the drive
 velocity of a stepper motor.
 
-.. currentmodule:: examples
 
 Using EBPFCat with the EPICS control system
 -------------------------------------------
@@ -364,14 +363,14 @@ can be easily installed with ``pip install softioc``. There are two examples,
 :mod:`~examples.epics_aio` and :mod:`~examples.epics_motor`, which are based on
 a minimal binding code :mod:`~examples.epics`.
 
-Those can be started with ``python -m examples.epics_aio``, after you
+Those can be started with ``python -m ebpfcat.examples.epics_aio``, after you
 have adopted the code to the hardware you use.
 
-.. automodule:: examples.epics_aio
+.. automodule:: ebpfcat.examples.epics_aio
 
-.. automodule:: examples.epics_motor
+.. automodule:: ebpfcat.examples.epics_motor
 
-.. automodule:: examples.epics
+.. automodule:: ebpfcat.examples.epics
    :members:
 
 

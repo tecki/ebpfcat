@@ -15,7 +15,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-"""The ``ebpf`` module contains the core ebpf code generation"""
+"""\
+The :mod:`!ebpfcat.ebpf` module contains the core ebpf code generation
+======================================================================
+"""
 
 __all__ = ["EBPF", "LocalVar", "prandom", "ktime"]
 
@@ -1278,7 +1281,7 @@ class EBPF(EBPFBase):
 
     After a program is loaded, its maps may be written to a bpf file system
     using :meth:`pin_maps`. Those maps may be used at a later time, especially
-    also in a different task, if the parameter `load_maps` is given, in which
+    also in a different task, if the parameter ``load_maps`` is given, in which
     case we assume the program has already been loaded.
 
     :param load_maps: a prefix to load pinned maps from. Must be existing in a

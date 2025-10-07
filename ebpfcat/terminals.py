@@ -15,6 +15,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+"""\
+:mod:`!ebpfcat.terminal --- classes describing common EtherCAT terminals
+========================================================================
+"""
+
 from .ethercat import ECCmd, ServiceDesc, Struct, SyncManager
 from .ebpfcat import BaseType, EBPFTerminal, PacketDesc, ProcessDesc
 

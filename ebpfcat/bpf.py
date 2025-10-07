@@ -16,7 +16,8 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 """\
-A module that wraps the `bpf` system call in Python, using `ctypes`.
+:mod:`!ebpfcat.bpf` --- A module that wraps the ``bpf`` system call in Python
+=============================================================================
 """
 import string
 from ctypes import (

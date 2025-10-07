@@ -15,7 +15,10 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-"""support for XDP programs"""
+"""\
+:mod:`!ebpfcat.xdp` --- support for XDP programs
+================================================
+"""
 
 __all__ = ["XDPExitCode", "XDPFlags", "PacketVar",  "XDP"]
 
@@ -175,7 +178,7 @@ class PacketVar(MemoryDesc):
 
     :param address: the start address within the packet
     :param fmt: the data type of the variable, following the
-       conventions from the :module:`struct` module.
+       conventions from the :mod:`struct` module.
     """
     base_register = 9
 
@@ -199,7 +202,7 @@ class XDP(EBPF):
 
        set this to an integer value to declare the minimum size of
        a packet. You will only be able to access that many bytes in
-       the packet. If you need something dynamic, use :var:`packetSize`
+       the packet. If you need something dynamic, use :attr:`packetSize`
        instead.
 
     .. attribute:: defaultExitCode
