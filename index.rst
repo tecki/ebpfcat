@@ -11,3 +11,10 @@ Python based EBPF code generator.
 
     ebpfcat/ebpf.rst
     ebpfcat/ethercat.rst
+
+Further reading
+---------------
+
+This project has been presented at `ICALEPCS 2025
+<https://epics.anl.gov/icalepcs-2025/pdf/THBR004.pdf>`_, please cite this paper
+if you make use of EBPFCat.
