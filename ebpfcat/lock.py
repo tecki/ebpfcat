@@ -1,8 +1,10 @@
 import fcntl
+import logging
 import os
 from asyncio import Lock, create_task, run, sleep
 from functools import wraps
 from multiprocessing import get_context
+from random import randrange
 from unittest import TestCase, main
 
 
@@ -86,6 +88,13 @@ class ParallelMailboxLock:
 
 
 class FMMULock:
+    """avoid clashings in the FMMU address space
+
+    we define the FMMU addresses to be threefold: 9 bits to indicate the
+    process, managed by a lock file, 10 bits for sync groups within a
+    process, which is just counted up, and the left over 12 bits to address
+    the actual EtherCAT packet.
+    """
     def __init__(self, filename):
         self.filename = filename
         os.makedirs(filename.rsplit('/', 1)[0], exist_ok=True)
@@ -94,21 +103,41 @@ class FMMULock:
                                              | os.O_EXCL | os.O_CLOEXEC)
         except FileExistsError:
             self.fd = os.open(self.filename, os.O_RDWR | os.O_CLOEXEC)
+            fcntl.lockf(self.fd, fcntl.LOCK_EX)
+            try:
+                addrmap = os.pread(self.fd, 1 << 6, 0)
+                if len(addrmap) != (1 << 6):
+                    logging.warn('found wrong fmmu map, ignoring')
+                    addrmap = b'\0' * (1 << 6)
+                    os.pwrite(self.fd, addrmap, 0)
+                    os.ftruncate(self.fd, 1 << 6)
+                addr = randrange(1, 1 << 9)
+                while addrmap[addr // 8] & (1 << (addr % 8)):
+                    addr = randrange(1, 1 << 9)
+                out = bytes([addrmap[addr // 8] | (1 << (addr % 8))])
+                no = os.pwrite(self.fd, out, addr // 8)
+                assert no == 1
+                self.base_addr = addr << (12 + 10)
+            finally:
+                fcntl.lockf(self.fd, fcntl.LOCK_UN)
         else:
-            os.write(self.fd, b'      4096')
+            os.write(self.fd, b'\2' + b'\0' * 63)
+            self.base_addr = 1 << (12 + 10)
 
     def get_next_addr(self):
-        fcntl.lockf(self.fd, fcntl.LOCK_EX)
-        try:
-            ret = int(os.pread(self.fd, 10, 0).decode())
-            os.pwrite(self.fd, f"{ret + 0x1000:10}".encode(), 0)
-        finally:
-            fcntl.lockf(self.fd, fcntl.LOCK_UN)
-        return ret
+        self.base_addr += 1 << 12
+        return self.base_addr
 
     def remove(self):
+        addr = self.base_addr // (4096 * 1024)
+        fcntl.lockf(self.fd, fcntl.LOCK_EX)
+        try:
+            data = os.pread(self.fd, 1, addr // 8)
+            os.pwrite(self.fd, bytes((data[0] & ~(1 << (addr % 8)),)),
+                      addr // 8)
+        finally:
+            fcntl.lockf(self.fd, fcntl.LOCK_UN)
         os.close(self.fd)
-        os.remove(self.filename)
 
 
 def asynctst(f):
