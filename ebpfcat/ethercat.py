@@ -655,15 +655,16 @@ class Terminal:
             return
         await self.write(0x800, data=0x80)  # empty out sync manager
         await self.write(0x800, data=self.eeprom[41])
+        self.parse_sync_managers(self.eeprom[41])
+
+    def parse_sync_managers(self, data):
         self.mbx_out_off = self.mbx_out_sz = None
         self.mbx_in_off = self.mbx_in_sz = None
         self.pdo_out_off = self.pdo_out_sz = None
         self.pdo_in_off = self.pdo_in_sz = None
         self.pdo_in_addr = 0x818
         self.pdo_out_addr = 0x810
-        self.parse_sync_managers(self.eeprom[41])
 
-    def parse_sync_managers(self, data):
         for i in range(0, len(data), 8):
             offset, size, mode = unpack_from("<HHB", data, i)
             mode &= 0xf
