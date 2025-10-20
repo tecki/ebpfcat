@@ -27,8 +27,8 @@
 this modules contains the code to actually talk to EtherCAT terminals.
 """
 from asyncio import (
-    CancelledError, ensure_future, Event, Future, gather, get_event_loop,
-    Protocol, Queue, Lock)
+    CancelledError, Event, Future, Lock, Protocol, Queue, TaskGroup,
+    ensure_future, get_event_loop)
 from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
 from itertools import count
@@ -497,6 +497,29 @@ class EtherCat(Protocol):
             future.set_result(data)
         else:
             logging.warning('received unknown packet %i (%x)', index, data[3])
+
+    async def scan_serial_numbers(self):
+        """Scan the bus and read the terminal serial numbers"""
+        addr_by_serial = {}
+
+        async def get_serial(i):
+            address = await self.assigned_address(i)
+            serialNo = await self.eeprom_read(i, EEPROM.SERIAL_NO)
+            if serialNo > 0:
+                old = addr_by_serial.get(serialNo)
+                if old is not None and old != address:
+                    logging.warning('double serial number found: %i at %i',
+                                    serialNo, i)
+                else:
+                    addr_by_serial[serialNo] = address
+            else:
+                addr_by_serial[i] = address
+
+        count = await self.count()
+        async with TaskGroup() as tg:
+            for i in range(count):
+                tg.create_task(get_serial(-i))
+        return addr_by_serial
 
 
 class ServiceDesc:
