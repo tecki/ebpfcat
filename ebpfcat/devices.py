@@ -22,6 +22,8 @@
 This modules contains a collection of devices which may be helpful
 in many projects.
 """
+from time import monotonic
+
 from .ebpfcat import Device, FastSyncGroup, TerminalVar, DeviceVar
 from .ebpf import ktime
 
@@ -158,6 +160,38 @@ class Counter(Device):
 
     def update(self):
         self.count += 1
+
+
+class Valve(Device):
+    """a digital output with two inputs for feedback"""
+
+    coil = TerminalVar()
+    openSwitch = TerminalVar()
+    closedSwitch = TerminalVar()
+
+    error = DeviceVar('?')
+    target = DeviceVar('?')
+
+    movingTime = 5  # time in seconds to reach target
+    safeState = False  # the safe state is closed
+
+    def update(self):
+        inPosition = self.openSwitch != self.closedSwitch
+        isCorrect = ((self.closedSwitch or not self.openSwitch)
+                     if (self.coil == self.safeState)
+                     else (self.openSwitch or not self.closedSwitch))
+        if inPosition and isCorrect:
+            self.lastGood = monotonic()
+            self.coil = self.target
+        elif monotonic() - self.lastGood < self.movingTime:
+            self.coil = self.target
+        else:
+            self.error = True
+            self.coil = self.target = False
+
+    def reset(self):
+        self.error = False
+        self.lastGood = monotonic()
 
 
 class Motor(Device):
