@@ -243,7 +243,10 @@ class Packet:
 
         Depending on the command, one or two more parameters represent the
         address, either terminal and offset for position or node addressing,
-        or one value for logical addressing."""
+        or one value for logical addressing.
+
+        Return a pair that represents the start and stop of the datagram's
+        data inside the packet."""
         newsize = self.size + len(data) + self.DATAGRAM_HEADER \
                   + self.DATAGRAM_TAIL
         if newsize > self.MAXSIZE:

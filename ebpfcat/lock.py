@@ -9,7 +9,10 @@ from unittest import TestCase, main
 
 
 class LockFile:
-    """A lock file for all mailboxes in an EtherCAT loop"""
+    """A lock file for all mailboxes in an EtherCAT loop
+
+    The reason of existence for this class is that it can be pickled,
+    so that lock files can be shared between processed."""
     def __init__(self, filename, minimum, maximum):
         self.filename = filename
         self.minimum = minimum

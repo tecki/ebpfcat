@@ -3,6 +3,10 @@
 The EtherCAT master
 ===================
 
+`EtherCAT <www.ethercat.org>`_ is a field-bus system for controlling hardware.
+As it based on Ethernet, it can be controlled by software on a normal computer,
+without the need for any specialized hardware. EBPFCat is such a software.
+
 Getting started
 ---------------
 
@@ -104,17 +108,25 @@ The communication with the terminals can happen in four different ways:
 
 - asynchronous: the communication happens ad-hoc whenever needed. This is
   done during initialization and for reading and writing configuration data,
-  like CoE.
+  like CoE. This communication is done directly in the
+  :class:`~ethercat.EtherCAT` base class.
 - slow: the data is sent, received and processed via Python. This is good
   enough to around 100 Hz operation, depending on the overall load on the
-  system
+  system. This is done in a :class:`~ebpfcat.SyncGroup`.
 - parallel: the slow communication, but in a separate process. This is
   useful if the program needs to perform other tasks as well, which would
   block the event loop for too long to reach stable operation. Also
-  got to some 100 Hz.
+  good to some 100 Hz. This operation is achieved by using a
+  :class:`~ebpfcat.ProcessSyncGroup`, which requires the EtherCat master to
+  be a :class:`~ebpfcat.ParallelEtherCat`.
 - fast: the data is sent, received and processed using XDP in the Linux
   Kernel. Only very limited operations can be done, namely integer arithmetic
-  only, but the loop cycle frequency exceeds 10 kHz.
+  only, but the loop cycle frequency exceeds 10 kHz. This operation requires
+  to write special :class:`~ebpfcat.Device`\ s  which generate the necessary
+  EPBF, and are run in a :class:`~ebpfcat.FastSyncGroup`. Those require the
+  master to be at least a :class:`~ebpfcat.FastEtherCat`, but note that a
+  :class:`~ebpfcat.ParallelEtherCat` inherits from it, so if in doubt use the
+  latter.
 
 Adding new terminals
 --------------------

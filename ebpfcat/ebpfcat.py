@@ -339,9 +339,9 @@ class EBPFTerminal(Terminal):
         self.pdo_in_sz = int((inbits + 7) // 8)
         assert not self.pdo_in_sz or self.pdo_in_off
         await self.write_pdo_sm()
-        # going to SAFE_OPERATIONAL checks the correctness of our setup
+        # going to SAFE_OPERATIONAL checks the correctness of our setup.
         # we could do that later, but doing it here we get a better clue
-        # where the problem could be
+        # where the problem could be.
         await self.set_state(MachineState.SAFE_OPERATIONAL)
 
     async def write_pdos(self, index, values):
@@ -882,6 +882,7 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
 
 
 class FastSyncGroup(SyncGroupBase, XDP):
+    """A :class:`SyncGroup` where all devices are EBPF programs"""
     license = "GPL"
 
     properties = ArrayMap()
