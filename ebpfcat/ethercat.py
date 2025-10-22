@@ -315,6 +315,7 @@ class EtherCat(Protocol):
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
         self.wait_futures = {}
         self.used_addresses = set()
+        self.next_logical_addr = 0
 
     async def connect(self):
         """connect to the EtherCAT loop"""
@@ -324,6 +325,10 @@ class EtherCat(Protocol):
 
     def get_mbx_lock(self, no):
         return MailboxLock()
+
+    def get_fmmu_addr(self):
+        self.next_logical_addr += 0x1000
+        return self.next_logical_addr
 
     async def sendloop(self):
         """the eternal datagram sending loop
