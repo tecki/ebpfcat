@@ -25,7 +25,7 @@ from mmap import mmap
 from struct import calcsize, pack, pack_into, unpack_from
 
 from .bpf import MapFlags, MapType, create_map, lookup_elem, update_elem
-from .ebpf import Expression, FuncId, Map, MemoryDesc, Opcode, SubProgram
+from .ebpf import Expression, FuncId, Map, MemoryDesc
 
 
 class ArrayGlobalVarDesc(MemoryDesc):

@@ -224,6 +224,7 @@ class Packet:
     MAXSIZE = 1500  # maximum size we use for an EtherCAT packet
     ETHERNET_HEADER = 14
     PACKET_HEADER = 16
+    PACKET_INDEX = 4
     DATAGRAM_HEADER = 10
     DATAGRAM_TAIL = 2
 
@@ -251,7 +252,9 @@ class Packet:
             raise OverflowError("Too many datagrams per packet")
 
         self.data.append((cmd, data, wkc, idx) + address)
+        ret = (self.size + self.DATAGRAM_HEADER, newsize - self.DATAGRAM_TAIL)
         self.size = newsize
+        return ret
 
     def assemble(self, index, ethertype=0x88A4):
         """Assemble the datagrams into a packet
@@ -337,8 +340,8 @@ class EtherCat(Protocol):
                    *dgram, future = await self.send_queue.get()
                 try:
                    lastsize = packet.size
-                   packet.append(*dgram)
-                   dgrams.append((lastsize + 10, packet.size - 2, future))
+                   start, stop = packet.append(*dgram)
+                   dgrams.append((start, stop, future))
                    sent = True
                    if not self.send_queue.empty():
                        continue
@@ -357,7 +360,7 @@ class EtherCat(Protocol):
         try:
             data = await self.roundtrip_packet(packet)
             for start, stop, future in dgrams:
-                wkc, = unpack("<H", data[stop:stop+2])
+                wkc, = unpack_from("<H", data, stop)
                 if wkc == 0:
                     future.set_exception(
                         EtherCatError("datagram was not processed"))
@@ -483,7 +486,7 @@ class EtherCat(Protocol):
 
     def datagram_received(self, data, addr):
         """distribute received packets to the recipients"""
-        index, = unpack("<I", data[4:8])
+        index, = unpack_from("<I", data, Packet.PACKET_INDEX)
         future = self.wait_futures.get(index)
         if future is not None and not future.done():
             future.set_result(data)
@@ -680,15 +683,16 @@ class Terminal:
                     i += 8
 
         async def parse_sdo(index):
-            assignments, = unpack("B", await self.sdo_read(index, 0))
+            assignments, = await self.sdo_read_format("B", index, 0)
             bitpos = 0
             for i in range(1, assignments + 1):
-                pdo, = unpack("<H", await self.sdo_read(index, i))
+                pdo, = await self.sdo_read_format("<H", index, i)
                 if pdo == 0:
                     continue
-                count, = unpack("B", await self.sdo_read(pdo, 0))
+                count, = await self.sdo_read_format("B", pdo, 0)
                 for j in range(1, count + 1):
-                    bits, subidx, idx = unpack("<BBH", await self.sdo_read(pdo, j))
+                    bits, subidx, idx = \
+                        await self.sdo_read_format("<BBH", pdo, j)
                     yield idx, subidx, bits
 
         async def parse(func, sm):
@@ -852,13 +856,11 @@ class Terminal:
             logging.error('terminal %s received unexpected mail %s "%s"',
                           self.name, etype, edata)
         assert self.mbx_out_off is not None, "not send mailbox defined"
-        await self.write(self.mbx_out_off, "HHBB",
-                                datasize(args, data),
-                                address, channel | priority << 6,
-                                type.value | self.mbx_lock.next_counter() << 4,
-                                *args, data=data)
-        await self.write(self.mbx_out_off + self.mbx_out_sz - 1,
-                                data=1)
+        await self.write(self.mbx_out_off, "HHBB", datasize(args, data),
+                         address, channel | priority << 6,
+                         type.value | self.mbx_lock.next_counter() << 4,
+                         *args, data=data)
+        await self.write(self.mbx_out_off + self.mbx_out_sz - 1, data=1)
 
     async def mbx_recv(self):
         """receive data from the mailbox"""
@@ -951,6 +953,10 @@ class Terminal:
             if retsize != size:
                 raise EtherCatError(f"expected {size} bytes, got {retsize}")
             return b"".join(ret)
+
+    async def sdo_read_format(self, fmt, index, subindex=None):
+        """read with :meth:`sdo_read`, and parse with :func:`struct.unpack`"""
+        return unpack(fmt, await self.sdo_read(index, subindex))
 
     async def sdo_write(self, data, index, subindex=None):
         """write a single SDO entry
