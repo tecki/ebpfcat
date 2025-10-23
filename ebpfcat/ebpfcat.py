@@ -44,7 +44,7 @@ from .bpf import (
 from .ebpf import (
     EBPFBase, FuncId, MemoryDesc, SimulatedEBPF, SubProgram, prandom)
 from .ethercat import (
-    ECCmd, EtherCat, EtherCatError, MachineState, Packet, Struct, SyncManager,
+    ECCmd, EtherCat, EtherCatError, MachineState, Packet, SyncManager,
     Terminal)
 from .lock import FMMULock, LockFile, ParallelMailboxLock
 from .xdp import XDP
@@ -333,6 +333,52 @@ class Device(SubProgram):
         """
 
 
+class ServiceDesc:
+    def __init__(self, index, subidx):
+        self.index = index
+        self.subidx = subidx
+
+
+class Struct:
+    """Define repetitive structures in CoE objects
+
+    Some terminals, especially multi-channel terminals, have repetitive
+    structures in their CoE. Inherit from this class to create a structure for
+    them. Each instance will then define one channel. It takes one parameter,
+    which is the offset in the CoE address space from the template structure to
+    the one of the channel.
+    """
+    device = None
+
+    def __new__(cls, *args, **kwargs):
+        return StructDesc(cls, *args, **kwargs)
+
+
+class StructDesc:
+    def __init__(self, struct, sm3=0, sm2=None, coe=None):
+        self.struct = struct
+        if sm2 is None:
+            sm2 = sm3
+        if coe is None:
+            coe = sm3
+        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3,
+                                None: coe}
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        if (ret := instance.__dict__.get(self.name)) is not None:
+            return ret
+        ret = object.__new__(self.struct)
+        ret.position_offset = self.position_offset
+        ret.terminal = instance
+        instance.__dict__[self.name] = ret
+        return ret
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+
 class EBPFTerminal(Terminal):
     """This is the base class for all supported terminal types
 
@@ -404,6 +450,24 @@ class EBPFTerminal(Terminal):
                 packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
                                      self.position, self.pdo_out_off)
         return bases
+
+    async def parse_sdos(self):
+        sdos = {}
+        for cls in self.__class__.__mro__:
+            for k, v in cls.__dict__.items():
+                if isinstance(v, ServiceDesc):
+                    setattr(self, k,
+                            await self.read_object_entry(v.index, v.subidx))
+                elif isinstance(v, StructDesc):
+                    struct = getattr(self, k)
+                    offset = struct.position_offset[None]
+                    for ccls in struct.__class__.__mro__:
+                        for kk, vv in ccls.__dict__.items():
+                            if isinstance(vv, ServiceDesc):
+                                setattr(struct, kk,
+                                        await self.read_object_entry(
+                                            vv.index + offset, vv.subidx))
+
 
     def update(self, data):
         pass

@@ -20,8 +20,9 @@
 ========================================================================
 """
 
-from .ethercat import ECCmd, ServiceDesc, Struct, SyncManager
-from .ebpfcat import BaseType, EBPFTerminal, PacketDesc, ProcessDesc
+from .ebpfcat import (
+    BaseType, EBPFTerminal, PacketDesc, ProcessDesc, ServiceDesc, Struct)
+from .ethercat import ECCmd, SyncManager
 
 
 class Generic(EBPFTerminal):
