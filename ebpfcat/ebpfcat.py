@@ -414,6 +414,7 @@ class EBPFTerminal(Terminal):
         # we could do that later, but doing it here we get a better clue
         # where the problem could be.
         await self.set_state(MachineState.SAFE_OPERATIONAL)
+        await self.parse_sdos()
 
     async def write_pdos(self, index, values):
         await self.sdo_write(pack('B', 0), index, 0)
@@ -452,22 +453,16 @@ class EBPFTerminal(Terminal):
         return bases
 
     async def parse_sdos(self):
-        sdos = {}
-        for cls in self.__class__.__mro__:
-            for k, v in cls.__dict__.items():
-                if isinstance(v, ServiceDesc):
-                    setattr(self, k,
-                            await self.read_object_entry(v.index, v.subidx))
-                elif isinstance(v, StructDesc):
-                    struct = getattr(self, k)
-                    offset = struct.position_offset[None]
-                    for ccls in struct.__class__.__mro__:
-                        for kk, vv in ccls.__dict__.items():
-                            if isinstance(vv, ServiceDesc):
-                                setattr(struct, kk,
-                                        await self.read_object_entry(
-                                            vv.index + offset, vv.subidx))
-
+        async def parse_sdo(obj, offset):
+            for cls in obj.__class__.__mro__:
+                for k, v in cls.__dict__.items():
+                    if isinstance(v, ServiceDesc):
+                        setattr(obj, k, await self.read_object_entry(
+                            v.index + offset, v.subidx))
+                    elif isinstance(v, StructDesc):
+                        struct = getattr(self, k)
+                        await parse_sdo(struct, struct.position_offset[None])
+        await parse_sdo(self, 0)
 
     def update(self, data):
         pass
