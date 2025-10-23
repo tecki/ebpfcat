@@ -50,8 +50,12 @@ async def info():
             terms = [Terminal(ec) for t in terminals]
             for t in terms:
                 t.ec = ec
-            await asyncio.gather(*(t.gentle_initialize(-i)
-                                   for i, t in zip(terminals, terms)))
+            if args.reset:
+                await asyncio.gather(*(t.initialize(-i)
+                                       for i, t in zip(terminals, terms)))
+            else:
+                await asyncio.gather(*(t.gentle_initialize(-i)
+                                       for i, t in zip(terminals, terms)))
         else:
             term = Terminal(ec)
             if args.reset:
