@@ -45,93 +45,93 @@ class EtherCatError(Exception):
 
 
 class ECCmd(Enum):
-   NOP = 0  # No Operation
-   APRD = 1  # Auto Increment Read
-   APWR = 2  # Auto Increment Write
-   APRW = 3  # Auto Increment Read Write
-   FPRD = 4  # Configured Address Read
-   FPWR = 5  # Configured Address Write
-   FPRW = 6  # Configured Address Read Write
-   BRD = 7  # Broadcast Read
-   BWR = 8  # Broadcast Write
-   BRW = 9 # Broadcast Read Write
-   LRD = 10  # Logical Memory Read
-   LWR = 11  # Logical Memory Write
-   LRW = 12  # Logical Memory Read Write
-   ARMW = 13  # Auto Increment Read Multiple Write
-   FRMW = 14  # Configured Read Multiple Write
+    NOP = 0  #: No Operation
+    APRD = 1  #: Auto Increment Read
+    APWR = 2  #: Auto Increment Write
+    APRW = 3  #: Auto Increment Read Write
+    FPRD = 4  #: Configured Address Read
+    FPWR = 5  #: Configured Address Write
+    FPRW = 6  #: Configured Address Read Write
+    BRD = 7  #: Broadcast Read
+    BWR = 8  #: Broadcast Write
+    BRW = 9  #: Broadcast Read Write
+    LRD = 10  #: Logical Memory Read
+    LWR = 11  #: Logical Memory Write
+    LRW = 12  #: Logical Memory Read Write
+    ARMW = 13  #: Auto Increment Read Multiple Write
+    FRMW = 14  #: Configured Read Multiple Write
 
 
 class ECDataType(Enum):
-   def __new__(cls, value, fmt):
-       obj = object.__new__(cls)
-       obj._value_ = value
-       obj.fmt = fmt
-       return obj
-   INVALID = 0, None
-   BOOLEAN = 0x1, "?"
-   INTEGER8 = 0x2, "b"
-   INTEGER16 = 0x3, "h"
-   INTEGER32 = 0x4, "i"
-   UNSIGNED8 = 0x5, "B"
-   UNSIGNED16 = 0x6, "H"
-   UNSIGNED32 = 0x7, "I"
-   REAL32 = 0x8, "f"
-   VISIBLE_STRING = 0x9, None
-   OCTET_STRING = 0xA, None
-   UNICODE_STRING = 0xB, None
-   TIME_OF_DAY = 0xC, "I"
-   TIME_DIFFERENCE = 0xD, "i"
-   DOMAIN = 0xF, "i"
-   INTEGER24 = 0x10, "i"
-   REAL64 = 0x11, "d"
-   INTEGER64 = 0x15, "q"
-   UNSIGNED24 = 0x16, "i"
-   UNSIGNED64 = 0x1B, "Q"
-   BIT1 = 0x30, "B"
-   BIT2 = 0x31, "B"
-   BIT3 = 0x32, "B"
-   BIT4 = 0x33, "B"
-   BIT5 = 0x34, "B"
-   BIT6 = 0x35, "B"
-   BIT7 = 0x36, "B"
-   BIT8 = 0x37, "B"
+    def __new__(cls, value, fmt):
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj.fmt = fmt
+        return obj
+    INVALID = 0, None
+    BOOLEAN = 0x1, "?"
+    INTEGER8 = 0x2, "b"
+    INTEGER16 = 0x3, "h"
+    INTEGER32 = 0x4, "i"
+    UNSIGNED8 = 0x5, "B"
+    UNSIGNED16 = 0x6, "H"
+    UNSIGNED32 = 0x7, "I"
+    REAL32 = 0x8, "f"
+    VISIBLE_STRING = 0x9, None
+    OCTET_STRING = 0xA, None
+    UNICODE_STRING = 0xB, None
+    TIME_OF_DAY = 0xC, "I"
+    TIME_DIFFERENCE = 0xD, "i"
+    DOMAIN = 0xF, "i"
+    INTEGER24 = 0x10, "i"
+    REAL64 = 0x11, "d"
+    INTEGER64 = 0x15, "q"
+    UNSIGNED24 = 0x16, "i"
+    UNSIGNED64 = 0x1B, "Q"
+    BIT1 = 0x30, "B"
+    BIT2 = 0x31, "B"
+    BIT3 = 0x32, "B"
+    BIT4 = 0x33, "B"
+    BIT5 = 0x34, "B"
+    BIT6 = 0x35, "B"
+    BIT7 = 0x36, "B"
+    BIT8 = 0x37, "B"
 
 class MBXType(Enum):
-   ERR = 0  # Error
-   AOE = 1  # ADS over EtherCAT
-   EOE = 2  # Ethernet over EtherCAT
-   COE = 3  # CANopen over EtherCAT
-   FOE = 4  # File over EtherCAT
-   SOE = 5  # Servo over EtherCAT
-   VOE = 0xf  # Vendor over EtherCAT
+    ERR = 0  #: Error
+    AOE = 1  #: ADS over EtherCAT
+    EOE = 2  #: Ethernet over EtherCAT
+    COE = 3  #: CANopen over EtherCAT
+    FOE = 4  #: File over EtherCAT
+    SOE = 5  #: Servo over EtherCAT
+    VOE = 0xf  #: Vendor over EtherCAT
 
 class CoECmd(Enum):
-   EMERGENCY = 1
-   SDOREQ = 2
-   SDORES = 3
-   TXPDO = 4
-   RXPDO = 5
-   TXPDO_RR = 6
-   RXPDO_RR = 7
-   SDOINFO = 8
+    EMERGENCY = 1
+    SDOREQ = 2
+    SDORES = 3
+    TXPDO = 4
+    RXPDO = 5
+    TXPDO_RR = 6
+    RXPDO_RR = 7
+    SDOINFO = 8
 
 class ODCmd(Enum):
-   LIST_REQ = 1
-   LIST_RES = 2
-   OD_REQ = 3
-   OD_RES = 4
-   OE_REQ = 5
-   OE_RES = 6
-   SDOINFO_ERROR = 7
+    LIST_REQ = 1
+    LIST_RES = 2
+    OD_REQ = 3
+    OD_RES = 4
+    OE_REQ = 5
+    OE_RES = 6
+    SDOINFO_ERROR = 7
 
-   DOWN_INIT = 0x21
-   DOWN_EXP = 0x23
-   DOWN_INIT_CA = 0x31
-   UP_REQ = 0x40
-   UP_REQ_CA = 0x50
-   SEG_UP_REQ = 0x60
-   ABORT = 0x80
+    DOWN_INIT = 0x21
+    DOWN_EXP = 0x23
+    DOWN_INIT_CA = 0x31
+    UP_REQ = 0x40
+    UP_REQ_CA = 0x50
+    SEG_UP_REQ = 0x60
+    ABORT = 0x80
 
 class EEPROM(IntEnum):
     VENDOR_ID = 8
