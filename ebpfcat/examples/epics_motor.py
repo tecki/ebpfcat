@@ -20,6 +20,7 @@ from .epics import setter, start_ethercat_ioc
 
 
 async def main(start_ioc):
+    """run an IOC for a stepper motor"""
     # define which EtherNet port to use
     master = ParallelEtherCat("eth0")
     async with master.run():

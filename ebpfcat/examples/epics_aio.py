@@ -17,6 +17,7 @@ from .epics import setter, start_ethercat_ioc
 
 
 async def main(start_ioc):
+    """run an IOC for an analog input and output"""
     # tell which ethernet port to use
     master = ParallelEtherCat("eth0")
     async with master.run():

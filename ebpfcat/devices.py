@@ -163,7 +163,42 @@ class Counter(Device):
 
 
 class Valve(Device):
-    """a digital output with two inputs for feedback"""
+    """a digital output with two inputs for feedback
+
+    .. attribute:: coil
+        :type: TerminalVar
+
+        link this to a digital output which will open the valve
+
+    .. attribute:: openSwitch
+        :type: TerminalVar
+    .. attribute:: closedSwitch
+        :type: TerminalVar
+
+        link these to the switches which indicated that the valve
+        is open or closed.
+
+    .. attribute:: target
+        :type: DeviceVar
+
+        The position the valve is supposed to be in. ``True`` if it
+        should be at the :attr:`openSwitch`, ``False`` if it should
+        be at the :attr:`closedSwitch`.
+
+    .. attribute:: error
+        :type: DeviceVar
+
+        indicate that the valve did not reach its target in time.
+
+    .. attribute:: movingTime
+
+        the time in seconds to reach the :attr:`target`. After this time has
+        passed, the target is set to the :attr:`safeState`.
+
+    .. attribute:: safeState
+
+        this is what the :attr:`target` is set to if an error occurs.
+    """
 
     coil = TerminalVar()
     openSwitch = TerminalVar()

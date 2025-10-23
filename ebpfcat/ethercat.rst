@@ -106,20 +106,27 @@ Four methods of control
 
 The communication with the terminals can happen in four different ways:
 
-- asynchronous: the communication happens ad-hoc whenever needed. This is
+asynchronous
+  the communication happens ad-hoc whenever needed. This is
   done during initialization and for reading and writing configuration data,
   like CoE. This communication is done directly in the
   :class:`~ethercat.EtherCAT` base class.
-- slow: the data is sent, received and processed via Python. This is good
+
+slow
+  the data is sent, received and processed via Python. This is good
   enough to around 100 Hz operation, depending on the overall load on the
   system. This is done in a :class:`~ebpfcat.SyncGroup`.
-- parallel: the slow communication, but in a separate process. This is
+
+parallel
+  the slow communication, but in a separate process. This is
   useful if the program needs to perform other tasks as well, which would
   block the event loop for too long to reach stable operation. Also
   good to some 100 Hz. This operation is achieved by using a
   :class:`~ebpfcat.ProcessSyncGroup`, which requires the EtherCat master to
   be a :class:`~ebpfcat.ParallelEtherCat`.
-- fast: the data is sent, received and processed using XDP in the Linux
+
+fast
+  the data is sent, received and processed using XDP in the Linux
   Kernel. Only very limited operations can be done, namely integer arithmetic
   only, but the loop cycle frequency exceeds 10 kHz. This operation requires
   to write special :class:`~ebpfcat.Device`\ s  which generate the necessary
@@ -365,6 +372,7 @@ may be set::
 So in this example, CoE address 7010:21 is a 16 bit integer that sets the drive
 velocity of a stepper motor.
 
+.. highlight:: Python
 
 Using EBPFCat with the EPICS control system
 -------------------------------------------
@@ -379,8 +387,10 @@ Those can be started with ``python -m ebpfcat.examples.epics_aio``, after you
 have adopted the code to the hardware you use.
 
 .. automodule:: ebpfcat.examples.epics_aio
+   :members:
 
 .. automodule:: ebpfcat.examples.epics_motor
+   :members:
 
 .. automodule:: ebpfcat.examples.epics
    :members:

@@ -41,10 +41,11 @@ from struct import pack, unpack, unpack_from, calcsize
 from .lock import MailboxLock
 
 class EtherCatError(Exception):
-    pass
+    """This represents an error on the EtherCat bus"""
 
 
 class ECCmd(Enum):
+    """The possible EtherCat commands in a Datagram"""
     NOP = 0  #: No Operation
     APRD = 1  #: Auto Increment Read
     APWR = 2  #: Auto Increment Write
@@ -313,7 +314,7 @@ class EtherCat(Protocol):
 
     def __init__(self, network):
         """
-        :param network: the name of the network adapter, like "eth0"
+        :param network: the name of the network adapter, like ``"eth0"``
         """
         self.addr = (network, 0x88A4, 0, 0, b"\xff\xff\xff\xff\xff\xff")
         self.wait_futures = {}
@@ -388,7 +389,7 @@ class EtherCat(Protocol):
     def roundtrip_packet(self, packet, index=None):
         """Send a packet and return the response
 
-        Send the `packet` to the loop and wait that it comes back,
+        Send the ``packet`` to the loop and wait that it comes back,
         and return that to the caller. """
         if index is None:
             index = randint(2000, 1000000000)
@@ -475,7 +476,7 @@ class EtherCat(Protocol):
         return ret
 
     async def eeprom_read(self, position, start):
-        """read 4 bytes from the eeprom of terminal `position` at `start`"""
+        """read 4 bytes from the eeprom of terminal *position* at *start*"""
         while (await self.roundtrip(ECCmd.APRD, position,
                                     0x502, "H"))[0] & 0x8000:
             pass
@@ -502,7 +503,11 @@ class EtherCat(Protocol):
             logging.warning('received unknown packet %i (%x)', index, data[3])
 
     async def scan_serial_numbers(self):
-        """Scan the bus and read the terminal serial numbers"""
+        """Scan the bus and read the terminal serial numbers
+
+        return a dictionary that contains the absolute address of the terminal as
+        a function of the serial number, if an absolute address has been set,
+        otherwise it contains the negative position on the bus."""
         addr_by_serial = {}
 
         async def get_serial(i):
@@ -647,7 +652,9 @@ class Terminal:
         self.parse_sync_managers(sm)
 
     async def set_watchdog(self, pdi, process):
-        """set the watchdog time for the PDI and process data watchdog"""
+        """set the watchdog time for the PDI and process data watchdog
+
+        Note that this is discouraged, as it usually masks real problems."""
         await self.write(0x410, 'H', pdi)
         await self.write(0x420, 'H', process)
 
@@ -811,14 +818,14 @@ class Terminal:
     async def read(self, start, *args, **kwargs):
         """read data from the terminal at offset `start`
 
-        see `EtherCat.roundtrip` for details on more parameters. """
+        see :meth:`EtherCat.roundtrip` for details on more parameters. """
         return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
                                         start, *args, **kwargs))
 
     async def write(self, start, *args, **kwargs):
         """write data to the terminal at offset `start`
 
-        see `EtherCat.roundtrip` for details on more parameters"""
+        see :meth:`EtherCat.roundtrip` for details on more parameters"""
         return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
                                         start, *args, **kwargs))
 
