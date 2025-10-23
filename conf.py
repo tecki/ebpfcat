@@ -1,5 +1,6 @@
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
 ]
 
@@ -24,3 +25,4 @@ htmlhelp_basename = 'EBPFCat'
 
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
 autodoc_mock_imports = ['softioc']
+autodoc_inherit_docstrings = False
