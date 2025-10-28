@@ -5,6 +5,8 @@ authors = [
 description = 'An EtherCAT master written in Python using EBPF and XDP'
 name = "ebpfcat"
 version = "1.0.0"
+readme = "README.rst"
+license = "GPL-2.0-or-later"
 dependencies = []
 
 [project.scripts]
