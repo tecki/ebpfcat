@@ -86,16 +86,15 @@ gauges, ...) are simpler and work much similar. Let's go step by step:
 - find a free channel on an encoder terminal, like an EL5042, again, if needed
   add a terminal.
 - add a new device of type *Motor* to the Karabo project.
-- In that device, set the name of the motor terminal. Then part after the last
-  ``/`` is sufficient.
+- In that device, set the name of the motor terminal.
 - In that device, also set the channel on the encoder terminal, giving the name
-  of the terminal (again, the part after the last ``/``), and the name of the
-  channel, combined with a dot, as in ``PM5.channel2``.
+  of the terminal, and the name of the channel, combined with a dot, as in
+  ``INSTRUMENT_TEST_PLC/TERM/PM5.channel2``.
 - Decide which sync group this motor should belong to: either add a new
   *Fast Sync Group* device, or choose an existing one.
 - For a new sync group, set the master device to the one it should belong to.
 - Shut down an existing sync group (evidently it will stop working), and add
-  your new motor to the *devices* list.
+  your new motor to its *devices* list.
 
 
 Troubleshooting
