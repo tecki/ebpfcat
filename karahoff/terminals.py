@@ -42,9 +42,15 @@ class EL5042Terminal(EtherCATTerminal):
 class EL7041Terminal(EtherCATTerminal):
     Base = terminals.EL7041
 
-    max_current = UInt16(alias='max_current')
-    max_voltage = UInt16(alias='max_voltage')
-    coil_resistance = UInt16(alias='coil_resistance')
+    max_current = UInt16(displayedName='Nominal Current',
+                         alias='max_current', unitSymbol=Unit.AMPERE,
+                         metricPrefixSymbol=MetricPrefix.MILLI)
+    max_voltage = UInt16(displayedName='Input Voltage',
+                         alias='max_voltage', unitSymbol=Unit.VOLT,
+                         metricPrefixSymbol=MetricPrefix.MILLI)
+    coil_resistance = UInt16(displayedName='Coil Resistance',
+                             alias='coil_resistance', unitSymbol=Unit.OHM,
+                             metricPrefixSymbol=MetricPrefix.CENTI)
     motor_emf = UInt16(alias='motor_emf')
     invLogicLim1 = Bool(alias='invLogicLim1')
     invLogicLim2 = Bool(alias='invLogicLim2')

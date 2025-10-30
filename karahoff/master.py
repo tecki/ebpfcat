@@ -479,9 +479,11 @@ class EtherCATTerminal(Device):
         no serial number is known (or set). At XFEL, this serial number is
         usually the QR code.""", assignment=Assignment.MANDATORY)
     coe = VectorHash(
+        displayedName='CoE parameters',
         description="Additional CoE paramters to be set upon intialization",
         accessMode=AccessMode.INITONLY, rows=CoETable, defaultValue=[])
-    currentCoE = VectorHash(accessMode=AccessMode.READONLY, rows=CoETable)
+    currentCoE = VectorHash(displayedName='Current CoE Parameters',
+                            accessMode=AccessMode.READONLY, rows=CoETable)
     watchdog = ml.Float(accessMode=AccessMode.INITONLY,
                         unitSymbol=Unit.SECOND,
                         metricPrefixSymbol=MetricPrefix.MILLI)
