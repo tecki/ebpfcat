@@ -585,7 +585,7 @@ class EtherCATTerminal(Device):
                 setattr(self, attr.key, value)
                 return
             entry = getattr(self.terminal, attr.alias)
-            await entry.write(value)
+            await entry.write(value.value)
             setattr(self, attr.key, await entry.read())
 
         return setter
