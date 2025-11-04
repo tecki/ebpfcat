@@ -20,6 +20,8 @@ exclude_patterns = ['_build']
 pygments_style = 'sphinx'
 todo_include_todos = False
 html_theme = 'alabaster'
+html_logo = 'ebpfcat.svg'
+html_favicon = 'ebpfcat.svg'
 html_static_path = ['_static']
 htmlhelp_basename = 'EBPFCat'
 
