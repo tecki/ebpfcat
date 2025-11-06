@@ -168,7 +168,7 @@ is too small (by default ``XDPExitCode.PASS``). So the above example becomes::
             with self.pH[12] == 8:
                 self.count += 1
 
-With the :class:`xdp.PacketVar`` descriptor it is possible to declare certain
+With the :class:`xdp.PacketVar` descriptor it is possible to declare certain
 positions in the packet as variables. As parameters it takes the position
 within the packet, and the data format, following the conventions from the
 Python :mod:`struct` package, including the endianness markers ``<>!``. So the
