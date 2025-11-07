@@ -1,9 +1,9 @@
 .. currentmodule:: ebpfcat
 
-A Python-base EBPF code generator
+A Python-base eBPF code generator
 =================================
 
-This library facilitates the generation of EBPF code. Instead of compiling
+This library facilitates the generation of eBPF code. Instead of compiling
 code, we generate it on-the-fly. This is fully done in Python, without
 the need of an external compiler. This also allows us to entangle user-space
 and EPBF-space code within the same program.
@@ -16,7 +16,7 @@ by the kernel.
 Getting started
 ---------------
 
-As a simple example for EBPF we write an XDP program which simply counts
+As a simple example for eBPF we write an XDP program which simply counts
 incoming packages.
 
 We start with declaring the variables that we want to see both in the
@@ -33,7 +33,7 @@ XDP program and in user space::
 
 Next comes the program that we want to run in the kernel. Note that this
 program looks as if it was just Python code, but it is not actually.
-Instead it generates EBPF code that we can later load into the kernel::
+Instead it generates eBPF code that we can later load into the kernel::
 
     def program(self):
         self.count += 1
@@ -63,8 +63,8 @@ detach automatically, as in::
         print("packets arrived so far:", c.count)
 
 Note that here we access the member variable ``count`` from user space.
-While generating EBPF, the code generator knows it needs to write out
-commands to access that variable from EBPF, once accessed outside of
+While generating eBPF, the code generator knows it needs to write out
+commands to access that variable from eBPF, once accessed outside of
 generation context, we access it from the user side.
 
 Both :meth:`xdp.XDP.attach` and :meth:`xdp.XDP.detach` have an additional
@@ -81,7 +81,7 @@ Maps
 ----
 
 Maps are used to communicate to the outside world. They look like instance
-variables. They may be used from within the EBPF program, and once it is
+variables. They may be used from within the eBPF program, and once it is
 loaded also from Python code. It is possible to write out the maps to a
 bpf file system using :meth:`ebpf.EBPF.pin_maps`.
 
@@ -91,7 +91,7 @@ and :class:`hashmap.HashMap`. They have different use cases:
 Array Maps
 ~~~~~~~~~~
 
-Array maps are share memory between EBPF programs and user space. All programs
+Array maps are share memory between eBPF programs and user space. All programs
 as well as user space are accessing the memory at the same time, so concurrent
 access may lead to problems. An exception is the in-place addition operator
 `+=`, which works under a lock, but only if the variable is of 4 or 8
@@ -121,13 +121,13 @@ anew. They are declared as follows::
        a_variable = hash_map.globalVar()
 
 They are used as normal variables, like in ``self.a_variable = 5``, both
-in EBPF and from user space once loaded.
+in eBPF and from user space once loaded.
 
 Accessing the packet
 --------------------
 
 The entire point of XDP is to react to the arriving network packets.
-The EBPF program will be checked statically that it can only access the
+The eBPF program will be checked statically that it can only access the
 contents of the packet, and not beyond. This means a ``with`` statement
 (acting as an *if*) needs to be added that checks that the packet is large
 enough so every packet access will be within the packet. To facilitate this,
@@ -198,13 +198,13 @@ Expressions
 Once a variable is declared, it can be used very close to normal Python syntax.
 Standard arithmetic works, like ``self.distance = self.speed * self.time``,
 given that all are declared variables. Note that you cannot use usual Python
-variables, as accessing them does not generate any EBPF code. Use local
+variables, as accessing them does not generate any eBPF code. Use local
 variables for that.
 
 Local variables
 ~~~~~~~~~~~~~~~
 
-local variables are seen only by one EBPF program, they cannot be seen by
+local variables are seen only by one eBPF program, they cannot be seen by
 other programs or user space. They are declared in the class body like this::
 
     class Program(XDP):
@@ -228,7 +228,7 @@ certainly an ``Else`` statement may be omitted if not needed.
 No loops
 ~~~~~~~~
 
-There is no way to declare a loop, simply because EBPF does not allow it.
+There is no way to declare a loop, simply because eBPF does not allow it.
 You may simply write a ``for`` loop in Python as long as everything can
 be calculated at generation time, but this just means that the code will show
 up in the EPBF as often as the loop is iterated at generation time.
