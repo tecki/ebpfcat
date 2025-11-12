@@ -32,7 +32,7 @@ from ebpfcat.ebpf import LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
-    AccessMode, Assignment, Bool, Double, Float, Int16, Int32, MetricPrefix,
+    AccessMode, Assignment, Bool, Double, Float, Int16, Int32, Int64, MetricPrefix,
     Overwrite, QuantityValue, Slot, State, String, TimeMixin, Timestamp,
     UInt16, UInt64, Unit, background, get_timestamp, isSet, unit)
 from numpy import polyfit
@@ -607,6 +607,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         displayedName='Actual Position',
         accessMode=AccessMode.READONLY,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    rawPosition = Int64(accessMode=AccessMode.READONLY)
     actualVelocity = Float(
         displayedName='Actual Velocity',
         unitSymbol=Unit.METER_PER_SECOND,
@@ -748,6 +749,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         if abs(self.device.encoder - self.lastposition) > 3:
             self.actualPosition = (self.device.encoder * self.encodeStep
                                    + self.offset) * now()
+            self.rawPosition = self.device.encoder
             if not isSet(self.targetPosition):
                 self.targetPosition = self.actualPosition
             self.lastposition = self.device.encoder
