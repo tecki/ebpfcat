@@ -32,13 +32,13 @@ from asyncio import (
 from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
 from itertools import count
-import logging
 import operator
 from random import randint
 from socket import AF_PACKET
 from struct import pack, unpack, unpack_from, calcsize
 
 from .lock import MailboxLock
+from .util import logger
 
 class EtherCatError(Exception):
     """This represents an error on the EtherCat bus"""
@@ -362,7 +362,7 @@ class EtherCat(Protocol):
         except CancelledError:
             raise
         except Exception:
-            logging.exception("sendloop failed")
+            logger.exception("sendloop failed")
             raise
 
     async def process_packet(self, dgrams, packet):
@@ -376,14 +376,14 @@ class EtherCat(Protocol):
                 elif not future.done():
                     future.set_result(data[start:stop])
                 else:
-                    logging.info("future already done, dropped datagram")
+                    logger.info("future already done, dropped datagram")
         except CancelledError:
             raise
         except Exception as e:
             for _, _, future in dgrams:
                 if not future.done():
                     future.set_exception(e)
-            logging.exception("process_packet failed")
+            logger.exception("process_packet failed")
             raise
 
     def roundtrip_packet(self, packet, index=None):
@@ -500,7 +500,7 @@ class EtherCat(Protocol):
         if future is not None and not future.done():
             future.set_result(data)
         else:
-            logging.warning('received unknown packet %i (%x)', index, data[3])
+            logger.warning('received unknown packet %i (%x)', index, data[3])
 
     async def scan_serial_numbers(self):
         """Scan the bus and read the terminal serial numbers
@@ -516,8 +516,8 @@ class EtherCat(Protocol):
             if serialNo > 0:
                 old = addr_by_serial.get(serialNo)
                 if old is not None and old != address:
-                    logging.warning('double serial number found: %i at %i',
-                                    serialNo, i)
+                    logger.warning('double serial number found: %i at %i',
+                                   serialNo, i)
                 else:
                     addr_by_serial[serialNo] = address
             else:
@@ -646,7 +646,7 @@ class Terminal:
                 self.mbx_out_off = offset
                 self.mbx_out_sz = size
             else:
-                logging.error("wrong mode parsing sync managers in EEPROM")
+                logger.error("wrong mode parsing sync managers in EEPROM")
 
     async def write_pdo_sm(self):
         await self.write(self.pdo_out_addr + 6, "B", 0)
@@ -828,8 +828,8 @@ class Terminal:
         status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
             etype, edata = await self.mbx_recv()
-            logging.error('terminal %s received unexpected mail %s "%s"',
-                          self.name, etype, edata)
+            logger.error('terminal %s received unexpected mail %s "%s"',
+                         self.name, etype, edata)
         assert self.mbx_out_off is not None, "not send mailbox defined"
         await self.write(self.mbx_out_off, "HHBB", datasize(args, data),
                          address, channel | priority << 6,
@@ -861,8 +861,8 @@ class Terminal:
                 while type is not MBXType.COE:
                     type, data = await self.mbx_recv()
                     if type is not MBXType.COE:
-                        logging.warning(f"expected CoE package, got {type}, "
-                                        f"for terminal {self.name}")
+                        logger.warning(f"expected CoE package, got {type}, "
+                                       f"for terminal {self.name}")
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
                 if rodcmd & 0x7f != odcmd.value + 1:
                     raise EtherCatError(f"expected {odcmd.value}, got {rodcmd}, "
@@ -887,8 +887,8 @@ class Terminal:
             while type is not MBXType.COE:
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    logging.warning(f"expected CoE package, got {type}, "
-                                    f"for terminal {self.name}")
+                    logger.warning(f"expected CoE package, got {type}, "
+                                   f"for terminal {self.name}")
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
@@ -1042,7 +1042,7 @@ class Terminal:
                 try:
                     oe = await self.read_object_entry(od.index, i)
                 except EtherCatError as e:
-                    logging.info(f"problems reading SDO {od.index:x}:{i:x}:")
+                    logger.info(f"problems reading SDO {od.index:x}:{i:x}:")
                     continue
                 if oe.dataType is ECDataType.INVALID:
                     continue

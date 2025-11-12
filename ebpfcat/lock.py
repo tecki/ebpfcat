@@ -1,11 +1,12 @@
 import fcntl
-import logging
 import os
 from asyncio import Lock, create_task, run, sleep
 from functools import wraps
 from multiprocessing import get_context
 from random import randrange
 from unittest import TestCase, main
+
+from .util import logger
 
 
 class LockFile:
@@ -110,7 +111,7 @@ class FMMULock:
             try:
                 addrmap = os.pread(self.fd, 1 << 6, 0)
                 if len(addrmap) != (1 << 6):
-                    logging.warn('found wrong fmmu map, ignoring')
+                    logger.warning('found wrong fmmu map, ignoring')
                     addrmap = b'\0' * (1 << 6)
                     os.pwrite(self.fd, addrmap, 0)
                     os.ftruncate(self.fd, 1 << 6)

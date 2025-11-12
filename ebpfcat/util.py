@@ -1,4 +1,8 @@
 from itertools import chain
+from logging import getLogger
+
+
+logger = getLogger('ebpfcat')
 
 
 class sub:

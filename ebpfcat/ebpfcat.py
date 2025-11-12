@@ -21,7 +21,6 @@
 """
 import asyncio
 import gc
-import logging
 import os
 import shutil
 import struct
@@ -47,6 +46,7 @@ from .ethercat import (
     ECCmd, EtherCat, EtherCatError, MachineState, Packet, SyncManager,
     Terminal)
 from .lock import FMMULock, LockFile, ParallelMailboxLock
+from .util import logger
 from .xdp import XDP
 from .xdp import PacketVar as XDPPacketVar
 from .xdp import XDPExitCode
@@ -644,6 +644,7 @@ class ParallelEtherCat(FastEtherCat):
         try:
             os.rename(tmpdir, lockdir)
         except OSError:
+            logger.info('other EPBFCat users found, use existing lock files')
             shutil.rmtree(tmpdir)
             lockfile = self.get_ethertype(lockdir)
             try:
@@ -658,6 +659,7 @@ class ParallelEtherCat(FastEtherCat):
                 os.remove(f'{lockdir}/{lockfile}')
                 raise
         else:
+            logger.info('no other EBPFCat user found, create lock files')
             try:
                 await super(FastEtherCat, self).connect()
                 self.ebpf = EtherXDP()
@@ -668,8 +670,8 @@ class ParallelEtherCat(FastEtherCat):
                 except OSError:
                     pass
                 else:
-                    logging.error('an old programs file was still at %s',
-                                  programs)
+                    logger.error('an old programs file was still at %s',
+                                 programs)
                 await self.ebpf.attach(self.addr[0])
                 self.ebpf.close()
                 obj_pin(programs, self.programs)
@@ -688,8 +690,9 @@ class ParallelEtherCat(FastEtherCat):
             try:
                 os.rmdir(lockdir)
             except OSError:
-                pass
+                logger.info('other EPBFCat users still alive, keep locks')
             else:
+                logger.info('we are last EPBFCat user, remove locks')
                 await self.ebpf.detach(self.addr[0])
                 os.remove(programs)
                 self.mbx_lock_file.remove()
@@ -820,7 +823,7 @@ class SyncGroupBase:
                         data = await wait_for(future, timeout=0.02)
                     except TimeoutError:
                         self.missed_counter += 1
-                        logging.warning(
+                        logger.warning(
                             "%s: did not receive Ethercat response in time %i",
                             self.name, self.missed_counter)
                         future = self.ec.roundtrip_packet(data,
@@ -829,13 +832,13 @@ class SyncGroupBase:
                     data = self.update_devices(data)
                     newtime = monotonic()
                     if newtime - lasttime > self.cycletime:
-                        logging.warning('%s: response time exceeded (%.0f ms)',
-                                        self.name, (newtime - lasttime) * 1000)
+                        logger.warning('%s: response time exceeded (%.0f ms)',
+                                       self.name, (newtime - lasttime) * 1000)
                     await sleep(self.cycletime - (newtime - lasttime))
                     newtime = monotonic()
                     if newtime - lasttime > 0.05:
-                        logging.warning('%s: excessive cycle time (%.0f ms)',
-                                        self.name, (newtime - lasttime) * 1000)
+                        logger.warning('%s: excessive cycle time (%.0f ms)',
+                                       self.name, (newtime - lasttime) * 1000)
                     lasttime = newtime
                     future = self.ec.roundtrip_packet(data, self.packet_index)
             finally:
@@ -870,7 +873,7 @@ class SyncGroup(SyncGroupBase):
         self.current_data[:] = data
         for pos, counts in self.packet.counters.items():
             if data[pos] != counts:
-                logging.warning(
+                logger.warning(
                     'EtherCAT datagram "%s" processed %i times, should be %i',
                     self.name, data[pos], counts)
                 self.wkc_errors += 1
