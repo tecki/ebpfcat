@@ -18,13 +18,27 @@ def entrypoint(func):
 
 @entrypoint
 async def scanbus():
-    ec = ParallelEtherCat(sys.argv[1])
+    parser = ArgumentParser(
+        prog = "ec-info",
+        description = "Retrieve information from an EtherCat bus")
+    parser.add_argument("interface")
+    parser.add_argument("-i", "--ids", action="store_true")
+    parser.add_argument("-f", "--fmmu", action="store_true")
+    args = parser.parse_args()
+
+    ec = ParallelEtherCat(args.interface)
     async with ec.run():
         no = await ec.count()
         print('counted', no)
-        for i in range(no):
-            r, = await ec.roundtrip(ECCmd.APRD, -i, 0x10, "H", 44)
-            print(i, r, await ec.eeprom_read(-i, 0xa))
+        if args.ids:
+            ids = await ec.scan_serial_numbers()
+            for addr, (id, pos) in ids.items():
+                print(f'{pos:8}{addr:8}{id:8}')
+        if args.fmmu:
+            fmmus = await ec.scan_fmmu()
+            for logical, size, pos in fmmus:
+                print(f'{logical:8x}{size:8}{pos:8}')
+
 
 @entrypoint
 async def info():

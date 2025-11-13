@@ -31,7 +31,7 @@ from asyncio import (
     ensure_future, get_event_loop)
 from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
-from itertools import count
+from itertools import count, pairwise
 import operator
 from random import randint
 from socket import AF_PACKET
@@ -519,15 +519,51 @@ class EtherCat(Protocol):
                     logger.warning('double serial number found: %i at %i',
                                    serialNo, i)
                 else:
-                    addr_by_serial[serialNo] = address
+                    addr_by_serial[serialNo] = (address, -i)
             else:
-                addr_by_serial[i] = address
+                addr_by_serial[i] = (address, -i)
 
         count = await self.count()
         async with TaskGroup() as tg:
             for i in range(count):
                 tg.create_task(get_serial(-i))
         return addr_by_serial
+
+    async def scan_fmmu(self):
+        ret = []
+
+        async def get_fmmu(i):
+            fmmu_no, = await self.roundtrip(ECCmd.APRD, -i, 4, 'B')
+            for index in range(fmmu_no):
+                logical, size, active = await self.roundtrip(
+                        ECCmd.APRD, -i, 0x600 + 0x10 * index, "IH5xB")
+                if logical == 0:
+                    continue
+                ret.append((logical, size, i))
+        no = await self.count()
+        async with TaskGroup() as tg:
+            for i in range(no):
+                tg.create_task(get_fmmu(i))
+        ret.sort()
+        for (logical1, size1, no1), (logical2, size2, no2) in pairwise(ret):
+            if logical1 + size1 > logical2:
+                raise EtherCatError(
+                    f'overlapping fmmu ranges: {no1}: {logical1:x} + {size1} '
+                    f'> {logical2:x} of {no2}')
+        return ret
+
+    async def clear_fmmus(self):
+        ret = []
+
+        async def clear_fmmu(i):
+            fmmu_no, = await self.roundtrip(ECCmd.APRD, -i, 4, 'B')
+            for index in range(fmmu_no):
+                await self.roundtrip(ECCmd.APWR, -i,
+                                     0x600 + 0x10 * index, data=16)
+        no = await self.count()
+        async with TaskGroup() as tg:
+            for i in range(no):
+                tg.create_task(clear_fmmu(i))
 
 
 class Terminal:
@@ -1074,6 +1110,6 @@ class Terminal:
             await self.write(0x600 + 0x10 * index, "IHBBHBBB3x", logical, size,
                              0, 7, offset, 0, 2 if write else 1, 1)
             yield index
-            await self.write(0x60c + 0x10 * index, "B", 0)
+            await self.write(0x600 + 0x10 * index, data=16)
         finally:
             self.fmmu_used[index] = None
