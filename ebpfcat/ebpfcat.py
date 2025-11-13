@@ -684,6 +684,7 @@ class ParallelEtherCat(FastEtherCat):
         try:
             yield
         finally:
+            self.transport.close()
             for v in self.sync_groups.values():
                 v.cancel()
             for entry in os.scandir(lockdir):
