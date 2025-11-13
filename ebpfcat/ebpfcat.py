@@ -681,6 +681,9 @@ class ParallelEtherCat(FastEtherCat):
         self.mbx_lock_file = LockFile(f'/run/ebpf/{self.addr[0]}',
                                       *self.terminal_addr_range)
         self.fmmu_lock_file = FMMULock(f'/run/ebpf/{self.addr[0]}.fmmu')
+        if self.fmmu_lock_file.lock_is_new:
+            logger.info('no fmmu lock file found, clear all fmmus')
+            await self.clear_fmmus()
         try:
             yield
         finally:
@@ -695,6 +698,7 @@ class ParallelEtherCat(FastEtherCat):
                                    'but no process, removing', pid)
                     os.remove(entry)
             os.remove(f'{lockdir}/{lockfile}')
+            self.fmmu_lock_file.release()
             try:
                 os.rmdir(lockdir)
             except OSError:

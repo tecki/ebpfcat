@@ -105,34 +105,35 @@ class FMMULock:
         try:
             self.fd = os.open(self.filename, os.O_CREAT | os.O_RDWR
                                              | os.O_EXCL | os.O_CLOEXEC)
+            self.lock_is_new = True
+            os.write(self.fd, b'\0' * 64)
         except FileExistsError:
+            self.lock_is_new = False
             self.fd = os.open(self.filename, os.O_RDWR | os.O_CLOEXEC)
-            fcntl.lockf(self.fd, fcntl.LOCK_EX)
-            try:
-                addrmap = os.pread(self.fd, 1 << 6, 0)
-                if len(addrmap) != (1 << 6):
-                    logger.warning('found wrong fmmu map, ignoring')
-                    addrmap = b'\0' * (1 << 6)
-                    os.pwrite(self.fd, addrmap, 0)
-                    os.ftruncate(self.fd, 1 << 6)
+
+        fcntl.lockf(self.fd, fcntl.LOCK_EX)
+        try:
+            addrmap = os.pread(self.fd, 1 << 6, 0)
+            if len(addrmap) != (1 << 6):
+                logger.warning('found wrong fmmu map, ignoring')
+                addrmap = b'\0' * (1 << 6)
+                os.pwrite(self.fd, addrmap, 0)
+                os.ftruncate(self.fd, 1 << 6)
+            addr = randrange(1, 1 << 9)
+            while addrmap[addr // 8] & (1 << (addr % 8)):
                 addr = randrange(1, 1 << 9)
-                while addrmap[addr // 8] & (1 << (addr % 8)):
-                    addr = randrange(1, 1 << 9)
-                out = bytes([addrmap[addr // 8] | (1 << (addr % 8))])
-                no = os.pwrite(self.fd, out, addr // 8)
-                assert no == 1
-                self.base_addr = addr << (12 + 10)
-            finally:
-                fcntl.lockf(self.fd, fcntl.LOCK_UN)
-        else:
-            os.write(self.fd, b'\2' + b'\0' * 63)
-            self.base_addr = 1 << (12 + 10)
+            out = bytes([addrmap[addr // 8] | (1 << (addr % 8))])
+            no = os.pwrite(self.fd, out, addr // 8)
+            assert no == 1
+            self.base_addr = addr << (12 + 10)
+        finally:
+            fcntl.lockf(self.fd, fcntl.LOCK_UN)
 
     def get_next_addr(self):
         self.base_addr += 1 << 12
         return self.base_addr
 
-    def remove(self):
+    def release(self):
         addr = self.base_addr // (4096 * 1024)
         fcntl.lockf(self.fd, fcntl.LOCK_EX)
         try:
@@ -142,6 +143,9 @@ class FMMULock:
         finally:
             fcntl.lockf(self.fd, fcntl.LOCK_UN)
         os.close(self.fd)
+
+    def remove(self):
+        os.remove(self.filename)
 
 
 def asynctst(f):
