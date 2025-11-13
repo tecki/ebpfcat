@@ -686,6 +686,13 @@ class ParallelEtherCat(FastEtherCat):
         finally:
             for v in self.sync_groups.values():
                 v.cancel()
+            for entry in os.scandir(lockdir):
+                with open(entry.path, 'r') as fin:
+                    pid = int(fin.read())
+                if not os.path.exists(f'/proc/{pid}'):
+                    logger.warning('lock file for pid %i exists, '
+                                   'but no process, removing', pid)
+                    os.remove(entry)
             os.remove(f'{lockdir}/{lockfile}')
             try:
                 os.rmdir(lockdir)
