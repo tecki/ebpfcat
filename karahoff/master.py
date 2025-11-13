@@ -23,6 +23,7 @@ terminals, these are the base classes to inherit from:
     :members:
 
 """
+import logging
 from asyncio import CancelledError, Event, gather, get_event_loop, sleep
 from contextlib import AsyncExitStack
 from itertools import chain
@@ -38,6 +39,12 @@ from karabo.middlelayer import (
     AccessMode, Assignment, Configurable, Device, Double, Float, Int64,
     MetricPrefix, Simple, Slot, State, String, Unit, VectorHash, VectorInt64,
     VectorString, background, getDevice, isSet, unit, waitUntil)
+
+logger = logging.getLogger('ebpfcat')
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+logger.addHandler(handler)
 
 formats = {
     ml.UInt8: 'B',
