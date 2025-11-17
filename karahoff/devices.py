@@ -635,7 +635,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         displayedName='Target Position',
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     stepSize = Float(
-        displayedName='Step Size', defaultValue=1,
+        displayedName='Step Size', defaultValue=1, minExc=0,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
 
     @Float()
@@ -685,7 +685,8 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.encoders = []
 
     @Slot(displayedName='Move',
-          allowedStates={State.OFF, State.ON, State.MOVING})
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
     async def move(self):
         self._move()
         # just in case await twice, to guarantee the device goes to the right
@@ -699,29 +700,34 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.device.set_control_word = self.ENABLE
 
     @Slot(displayedName='Stop',
-          allowedStates={State.ON, State.MOVING})
+          allowedStates={State.ON, State.MOVING,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
     async def stop(self):
         self.device.target = self.device.encoder
 
     @Slot(displayedName='On',
-          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED})
+          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
     async def on(self):
         self.targetPosition = self.actualPosition
         await self.move()
 
     @InterlockSlot(displayedName='Off',
-                   allowedStates={State.ON, State.MOVING, State.ENGAGED})
+                   allowedStates={State.ON, State.MOVING, State.ENGAGED,
+                                  State.MOVING_FORWARD, State.MOVING_BACK})
     def off(self):
         self.device.set_control_word = self.SWITCH_OFF
 
     @Slot(displayedName='Step Up',
-          allowedStates={State.OFF, State.ON, State.MOVING})
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_FORWARD})
     async def stepUp(self):
         self.targetPosition = self.actualPosition + self.stepSize
         await self.move()
 
     @Slot(displayedName='Step Down',
-          allowedStates={State.OFF, State.ON, State.MOVING})
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_BACK})
     async def stepDown(self):
         self.targetPosition = self.actualPosition - self.stepSize
         await self.move()
@@ -804,10 +810,14 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                 return State.SWITCHING_ON
             else:
                 return State.OFF
-        elif self.device.deadband_exceeded:
+        elif self.device.deadband_exceeded and self.device.velocity != 0:
             return State.MOVING
-        else:
-            return State.ON
+        elif not self.isLimitless:
+            if self.device.low_switch:
+                return State.MOVING_FORWARD
+            elif self.device.high_switch:
+                return State.MOVING_BACK
+        return State.ON
 
 
 class RotationDevice(MotorDevice):
@@ -903,7 +913,8 @@ class MotorFollower(Motor):
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
 
     @Slot(displayedName='Move',
-          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED})
+          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
     async def move(self):
         self.device.doFollow = 0
         await super().move()
@@ -995,7 +1006,8 @@ class SynchronizedMotor(RotationMotor):
         return ret
 
     @Slot(displayedName='Move',
-          allowedStates={State.OFF, State.ON, State.MOVING})
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
     async def move(self):
         self.device.doSynchronize = 0
         await super().move()
