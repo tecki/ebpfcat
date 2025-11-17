@@ -45,7 +45,7 @@ from .ebpf import (
 from .ethercat import (
     ECCmd, EtherCat, EtherCatError, MachineState, Packet, SyncManager,
     Terminal)
-from .lock import FMMULock, LockFile, ParallelMailboxLock
+from .lock import LockFile, ParallelMailboxLock
 from .util import logger
 from .xdp import XDP
 from .xdp import PacketVar as XDPPacketVar
@@ -616,20 +616,18 @@ class ParallelEtherCat(FastEtherCat):
     """
     def get_ethertype(self, lockdir):
         while True:
+            self.ethertype = randrange(0x3001, 0x3100)
             try:
                 lockfile = f'{self.ethertype}.lock'
                 with open(f'{lockdir}/{lockfile}', 'x') as lf:
                     lf.write(f'{os.getpid():10}\n')
+                self.next_logical_addr = (self.ethertype - 0x3000) << 24
                 return lockfile
             except FileExistsError:
-                self.ethertype = randrange(0x3000, 0x6000)
                 continue
 
     def get_mbx_lock(self, no):
         return ParallelMailboxLock(self.mbx_lock_file, no)
-
-    def get_fmmu_addr(self):
-        return self.fmmu_lock_file.get_next_addr()
 
     @asynccontextmanager
     async def run(self):
@@ -675,15 +673,12 @@ class ParallelEtherCat(FastEtherCat):
                 await self.ebpf.attach(self.addr[0])
                 self.ebpf.close()
                 obj_pin(programs, self.programs)
+                await self.clear_fmmus()
             except Exception:
                 shutil.rmtree(lockdir)
                 raise
         self.mbx_lock_file = LockFile(f'/run/ebpf/{self.addr[0]}',
                                       *self.terminal_addr_range)
-        self.fmmu_lock_file = FMMULock(f'/run/ebpf/{self.addr[0]}.fmmu')
-        if self.fmmu_lock_file.lock_is_new:
-            logger.info('no fmmu lock file found, clear all fmmus')
-            await self.clear_fmmus()
         try:
             yield
         finally:
@@ -698,7 +693,6 @@ class ParallelEtherCat(FastEtherCat):
                                    'but no process, removing', pid)
                     os.remove(entry)
             os.remove(f'{lockdir}/{lockfile}')
-            self.fmmu_lock_file.release()
             try:
                 os.rmdir(lockdir)
             except OSError:
@@ -708,7 +702,6 @@ class ParallelEtherCat(FastEtherCat):
                 await self.ebpf.detach(self.addr[0])
                 os.remove(programs)
                 self.mbx_lock_file.remove()
-                self.fmmu_lock_file.remove()
 
     def __getstate__(self):
         return self.addr[0]

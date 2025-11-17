@@ -271,7 +271,7 @@ class Packet:
         ret = [pack("<HBBiHHHH", (self.size-2) | 0x1000, 0, 0,
                     index, 0x8002, 0, ethertype, 0)]
         for i, (cmd, data, wkc, *dgram) in enumerate(self.data, start=1):
-            ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBiHH",
+            ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBIHH",
                             cmd.value, *dgram,
                             len(data) | ((i < len(self.data)) << 15), 0))
             ret.append(data)

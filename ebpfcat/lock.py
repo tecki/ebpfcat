@@ -91,63 +91,6 @@ class ParallelMailboxLock:
         return ret
 
 
-class FMMULock:
-    """avoid clashings in the FMMU address space
-
-    we define the FMMU addresses to be threefold: 9 bits to indicate the
-    process, managed by a lock file, 10 bits for sync groups within a
-    process, which is just counted up, and the left over 12 bits to address
-    the actual EtherCAT packet.
-    """
-    def __init__(self, filename):
-        self.filename = filename
-        os.makedirs(filename.rsplit('/', 1)[0], exist_ok=True)
-        try:
-            self.fd = os.open(self.filename, os.O_CREAT | os.O_RDWR
-                                             | os.O_EXCL | os.O_CLOEXEC)
-            self.lock_is_new = True
-            os.write(self.fd, b'\0' * 64)
-        except FileExistsError:
-            self.lock_is_new = False
-            self.fd = os.open(self.filename, os.O_RDWR | os.O_CLOEXEC)
-
-        fcntl.lockf(self.fd, fcntl.LOCK_EX)
-        try:
-            addrmap = os.pread(self.fd, 1 << 6, 0)
-            if len(addrmap) != (1 << 6):
-                logger.warning('found wrong fmmu map, ignoring')
-                addrmap = b'\0' * (1 << 6)
-                os.pwrite(self.fd, addrmap, 0)
-                os.ftruncate(self.fd, 1 << 6)
-            addr = randrange(1, 1 << 9)
-            while addrmap[addr // 8] & (1 << (addr % 8)):
-                addr = randrange(1, 1 << 9)
-            out = bytes([addrmap[addr // 8] | (1 << (addr % 8))])
-            no = os.pwrite(self.fd, out, addr // 8)
-            assert no == 1
-            self.base_addr = addr << (12 + 10)
-        finally:
-            fcntl.lockf(self.fd, fcntl.LOCK_UN)
-
-    def get_next_addr(self):
-        self.base_addr += 1 << 12
-        return self.base_addr
-
-    def release(self):
-        addr = self.base_addr // (4096 * 1024)
-        fcntl.lockf(self.fd, fcntl.LOCK_EX)
-        try:
-            data = os.pread(self.fd, 1, addr // 8)
-            os.pwrite(self.fd, bytes((data[0] & ~(1 << (addr % 8)),)),
-                      addr // 8)
-        finally:
-            fcntl.lockf(self.fd, fcntl.LOCK_UN)
-        os.close(self.fd)
-
-    def remove(self):
-        os.remove(self.filename)
-
-
 def asynctst(f):
     @wraps(f)
     def wrapper(self):
