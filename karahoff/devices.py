@@ -556,10 +556,10 @@ class MotorDevice(Device):
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
             if not self.isLimitless:
-                with ((self.low_switch != 0) & (self.ebpf.stmp < 0)):
+                with (((self.low_switch != 0) & (self.ebpf.stmp < 0))
+                      | ((self.high_switch != 0) & (self.ebpf.stmp > 0))):
                     self.ebpf.stmp = 0
-                with ((self.high_switch != 0) & (self.ebpf.stmp > 0)):
-                    self.ebpf.stmp = 0
+                    self.target = self.encoder
             if self.encoder_error is not None:
                 with self.encoder_error:
                     self.ebpf.stmp = 0
