@@ -85,8 +85,9 @@ variables. They may be used from within the eBPF program, and once it is
 loaded also from Python code. It is possible to write out the maps to a
 bpf file system using :meth:`ebpf.EBPF.pin_maps`.
 
-There are two flavors: :class:`arraymap.ArrayMap`
-and :class:`hashmap.HashMap`. They have different use cases:
+There are three flavors: :class:`arraymap.ArrayMap`,
+:class:`arraymap.PerCPUArrayMap`, and :class:`hashmap.HashMap`. They have
+different use cases:
 
 Array Maps
 ~~~~~~~~~~
@@ -94,7 +95,7 @@ Array Maps
 Array maps are share memory between eBPF programs and user space. All programs
 as well as user space are accessing the memory at the same time, so concurrent
 access may lead to problems. An exception is the in-place addition operator
-`+=`, which works under a lock, but only if the variable is of 4 or 8
+``+=``, which works under a lock, but only if the variable is of 4 or 8
 bytes size.
 
 Otherwise variables may be declared in all sizes. The declaration is like so::
@@ -107,6 +108,14 @@ Otherwise variables may be declared in all sizes. The declaration is like so::
 those variables can be accessed both from within the ebpf program, as from
 outside. Both sides are actually accessing the same memory, so be aware of
 race conditions.
+
+Per-CPU Maps
+~~~~~~~~~~~~
+
+In high-performance situations, the locking done by ``+=`` may actually a
+bottleneck. For this case there are Per-CPU arrays. From the eBPF side they
+look like normal arrays, but from the Python side every variable is an array
+with  value per CPU.
 
 Hash Maps
 ~~~~~~~~~
