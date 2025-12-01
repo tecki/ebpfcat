@@ -684,6 +684,23 @@ class Binary(Expression):
                                           and self.right.contains(no))
 
 
+class AsLong(Expression):
+    fixed = False
+
+    def __init__(self, arg):
+        self.arg = arg
+        self.ebpf = arg.ebpf
+        self.signed = arg.signed
+
+    @contextmanager
+    def calculate(self, dst, long, force=False):
+        with self.arg.calculate(dst, True, force) as (dst, long):
+            yield dst, long
+
+    def contains(self, no):
+        return self.arg.contains(no)
+
+
 class Unary(Expression):
     def __init__(self, arg):
         self.arg = arg
