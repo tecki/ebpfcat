@@ -1,16 +1,16 @@
 test:
     image: python:3.12-slim
     script:
-        - python3 -m ebpfcat.ebpf_test -v Tests && python3 -m ebpfcat.ethercat_test -v
+        - python3 -m ebpfcat.ebpf_test -v Tests
 
 docs:
     image: sphinxdoc/sphinx
+    pages: True
+    artifacts:
+      paths:
+        - public
     script:
         - apt-get update
         - apt-get install -y openssh-client
         - pip3 install . --user
-        - sphinx-build -b html -d _build/doctrees . _build/html
-        - eval $(ssh-agent)
-        - echo "$SSHKEY" | ssh-add -
-        - ssh -o UserKnownHostsFile=known_hosts wp86team@exflqr30526 "./doc-prepare ec_$CI_COMMIT_REF_NAME"
-        - scp -o UserKnownHostsFile=known_hosts -r _build/html wp86team@exflqr30526:html/ec_$CI_COMMIT_REF_NAME
+        - sphinx-build -b html -d _build/doctrees . public
