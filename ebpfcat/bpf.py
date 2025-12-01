@@ -120,11 +120,17 @@ def create_map(map_type, key_size, value_size, max_entries,
                attributes.value)[0]
 
 def lookup_elem(fd, key, fmt):
-    value = bytearray(calcsize(fmt))
+    if isinstance(fmt, int):
+        value = bytearray(fmt)
+    else:
+        value = bytearray(calcsize(fmt))
     addr = addressof(c_char.from_buffer(value))
     ret, _ = bpf(1, "IQQQ", fd, addrof(key), addr, 0)
     if ret == 0:
-        return unpack(fmt, value)[0]
+        if isinstance(fmt, int):
+            return value
+        else:
+            return unpack(fmt, value)[0]
     else:
         return None
 

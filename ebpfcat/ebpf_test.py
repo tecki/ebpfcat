@@ -18,7 +18,7 @@
 from unittest import TestCase, main
 
 from . import ebpf
-from .arraymap import ArrayMap
+from .arraymap import ArrayMap, PerCPUArrayMap
 from .ebpf import (
     AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
     SimulatedEBPF, SubProgram, ktime)
@@ -1189,6 +1189,20 @@ class KernelTests(TestCase):
         e.exit()
         print(e.opcodes)
         print(e.load(log_level=1)[1])
+
+    def test_percpumap(self):
+        class Global(EBPF):
+            cpumap = PerCPUArrayMap()
+            ar = cpumap.globalVar()
+
+        e = Global(ProgType.XDP, "GPL")
+        e.ar = 7
+        e.exit()
+
+        e.load(log_level=1)
+        e.test_run(1000, 1000, 100, 100, 1)
+        e.cpumap.read()
+        e.ar.index(7)
 
 
 class ProcessProgram(SimulatedEBPF):
