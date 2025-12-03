@@ -848,9 +848,9 @@ class RotationMotor(Motor):
     actualPosition = Overwrite(unitSymbol=Unit.DEGREE,
                                metricPrefixSymbol=MetricPrefix.NONE)
     actualVelocity = Overwrite(unitSymbol=Unit.HERTZ,
-                               metricPrefixSymbol=MetricPrefix.NONE)
+                               metricPrefixSymbol=MetricPrefix.MILLI)
     targetVelocity = Overwrite(unitSymbol=Unit.HERTZ,
-                               metricPrefixSymbol=MetricPrefix.NONE)
+                               metricPrefixSymbol=MetricPrefix.MILLI)
     targetPosition = Overwrite(unitSymbol=Unit.DEGREE,
                                metricPrefixSymbol=MetricPrefix.NONE)
     stepSize = Overwrite(unitSymbol=Unit.DEGREE,
