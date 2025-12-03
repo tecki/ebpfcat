@@ -28,7 +28,7 @@ from time import monotonic, time
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
 from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
 from ebpfcat.devices import DigitalInput
-from ebpfcat.ebpf import LocalVar, ktime
+from ebpfcat.ebpf import AsLong, LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
@@ -886,7 +886,7 @@ class FollowerDevice(MotorDevice):
 
     def program(self):
         with self.doFollow != 0:
-            self.target = ((self.leader.device.encoder
+            self.target = AsLong((self.leader.device.encoder
                            * int(self.encoders_factor * self.follow_factor
                                  * (1 << 16))) >> 16) + self.follow_offset
             with abs(self.target - self.encoder) > self.follow_lag:
