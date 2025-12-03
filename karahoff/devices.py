@@ -814,9 +814,15 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             return State.MOVING
         elif not self.isLimitless:
             if self.device.low_switch:
-                return State.MOVING_FORWARD
+                if self.device.proportional > 0:
+                    return State.MOVING_FORWARD
+                else:
+                    return State.MOVING_BACK
             elif self.device.high_switch:
-                return State.MOVING_BACK
+                if self.device.proportional > 0:
+                    return State.MOVING_BACK
+                else:
+                    return State.MOVING_FORWARD
         return State.ON
 
 
