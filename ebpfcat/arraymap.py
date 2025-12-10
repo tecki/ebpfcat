@@ -114,7 +114,7 @@ class ArrayMap(Map):
             counter = map.globalVar()  # declare a variable in the map
     """
 
-    base_register = 0
+    base_register = 7
 
     def globalVar(self, fmt="I"):
         return ArrayGlobalVarDesc(self, fmt)

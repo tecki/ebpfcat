@@ -878,7 +878,7 @@ class Register(Expression):
     @contextmanager
     def calculate(self, dst, long, force=False):
         if self.no not in self.ebpf.owners:
-            raise AssembleError("register has no value")
+            raise AssembleError(f"register r{self.no} has no value")
         if dst != self.no and force:
             self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * self.long,
                              dst, self.no, 0, 0)
@@ -1435,7 +1435,8 @@ class EBPF(EBPFBase):
     @contextmanager
     def save_registers(self, registers):
         oldowners = self.owners.copy()
-        self.owners |= set(registers)
+        registers = set(registers)
+        self.owners |= registers
         save = []
         with ExitStack() as exitStack:
             for i in registers:
@@ -1447,7 +1448,7 @@ class EBPF(EBPFBase):
             yield
             for tmp, i in save:
                 self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, i, tmp, 0, 0)
-            self.owners = oldowners
+            self.owners -= registers
 
     @contextmanager
     def get_stack(self, size):
