@@ -460,6 +460,15 @@ def ensure_expression(ebpf, value):
         return Constant(ebpf, value)
 
 
+def fmtsize(fmt):
+    if fmt == "x":
+        return 8
+    elif isinstance(fmt, str):
+        return calcsize(fmt)
+    else:  # bit access
+        return 1
+
+
 class Expression:
     """the base class for all numerical expressions"""
 
@@ -1070,12 +1079,7 @@ class LocalVar(MemoryDesc):
         self.fixed = fmt == "x"
 
     def __set_name__(self, owner, name):
-        if self.fmt == "x":
-            size = 8
-        elif isinstance(self.fmt, str):
-            size = calcsize(self.fmt)
-        else:  # this is to support bit addressing, mostly for testing
-            size = 1
+        size = fmtsize(self.fmt)
         owner.stack -= size
         owner.stack &= -size
         self.relative_addr = owner.stack

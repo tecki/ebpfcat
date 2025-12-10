@@ -24,10 +24,10 @@ from collections.abc import Sequence
 from itertools import chain
 from mmap import mmap
 from os import cpu_count
-from struct import calcsize, pack, pack_into, unpack_from
+from struct import pack, pack_into, unpack_from
 
 from .bpf import MapFlags, MapType, create_map, lookup_elem, update_elem
-from .ebpf import Expression, FuncId, Map, MemoryDesc
+from .ebpf import Expression, FuncId, Map, MemoryDesc, fmtsize
 
 
 class ArrayGlobalVarDesc(MemoryDesc):
@@ -128,8 +128,7 @@ class ArrayMap(Map):
                 for k, v in cls.__dict__.items():
                     if isinstance(v, ArrayGlobalVarDesc) and v.map is self \
                             and k not in unique:
-                        collection.append((8 if v.fmt == "x"
-                                           else calcsize(v.fmt), prog, k))
+                        collection.append((fmtsize(v.fmt), prog, k))
                         unique.add(k)
         collection.sort(key=lambda t: t[0], reverse=True)
         position = 0
