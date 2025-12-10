@@ -281,3 +281,6 @@ Reference Documentation
 
 .. automodule:: ebpfcat.arraymap
    :members:
+
+.. automodule:: ebpfcat.hashmap
+   :members:
