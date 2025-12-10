@@ -85,9 +85,9 @@ variables. They may be used from within the eBPF program, and once it is
 loaded also from Python code. It is possible to write out the maps to a
 bpf file system using :meth:`ebpf.EBPF.pin_maps`.
 
-There are three flavors: :class:`arraymap.ArrayMap`,
-:class:`arraymap.PerCPUArrayMap`, and :class:`hashmap.HashMap`. They have
-different use cases:
+There are four flavors: :class:`arraymap.ArrayMap`,
+:class:`arraymap.PerCPUArrayMap`, :class:`hashmap.Dict` and
+:class:`hashmap.HashMap`. They have different use cases:
 
 Array Maps
 ~~~~~~~~~~
@@ -116,6 +116,13 @@ In high-performance situations, the locking done by ``+=`` may actually a
 bottleneck. For this case there are Per-CPU arrays. From the eBPF side they
 look like normal arrays, but from the Python side every variable is an array
 with  value per CPU.
+
+Dictionaries
+~~~~~~~~~~~~
+
+:class:`~hashmap.Dict` is a look-alike of a Python :class:`dict`. The key
+and value types need to be defined so that one can properly access them from
+eBPF.
 
 Hash Maps
 ~~~~~~~~~

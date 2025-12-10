@@ -20,9 +20,9 @@ from unittest import TestCase, main
 from . import ebpf
 from .arraymap import ArrayMap, PerCPUArrayMap
 from .ebpf import (
-    AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
-    SimulatedEBPF, SubProgram, ktime)
-from .hashmap import HashMap
+    AssembleError, EBPF, FuncId, Member, Opcode, OpcodeFlags, Opcode as O,
+    LocalVar, SimulatedEBPF, Structure, SubProgram, ktime)
+from .hashmap import HashMap, Dict
 from .xdp import XDP, PacketVar
 from .bpf import ProgType
 
@@ -1203,6 +1203,87 @@ class KernelTests(TestCase):
         e.test_run(1000, 1000, 100, 100, 1)
         e.cpumap.read()
         e.ar.index(7)
+
+    def test_hashtable(self):
+        class Key(Structure):
+            keyI = Member("I")
+            keyB = Member("B")
+
+        class Value(Structure):
+            filler = Member("q")
+            valueI = Member("I")
+            valueB = Member("B")
+
+        class Program(EBPF):
+            ht1 = Dict(key=Key, value=Value, size=2)
+            ht2 = Dict(key=Key, value=Value)
+            ht3 = Dict(key=Key, value=Value, percpu=True)
+            ht4 = Dict(key=Key, value=Value, lru=True)
+
+            map = ArrayMap()
+            ar = map.globalVar("i")
+
+
+            def program(self):
+                self.ht1.key.keyB = self.ar
+                self.ht1.key.keyI = 7
+                self.ht1.value.valueB = 3
+                self.ht1.value.valueI = 9
+                self.ht1.update()
+                with self.r0 != 0:
+                    self.ar = self.r0
+                    self.exit()
+                self.ht2.key.keyB = 8
+                self.ht2.key.keyI = 1
+                with self.ht2.lookup() as (value, Else):
+                    value.valueB += 3
+                    value.valueI += 7
+                with Else:
+                    self.ar = 7
+                self.exit()
+
+        e = Program(ProgType.XDP, "GPL")
+        e.load(log_level=1)
+        e.test_run(1000, 1000, 100, 100, 1)
+        self.assertEqual(e.ar, 7)
+        k = Key()
+        k.keyB = 8
+        k.keyI = 1
+        v = Value()
+        v.valueB = 2
+        v.valueI = 1
+        e.ht2[k] = v
+        v = e.ht2[k]
+        self.assertEqual(v.valueB, 2)
+        with self.assertRaises(KeyError):
+            e.ht1[k]
+        e.ar = 5
+        e.test_run(1000, 1000, 100, 100, 1)
+        v = e.ht2[k]
+        self.assertEqual(v.valueB, 5)
+        self.assertEqual(v.valueI, 8)
+        k.keyB = 5
+        k.keyI = 7
+        v = e.ht1[k]
+        self.assertEqual(v.valueB, 3)
+        self.assertEqual(v.valueI, 9)
+        k.keyI = 2
+        with self.assertRaises(IndexError):
+            e.ht1[k] = v
+        e.ar = 100
+        e.test_run(1000, 1000, 100, 100, 1)
+        self.assertEqual(e.ar, -7)
+
+        e.ht2[k] = v
+        del e.ht2[k]
+        with self.assertRaises(KeyError):
+            e.ht2[k]
+        self.assertEqual(e.ht2.pop(k, 8), 8)
+        e.ht2[k] = v
+        v = e.ht2.pop(k)
+        self.assertEqual(v.valueI, 9)
+        self.assertEqual(set(k.keyB for k in e.ht2), {5, 8})
+        list(e.ht2.values())
 
 
 class ProcessProgram(SimulatedEBPF):

@@ -102,7 +102,10 @@ class UpdateFlags(Flag):
 libc = CDLL("libc.so.6", use_errno=True)
 
 def addrof(ptr):
-    return cast(ptr, c_void_p).value
+    if isinstance(ptr, bytearray):
+        return addressof(c_char.from_buffer(ptr))
+    else:
+        return cast(ptr, c_void_p).value
 
 def bpf(cmd, fmt, *args):
     attr = pack(fmt, *args)
@@ -119,13 +122,18 @@ def create_map(map_type, key_size, value_size, max_entries,
     return bpf(0, "IIIII", map_type.value, key_size, value_size, max_entries,
                attributes.value)[0]
 
-def lookup_elem(fd, key, fmt):
+def _lookup_elem(cmd, fd, key, fmt):
     if isinstance(fmt, int):
         value = bytearray(fmt)
     else:
         value = bytearray(calcsize(fmt))
     addr = addressof(c_char.from_buffer(value))
-    ret, _ = bpf(1, "IQQQ", fd, addrof(key), addr, 0)
+    try:
+        ret, _ = bpf(1, "IQQQ", fd, addrof(key), addr, 0)
+    except OSError as e:
+        if e.errno == 2:
+            raise KeyError
+        raise
     if ret == 0:
         if isinstance(fmt, int):
             return value
@@ -134,16 +142,43 @@ def lookup_elem(fd, key, fmt):
     else:
         return None
 
+def lookup_elem(*args):
+    return _lookup_elem(1, *args)
+
+def lookup_and_delete_elem(*args):
+    return _lookup_elem(21, *args)
+
 def update_elem(fd, key, value, flags=UpdateFlags.ANY):
     assert isinstance(flags, UpdateFlags)
-    if isinstance(value, bytearray):
-        addr = addressof(c_char.from_buffer(value))
-    else:
-        addr = addrof(value)
-    return bpf(2, "IQQQ", fd, addrof(key), addr, flags.value)[0]
+    try:
+        return bpf(2, "IQQQ", fd, addrof(key), addrof(value), flags.value)[0]
+    except OSError as e:
+        if e.errno == 7:
+            raise IndexError("map is full")
+        raise
 
 def delete_elem(fd, key):
-    return bpf(3, "IQ", fd, addrof(key))[0]
+    try:
+        return bpf(3, "IQ", fd, addrof(key))[0]
+    except OSError as e:
+        if e.errno == 2:
+            raise KeyError
+        raise
+
+def get_next_key(fd, key):
+    if isinstance(key, int):
+        ret = bytearray(key)
+        key = 0
+    else:
+        ret = bytearray(len(key))
+        key = addrof(key)
+    try:
+        bpf(4, "IQQ", fd, key, addrof(ret))
+    except OSError as e:
+        if e.errno == 2:
+            raise StopIteration
+        raise
+    return ret
 
 allowed_chars = set(string.ascii_letters + string.digits + "-_")
 

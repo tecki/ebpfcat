@@ -20,14 +20,14 @@ The :mod:`!ebpfcat.ebpf` module contains the core ebpf code generation
 ======================================================================
 """
 
-__all__ = ["EBPF", "LocalVar", "prandom", "ktime"]
+__all__ = ["EBPF", "LocalVar", "Member", "Structure", "prandom", "ktime"]
 
 import os
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from contextlib import contextmanager, ExitStack
 from operator import index
-from struct import pack, unpack, calcsize
+from struct import pack, pack_into, unpack, unpack_from, calcsize
 from enum import Enum
 
 from . import bpf
@@ -1087,9 +1087,67 @@ class LocalVar(MemoryDesc):
 
     def fmt_addr(self, instance):
         if isinstance(instance, SubProgram):
-            return self.fmt, (instance.ebpf.stack & -8) + self.relative_addr
+            return (self.fmt,
+                    (instance.ebpf.stack & -8) + self.relative_addr)
         else:
             return self.fmt, self.relative_addr
+
+
+class Structure:
+    """combine values into a structure
+
+    This is used for keys and values of hash tables.
+
+    members of this structure are of class :class:`Member`::
+
+        class Point(Structure):
+            x = Member('i')
+            y = Member('i')
+    """
+    stack = 0
+    base_register = 10
+
+    def __init__(self):
+        self.data = bytearray(self.stack)
+
+    def __repr__(self):
+        return f"""{self.__class__.__name__}({
+            ', '.join(f'{k}={getattr(self, k)}'
+                      for k, v in self.__class__.__dict__.items()
+                      if isinstance(v, Member))})"""
+
+
+class Member(LocalVar):
+    """The member of a :class:`Structure`
+
+    :param fmt: the data format as :mod:`struct` characters
+    """
+
+    def __set_name__(self, owner, name):
+        size = fmtsize(self.fmt)
+        if owner.stack & (size - 1):
+            raise AssembleError("structures must be packed")
+        self.relative_addr = owner.stack
+        owner.stack += size
+        self.name = name
+
+    def fmt_addr(self, instance):
+        fmt, addr = super().fmt_addr(instance)
+        return fmt, addr + instance.addr_offset
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        elif instance.data is None:
+            self.base_register = instance.base_register
+            return super().__get__(instance, owner)
+        return unpack_from(self.fmt, instance.data, self.relative_addr)[0]
+
+    def __set__(self, instance, value):
+        if instance.data is None:
+            self.base_register = instance.base_register
+            return super().__set__(instance, value)
+        pack_into(self.fmt, instance.data, self.relative_addr, value)
 
 
 class MemoryMap:
@@ -1113,8 +1171,12 @@ class Map(ABC):
         self.filename = name
 
     @abstractmethod
-    def init(self, ebpf):
-        """create the map and initialize its values"""
+    def init(self, ebpf, fd):
+        """create the map and initialize its values
+
+        :param fd: the file descriptor for an already existing map,
+        or ``None`` if it need to be created.
+        """
 
     def load(self, ebpf):
         """called after the program has been loaded"""
