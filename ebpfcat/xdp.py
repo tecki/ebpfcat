@@ -195,8 +195,8 @@ class XDP(EBPF):
 
     XDP programs inherit from this class and define a :meth:`program`
     which contains the actual EBPF program. In the class body, variables
-    are declared using :class:`ebpf.LocalVar`, :class:`PacketVar` and
-    :class:`arraymap.ArrayMap`.
+    are declared using :class:`~ebpfcat.ebpf.LocalVar`, :class:`PacketVar` and
+    :class:`~ebpfcat.arraymap.ArrayMap`.
 
     .. attribute:: minimumPacketSize
 

@@ -15,7 +15,11 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-"""The ``arraymap`` module defines array maps, usually used for global
+"""\
+:mod:`!ebpfcat.arraymap` --- eBPF array maps
+============================================
+
+This module defines array maps, usually used for global
 variables in EBPF programs"""
 
 __all__ = ["ArrayMap", "PerCPUArrayMap"]

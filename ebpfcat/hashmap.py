@@ -15,6 +15,14 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+"""\
+:mod:`!ebpfcat.hashmap` --- eBPF hash maps
+==========================================
+
+This module makes eBPF hash maps available, used for dictionary or global
+variables.
+"""
+
 from collections.abc import MutableMapping
 from contextlib import contextmanager
 from struct import pack, unpack, unpack
@@ -23,6 +31,9 @@ from .ebpf import AssembleError, Expression, Opcode, Map, FuncId
 from .bpf import (
     MapType, UpdateFlags, create_map, delete_elem, get_next_key, lookup_elem,
     lookup_and_delete_elem, update_elem)
+
+
+__all__ = ["HashMap", "Dict"]
 
 
 class HashGlobalVar(Expression):
@@ -90,6 +101,7 @@ class HashGlobalVarDesc:
 
 
 class HashMap(Map):
+    """global variables as a eBPF hash map"""
     count = 0
 
     def __init__(self):
@@ -203,7 +215,7 @@ class Dict(Map):
     """A dictionary, implemented using a bpf hash map
 
     This is a lookup table similar to a Python :class:`dict`.
-    Both key and value are subclasses of :class:`~ebpf.Structure`::
+    Both key and value are subclasses of :class:`~ebpfcat.ebpf.Structure`::
 
         class Key(Structure):
             some_key = Member('I')
@@ -211,7 +223,7 @@ class Dict(Map):
         class Value(Structure):
             some_value = Member('q')
 
-    A dictionary can then be declared in an EBPF program:
+    A dictionary can then be declared in an EBPF program::
 
         class Program(EBPF):
             table = Dict(key=Key, value=Value)
@@ -258,6 +270,9 @@ class Dict(Map):
                 # do some error handling
 
     :param size: the maximum number of elements in the Dict
+    :param lru: if set to ``True``, the dictionary behaves as
+        last-recently-used, so if it is full, it will just remove the oldest
+        keys instead of giving an error.
     """
 
     def __init__(self, key, value, size=31, lru=False):
