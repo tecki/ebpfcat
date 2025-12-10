@@ -1070,8 +1070,17 @@ class MemoryDesc:
                         instance.ebpf.r[self.base_register] + addr)
         memory._set(value)
 
+
 class LocalVar(MemoryDesc):
-    """variables on the stack"""
+    """variables on the stack
+
+    This is how local variables on the stack are defined::
+
+        class Program(EBPF):
+            my_variable = LocalVar('I')
+
+    :param fmt: the data format as :mod:`struct` characters
+    """
     base_register = 10
 
     def __init__(self, fmt='I'):
