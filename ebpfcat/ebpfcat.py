@@ -555,10 +555,8 @@ class FastEtherCat(SimpleEtherCat):
 
             try:
                 ret = lookup_elem(self.programs, key, '<I')
-            except OSError as e:
-                if e.errno == 2:  # not found
-                    break
-                raise
+            except KeyError:
+                break
         update_elem(self.programs, key,
                     pack("<I", sg.file_descriptor))
         sg.close()
