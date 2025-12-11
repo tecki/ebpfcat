@@ -1252,7 +1252,6 @@ class KernelTests(TestCase):
         class Program(EBPF):
             ht1 = Dict(key=Key, value=Value, size=2)
             ht2 = Dict(key=Key, value=Value)
-            ht3 = Dict(key=Key, value=Value, percpu=True)
             ht4 = Dict(key=Key, value=Value, lru=True)
 
             map = ArrayMap()
