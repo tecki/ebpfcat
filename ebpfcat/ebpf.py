@@ -26,6 +26,7 @@ __all__ = ["EBPF", "LocalVar", "Member", "Structure", "prandom", "ktime"]
 import os
 from abc import ABC, abstractmethod
 from collections import namedtuple
+from collections.abc import Sequence
 from contextlib import contextmanager, ExitStack
 from operator import index
 from struct import pack, pack_into, unpack, unpack_from, calcsize
@@ -1136,7 +1137,7 @@ class LocalVar(MemoryDesc):
             return self.fmt, self.relative_addr
 
 
-class Structure:
+class Structure(Sequence):
     """combine values into a structure
 
     This is used for keys and values of hash tables.
@@ -1150,14 +1151,38 @@ class Structure:
     stack = 0
     base_register = 10
 
-    def __init__(self):
+    def __init_subclass__(cls):
+        cls._fields = tuple(k for k, v in cls.__dict__.items()
+                            if isinstance(v, Member))
+
+    def __init__(self, *args, **kwargs):
         self.data = bytearray(self.stack)
+
+        if args:
+            for k, a in zip(self._fields, args):
+                setattr(self, k, a)
+
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     def __repr__(self):
         return f"""{self.__class__.__name__}({
-            ', '.join(f'{k}={getattr(self, k)}'
-                      for k, v in self.__class__.__dict__.items()
-                      if isinstance(v, Member))})"""
+            ', '.join(f'{k}={getattr(self, k)}' for k in self._fields)})"""
+
+    def __iter__(self):
+        return (getattr(self, n) for n in self._fields)
+
+    def __getitem__(self, pos):
+        return getattr(self, self._fields[pos])
+
+    def __setitem__(self, pos, value):
+        return setattr(self, self._fields[pos], value)
+
+    def __len__(self):
+        return len(self._fields)
+
+    def __eq__(self, other):
+        return all(a == b for a, b in zip(self, other))
 
 
 class Member(LocalVar):

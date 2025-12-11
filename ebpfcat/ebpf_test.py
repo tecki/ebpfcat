@@ -1440,5 +1440,30 @@ class SimulatedTests(TestCase):
             asyncio.run(run())
 
 
+class MinorTests(TestCase):
+    def test_structure(self):
+        class S(Structure):
+            x = Member("i")
+            y = Member("b")
+
+        s = S()
+        s.x = 3
+        s.y = 5
+        self.assertEqual(repr(s), 'S(x=3, y=5)')
+        self.assertEqual(list(s), [3, 5])
+        x, y = s
+        self.assertEqual(x, 3)
+
+        s = S(4, 5)
+        self.assertEqual(s.y, 5)
+        s = S(x=8, y=2)
+        self.assertEqual(s.x, 8)
+        self.assertEqual(s[1], 2)
+        s[0] = 9
+        self.assertEqual(s.x, 9)
+        self.assertEqual(s, (9, 2))
+        self.assertEqual(s.count(2), 1)
+
+
 if __name__ == "__main__":
     main()
