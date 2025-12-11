@@ -139,14 +139,13 @@ class TheDict(MutableMapping):
         self.fd = fd
 
     def __setitem__(self, key, value):
-        assert isinstance(key, type(self.key))
-        assert isinstance(value, type(self.value))
-        update_elem(self.fd, key.data, value.data)
+        update_elem(self.fd, self.key.create_from(key).data,
+                    self.value.create_from(value).data)
 
     def __getitem__(self, key):
-        assert isinstance(key, type(self.key))
         ret = type(self.value)()
-        ret.data = lookup_elem(self.fd, key.data, self.value.stack)
+        ret.data = lookup_elem(self.fd, self.key.create_from(key).data,
+                               self.value.stack)
         return ret
 
     __marker = object()
@@ -155,8 +154,8 @@ class TheDict(MutableMapping):
         assert isinstance(key, type(self.key))
         ret = type(self.value)()
         try:
-            ret.data = lookup_and_delete_elem(self.fd, key.data,
-                                              self.value.stack)
+            ret.data = lookup_and_delete_elem(
+                self.fd, self.key.create_from(key).data, self.value.stack)
         except KeyError:
             if default is self.__marker:
                 raise
@@ -164,8 +163,7 @@ class TheDict(MutableMapping):
         return ret
 
     def __delitem__(self, key):
-        assert isinstance(key, type(self.key))
-        delete_elem(self.fd, key.data)
+        delete_elem(self.fd, self.key.create_from(key).data)
 
     def __len__(self):
         """there is no way to actually tell how many elements are in a
@@ -243,6 +241,10 @@ class Dict(Map):
 
         # look up a value:
         v = e.table[k]
+
+    The structures behave like named tuples, so this can be simplified to::
+
+        e.table[(3,)] = 7,
 
     On the EBPF side, things are a bit more complicated. We always keep a
     key on the local stack for lookups, as well as a value for updates.

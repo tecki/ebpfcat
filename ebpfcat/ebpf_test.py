@@ -1245,7 +1245,6 @@ class KernelTests(TestCase):
             keyB = Member("B")
 
         class Value(Structure):
-            filler = Member("q")
             valueI = Member("I")
             valueB = Member("B")
 
@@ -1318,6 +1317,10 @@ class KernelTests(TestCase):
         self.assertEqual(v.valueI, 9)
         self.assertEqual(set(k.keyB for k in e.ht2), {5, 8})
         list(e.ht2.values())
+
+        self.assertEqual(e.ht2[2, 5], (9, 3))
+        e.ht2[2, 5] = (8, 1)
+        self.assertEqual(e.ht2[2, 5], (8, 1))
 
 
 class ProcessProgram(SimulatedEBPF):

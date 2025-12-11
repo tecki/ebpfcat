@@ -1165,6 +1165,13 @@ class Structure(Sequence):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
+    @classmethod
+    def create_from(cls, value):
+        if isinstance(value, cls):
+            return value
+        else:
+            return cls(*value)
+
     def __repr__(self):
         return f"""{self.__class__.__name__}({
             ', '.join(f'{k}={getattr(self, k)}' for k in self._fields)})"""
