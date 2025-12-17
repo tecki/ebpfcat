@@ -1023,7 +1023,12 @@ class Memory(Expression):
             return Memory(self.ebpf, "B", self.address) & mask != 0
         return super().__ne__(value)
 
-    def _set(self, value):
+    @property
+    def value(self):
+        return self
+
+    @value.setter
+    def value(self, value):
         opcode = Opcode.STX
         with ExitStack() as exitStack:
             if isinstance(self.fmt, tuple):
@@ -1103,7 +1108,7 @@ class MemoryDesc:
         fmt, addr = self.fmt_addr(instance)
         memory = Memory(instance.ebpf, fmt,
                         instance.ebpf.r[self.base_register] + addr)
-        memory._set(value)
+        memory.value = value
 
 
 class LocalVar(MemoryDesc):
@@ -1232,7 +1237,7 @@ class MemoryMap:
 
     def __setitem__(self, addr, value):
         memory = Memory(self.ebpf, self.fmt, addr)
-        memory._set(value)
+        memory.value = value
 
     def __getitem__(self, addr):
         if isinstance(addr, Register):
