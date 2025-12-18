@@ -1110,6 +1110,9 @@ class MemoryDesc:
                         instance.ebpf.r[self.base_register] + addr)
         memory.value = value
 
+    def __set_name__(self, owner, name):
+        self.name = name
+
 
 class LocalVar(MemoryDesc):
     """variables on the stack
@@ -1132,7 +1135,7 @@ class LocalVar(MemoryDesc):
         owner.stack -= size
         owner.stack &= -size
         self.relative_addr = owner.stack
-        self.name = name
+        super().__set_name__(owner, name)
 
     def fmt_addr(self, instance):
         if isinstance(instance, SubProgram):

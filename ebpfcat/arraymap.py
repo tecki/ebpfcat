@@ -45,9 +45,6 @@ class ArrayGlobalVarDesc(MemoryDesc):
     def fmt_addr(self, ebpf):
         return self.fmt, ebpf.__dict__[self.name]
 
-    def __set_name__(self, owner, name):
-        self.name = name
-
     def unpack(self, instance, data):
         fmt, addr = self.fmt_addr(instance)
         if fmt == "x":
