@@ -463,7 +463,9 @@ def ensure_expression(ebpf, value):
 
 
 def fmtsize(fmt):
-    if fmt == "x":
+    if isinstance(fmt, type) and issubclass(fmt, Structure):
+        return fmt.stack
+    elif fmt == "x":
         return 8
     elif isinstance(fmt, str):
         return calcsize(fmt)
@@ -1086,7 +1088,6 @@ class Memory(Expression):
                 [self.address + calcsize(self.fmt[-1]) * key]
 
 
-
 class MemoryDesc:
     """A base class used by descriptors for memory
 
@@ -1173,13 +1174,6 @@ class Structure(Sequence):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
-    @classmethod
-    def create_from(cls, value):
-        if isinstance(value, cls):
-            return value
-        else:
-            return cls(*value)
-
     def __repr__(self):
         return f"""{self.__class__.__name__}({
             ', '.join(f'{k}={getattr(self, k)}' for k in self._fields)})"""
@@ -1198,6 +1192,24 @@ class Structure(Sequence):
 
     def __eq__(self, other):
         return all(a == b for a, b in zip(self, other))
+
+    @contextmanager
+    def get_address(self, dst, long, force=False):
+        self.ebpf.r[dst] = self.ebpf.r[self.base_register] + self.addr_offset
+        yield dst, f'structure {self.__class__.__name__}'
+
+    @classmethod
+    def pack(cls, value):
+        if isinstance(value, cls):
+            return value.data
+        else:
+            return cls(*value).data
+
+    @classmethod
+    def unpack(cls, data):
+        ret = cls()
+        ret.data = data
+        return ret
 
 
 class Member(LocalVar):

@@ -1239,7 +1239,7 @@ class KernelTests(TestCase):
         e.cpumap.read()
         e.ar.index(7)
 
-    def test_hashtable(self):
+    def test_hashtable_structure(self):
         class Key(Structure):
             keyI = Member("I")
             keyB = Member("B")
@@ -1321,6 +1321,58 @@ class KernelTests(TestCase):
         self.assertEqual(e.ht2[2, 5], (9, 3))
         e.ht2[2, 5] = (8, 1)
         self.assertEqual(e.ht2[2, 5], (8, 1))
+
+    def test_hashtable(self):
+        class Program(EBPF):
+            ht1 = Dict(key='i', value='q', size=4)
+
+            map = ArrayMap()
+            ar = map.globalVar("i")
+
+            def program(self):
+                self.ht1.key = self.ar
+                self.ht1.value = 3
+                self.ht1.update()
+                with self.r0 != 0:
+                    self.ar = self.r0
+                    self.exit()
+                self.ht1.key = 54
+                self.ht1.key += 1
+                with self.ht1.lookup() as (value, Else):
+                    value.value += 3
+                    self.ar = value
+                    value.value = 9
+                    #self.r2 = 22
+                    #self.mA[self.r2] = 7
+                with Else:
+                    self.ar = 7
+                self.exit()
+
+        e = Program(ProgType.XDP, "GPL")
+        e.load(log_level=1)
+        e.test_run(1000, 1000, 100, 100, 1)
+        self.assertEqual(e.ar, 7)
+        e.ht1[8] = 3
+        self.assertEqual(e.ht1[8], 3)
+        with self.assertRaises(KeyError):
+            e.ht1[7]
+        e.ar = 5
+        e.ht1[55] = 11
+        e.test_run(1000, 1000, 100, 100, 1)
+        self.assertEqual(set(e.ht1), {5, 55, 8, 0})
+        self.assertEqual(e.ar, 14)
+        self.assertEqual(e.ht1[55], 9)
+        with self.assertRaises(IndexError):
+            e.ht1[2] = 100
+        e.ar = 100
+        e.test_run(1000, 1000, 100, 100, 1)
+        self.assertEqual(e.ar, -7)
+
+        del e.ht1[5]
+        with self.assertRaises(KeyError):
+            e.ht1[5]
+        self.assertEqual(e.ht1.pop(5, 8), 8)
+        self.assertEqual(e.ht1.pop(55), 9)
 
 
 class ProcessProgram(SimulatedEBPF):
@@ -1465,6 +1517,9 @@ class MinorTests(TestCase):
         self.assertEqual(s.x, 9)
         self.assertEqual(s, (9, 2))
         self.assertEqual(s.count(2), 1)
+
+        self.assertEqual(s.pack((0x38373635, 0x34)), b'56784')
+        self.assertEqual(s.unpack(b'12345'), (0x34333231, 0x35))
 
 
 if __name__ == "__main__":

@@ -24,11 +24,14 @@ This module makes eBPF hash maps available, used for dictionary or global
 variables.
 """
 
+from collections import namedtuple
 from collections.abc import MutableMapping
 from contextlib import contextmanager
 from struct import pack, unpack, unpack
 
-from .ebpf import AssembleError, Expression, Opcode, Map, FuncId
+from .ebpf import (
+    AssembleError, Expression, FuncId, Map, Memory, MemoryDesc, Opcode,
+    Structure, fmtsize)
 from .bpf import (
     MapType, UpdateFlags, create_map, delete_elem, get_next_key, lookup_elem,
     lookup_and_delete_elem, update_elem)
@@ -125,45 +128,76 @@ class HashMap(Map):
             setattr(ebpf, v.name, ebpf.__class__.__dict__[v.name].default)
 
 
+class KeyValue(MemoryDesc):
+    base_register = 10
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        ret = instance.__dict__[self.name]
+        if not instance.ebpf.loaded and isinstance(ret, FmtOffset):
+            return super().__get__(instance, owner)
+        return ret
+
+    def fmt_addr(self, instance):
+        return instance.__dict__[self.name]
+
+
+class FmtOffset(namedtuple('_FmtOffset', ['fmt', 'addr_offset'])):
+    @property
+    def stack(self):
+        return fmtsize(self.fmt)
+
+    def pack(self, value):
+        return pack(self.fmt, value)
+
+    def unpack(self, data):
+        return unpack(self.fmt, data)[0]
+
+
 class TheDict(MutableMapping):
     def __init__(self, ht, ebpf, fd):
-        self.key = ht.Key()
-        self.key.addr_offset = ht.key_offset
-        self.key.data = None
-        self.key.ebpf = ebpf
-        self.value = ht.Value()
-        self.value.addr_offset = ht.value_offset
-        self.value.data = None
-        self.value.ebpf = ebpf
         self.ebpf = ebpf
+        if isinstance(ht.Key, str):
+            self.__dict__['key'] = FmtOffset(ht.Key, ht.key_offset)
+        else:
+            self.__dict__['key'] = ht.Key()
+            self.key.addr_offset = ht.key_offset
+            self.key.data = None
+            self.key.ebpf = ebpf
+        if isinstance(ht.Value, str):
+            self.__dict__['value'] = FmtOffset(ht.Value, ht.value_offset)
+        else:
+            self.__dict__['value'] = ht.Value()
+            self.value.addr_offset = ht.value_offset
+            self.value.data = None
+            self.value.ebpf = ebpf
         self.fd = fd
 
+    key = KeyValue()
+    value = KeyValue()
+
     def __setitem__(self, key, value):
-        update_elem(self.fd, self.key.create_from(key).data,
-                    self.value.create_from(value).data)
+        update_elem(self.fd, self.key.pack(key), self.value.pack(value))
 
     def __getitem__(self, key):
-        ret = type(self.value)()
-        ret.data = lookup_elem(self.fd, self.key.create_from(key).data,
-                               self.value.stack)
-        return ret
+        return self.value.unpack(lookup_elem(self.fd, self.key.pack(key),
+                                             self.value.stack))
 
     __marker = object()
 
     def pop(self, key, default=__marker):
-        assert isinstance(key, type(self.key))
-        ret = type(self.value)()
         try:
-            ret.data = lookup_and_delete_elem(
-                self.fd, self.key.create_from(key).data, self.value.stack)
+            data = lookup_and_delete_elem(
+                self.fd, self.key.pack(key), self.value.stack)
         except KeyError:
             if default is self.__marker:
                 raise
             return default
-        return ret
+        return self.value.unpack(data)
 
     def __delitem__(self, key):
-        delete_elem(self.fd, self.key.create_from(key).data)
+        delete_elem(self.fd, self.key.pack(key))
 
     def __len__(self):
         """there is no way to actually tell how many elements are in a
@@ -173,11 +207,10 @@ class TheDict(MutableMapping):
         raise TypeError
 
     def __iter__(self):
-        current = get_next_key(self.fd, self.key.stack)
+        size = self.key.stack
+        current = get_next_key(self.fd, size)
         while True:
-            ret = type(self.key)()
-            ret.data = current
-            yield ret
+            yield self.key.unpack(current)
             try:
                 current = get_next_key(self.fd, current)
             except StopIteration:
@@ -188,26 +221,28 @@ class TheDict(MutableMapping):
         ebpf = self.ebpf
         with ebpf.save_registers([1, 2, 3, 4, 5]):
             ebpf.r1 = ebpf.get_fd(self.fd)
-            ebpf.r2 = ebpf.r10 + self.key.addr_offset
-            ebpf.r3 = ebpf.r10 + self.value.addr_offset
-            ebpf.r4 = flags.value
-            ebpf.call(FuncId.map_update_elem)
+            with self.key.get_address(2, True, True), \
+                    self.value.get_address(3, True, True):
+                ebpf.r4 = flags.value
+                ebpf.call(FuncId.map_update_elem)
 
     @contextmanager
     def lookup(self):
         ebpf = self.ebpf
         with ebpf.save_registers([1, 2, 3, 4, 5]):
             ebpf.r1 = ebpf.get_fd(self.fd)
-            ebpf.r2 = ebpf.r10 + self.key.addr_offset
-            ebpf.call(FuncId.map_lookup_elem)
+            with self.key.get_address(2, True, True):
+                ebpf.call(FuncId.map_lookup_elem)
         with ebpf.r0 != 0 as Else:
-            value = type(self.value)()
-            value.addr_offset = 0
-            value.base_register = 0
-            value.data = None
-            value.ebpf = ebpf
+            if isinstance(self.value, Structure):
+                value = type(self.value)()
+                value.addr_offset = 0
+                value.base_register = 0
+                value.data = None
+                value.ebpf = ebpf
+            else:
+                value = Memory(ebpf, self.__dict__['value'][0], ebpf.r0)
             yield value, Else
-
 
 
 class Dict(Map):
@@ -288,16 +323,16 @@ class Dict(Map):
         self.size = size
 
     def __set_name__(self, owner, name):
-        owner.stack -= self.Key.stack
+        owner.stack -= fmtsize(self.Key)
         owner.stack &= -8
         self.key_offset = owner.stack
-        owner.stack -= self.Value.stack
+        owner.stack -= fmtsize(self.Value)
         owner.stack &= -8
         self.value_offset = owner.stack
         self.name = name
 
     def init(self, ebpf, fd):
         if fd is None:
-            fd = create_map(self.mapType, self.Key.stack,
-                            self.Value.stack, self.size)
+            fd = create_map(self.mapType, fmtsize(self.Key),
+                            fmtsize(self.Value), self.size)
         setattr(ebpf, self.name, TheDict(self, ebpf, fd))
