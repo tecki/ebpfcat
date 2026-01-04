@@ -10,7 +10,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 project = 'EBPFCat'
-copyright = '2025, European XFEL GmbH'
+copyright = '2026, European XFEL GmbH'
 author = 'Martin Teichmann'
 
 release = "1.0"
