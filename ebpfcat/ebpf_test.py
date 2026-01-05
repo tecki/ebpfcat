@@ -51,6 +51,10 @@ def Instruction(opcode, dst, src, off, imm):
     return ebpf.Instruction(OpcodeFlags(parts), dst, src, off, imm)
 
 class Tests(TestCase):
+    def assertOpcodesEqual(self, program, expected):
+        program.assemble()
+        self.assertEqual(program.opcodes, expected)
+
     def test_assemble(self):
         e = EBPF()
         e.append(Opcode.MUL, 3, 4, 0x2c3d, 0x2d3e4f5e)
@@ -61,7 +65,7 @@ class Tests(TestCase):
         e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         e.r5 = 7
         e.r6 = e.r3
-        self.assertEqual(e.opcodes,
+        self.assertOpcodesEqual(e,
             [Instruction(0xb7, 5, 0, 0, 7),
              Instruction(0xbf, 6, 3, 0, 0)])
 
@@ -72,7 +76,7 @@ class Tests(TestCase):
         e.w4 = e.w1
         e.w2 += 3
         e.w5 += e.w6
-        self.assertEqual(e.opcodes,
+        self.assertOpcodesEqual(e,
             [Instruction(O.MOV+O.LONG, 3, 0, 0, 7),
              Instruction(0xbc, 4, 1, 0, 0),
              Instruction(opcode=4, dst=2, src=0, off=0, imm=3),
@@ -104,7 +108,7 @@ class Tests(TestCase):
         e.sr4 >>= 3
         e.sr4 >>= e.r7
 
-        self.assertEqual(e.opcodes,
+        self.assertOpcodesEqual(e,
             [Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=15, dst=3, src=6, off=0, imm=0),
              Instruction(opcode=7, dst=4, src=0, off=0, imm=-3),
@@ -145,7 +149,7 @@ class Tests(TestCase):
         e.r5 = e.mQ[e.r3 - 7]
         e.r5 = e.mb[e.r3] >> 2
         e.r5 = e.mB[e.r3] >> 2
-        self.assertEqual(e.opcodes,
+        self.assertOpcodesEqual(e,
             [Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
              Instruction(opcode=98, dst=8, src=0, off=7, imm=5),
@@ -176,7 +180,7 @@ class Tests(TestCase):
         e.mI[7 - (e.r1 + 3)] = 3
         e.mI[(e.r1 + 3) - e.r2] = 5
         self.maxDiff = None
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.W+O.ST, dst=1, src=0, off=10, imm=3),
             Instruction(opcode=O.W+O.ST, dst=1, src=0, off=10, imm=3),
             Instruction(opcode=O.MOV+O.REG+O.LONG, dst=0, src=1, off=0, imm=0),
@@ -236,7 +240,7 @@ class Tests(TestCase):
         e.x4 = 4.5 // e.x6
 
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
            Instruction(opcode=O.ADD+O.LONG, dst=1, src=0, off=0, imm=3),
            Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
@@ -353,7 +357,7 @@ class Tests(TestCase):
         e.lx = 7
         e.b = e.x1
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.B+O.ST, dst=10, src=0, off=-1, imm=5),
             Instruction(opcode=O.W+O.LD, dst=0, src=10, off=-8, imm=0),
             Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=3),
@@ -378,7 +382,7 @@ class Tests(TestCase):
         with 100 < e.sw3:
             pass
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.JSGE+O.SHORT, dst=3, src=0, off=0, imm=100),
 
             Instruction(opcode=O.LONG+O.LSH, dst=3, src=0, off=0, imm=32),
@@ -410,7 +414,7 @@ class Tests(TestCase):
 
         e.a = e.b
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=32),
             Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
@@ -457,7 +461,7 @@ class Tests(TestCase):
             with (e.a != 0) & (e.stmp > 0) | (e.a == 0) & (e.stmp < 0):
                 e.stmp = 0
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-1, imm=0),
             Instruction(opcode=O.JSET, dst=2, src=0, off=1, imm=32),
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
@@ -485,7 +489,7 @@ class Tests(TestCase):
         s1.b = 3
         e.r3 = s1.b
         s2.b = 7
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-4, imm=5),
             Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=3),
             Instruction(opcode=O.W+O.LD, dst=3, src=10, off=-12, imm=0),
@@ -502,7 +506,7 @@ class Tests(TestCase):
         e.b = e.a + e.c
         e.d = e.b + e.c
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=24),
             Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=24),
@@ -538,7 +542,7 @@ class Tests(TestCase):
         e.d -= 5
         e.d += e.r1
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
            Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0),
            Instruction(opcode=O.XADD+O.W, dst=1, src=1, off=0, imm=0),
@@ -642,7 +646,7 @@ class Tests(TestCase):
         e.r0 = 1
         t1.target()
         t2.target()
-        self.assertEqual(e.opcodes,
+        self.assertOpcodesEqual(e,
             [Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
              Instruction(opcode=0x25, dst=5, src=0, off=4, imm=3),
@@ -695,7 +699,7 @@ class Tests(TestCase):
             pass
         with e.x4 > e.x2:
             pass
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
              Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
              Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
              Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
@@ -723,7 +727,7 @@ class Tests(TestCase):
             e.r1 = 4
         with Else:
             e.r0 = 3
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=69, dst=1, src=0, off=1, imm=1),
             Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
             Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
@@ -742,7 +746,7 @@ class Tests(TestCase):
             e.r2 = 5
         with Else:
             e.r3 = 7
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.JLE, dst=2, src=0, off=2, imm=3),
             Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
             Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
@@ -763,7 +767,7 @@ class Tests(TestCase):
         with Else:
             e.r3 = 7
             e.r4 = 3
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=3),
             Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
             Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
@@ -787,7 +791,7 @@ class Tests(TestCase):
         e.r0 = 8
         tgt.target()
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=O.ADD+O.REG+O.LONG, dst=0, src=3, off=0, imm=0),
             Instruction(opcode=181, dst=0, src=0, off=2, imm=3),
@@ -806,7 +810,7 @@ class Tests(TestCase):
         e.r3 = e.r4 + 0x1234567890
         e.r3 = 0x90000000
 
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=24, dst=3, src=0, off=0, imm=878082192),
             Instruction(opcode=0, dst=0, src=0, off=0, imm=18),
             Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
@@ -832,7 +836,7 @@ class Tests(TestCase):
         e.sr0 = e.sr1 >> e.r2
         e.w0 = e.w1 + e.w2
         e.r0 = e.r1 & e.r2  # attention, special case
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
             Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
@@ -863,7 +867,7 @@ class Tests(TestCase):
         e.w1 = e.r2 + e.w3
         e.r1 = e.w2 + e.w3
         e.w1 = e.w2 + e.w3
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.MOV+O.LONG+O.REG, dst=1, src=2, off=0, imm=0),
             Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
             Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
@@ -878,7 +882,7 @@ class Tests(TestCase):
             pass
         with (e.r1 + e.sr2) > 3:
             pass
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.JSLE+O.REG, dst=1, src=2, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=1, off=0, imm=0),
             Instruction(opcode=O.ADD+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
@@ -893,7 +897,7 @@ class Tests(TestCase):
         e.r3 = 7 % (e.r2 + 3)
         e.r3 = 7 >> e.r2
         e.r3 = -7 >> e.r2
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
             Instruction(opcode=O.REG+O.LONG+O.MOV, dst=4, src=2, off=0, imm=0),
             Instruction(opcode=O.ADD+O.LONG, dst=4, src=0, off=0, imm=2),
@@ -914,7 +918,7 @@ class Tests(TestCase):
         e = EBPF()
         e.r7 = -e.r1
         e.r7 = -e.r7
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
             Instruction(opcode=O.NEG+O.LONG, dst=7, src=0, off=0, imm=0)])
@@ -924,8 +928,7 @@ class Tests(TestCase):
         e.r7 = abs(e.r1)
         with abs(e.r7) > 3:
             e.x3 = abs(e.x1)
-        self.maxDiff = None
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.JSGE, dst=7, src=0, off=1, imm=0),
             Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
@@ -979,7 +982,7 @@ class Tests(TestCase):
         e = EBPF()
         e.r8 = 23
         e.call(FuncId.ktime_get_ns)
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=183, dst=8, src=0, off=0, imm=23),
             Instruction(opcode=133, dst=0, src=0, off=0, imm=5)])
         e.r7 = e.r0
@@ -998,7 +1001,7 @@ class Tests(TestCase):
         e.r0 = (e.r1 * e.r3) - (e.r10 * e.r5)
         e.r5 = (e.r1 * e.r3) + e.mI[e.r10 + e.r0]
         e.r5 = e.r3 + e.r5
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=191, dst=3, src=1, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
             Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
@@ -1049,7 +1052,7 @@ class Tests(TestCase):
             e.xtmp = 3
             e.r3 = e.xtmp
             e.xtmp = e.r3 * 3.5
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=7),
             Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=3),
             Instruction(opcode=O.MOV+O.LONG+O.REG, dst=3, src=2, off=0, imm=0),
@@ -1068,7 +1071,7 @@ class Tests(TestCase):
         e = EBPF()
         e.r0 = 3
         e.r3 = ktime(e)
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
             Instruction(opcode=O.REG+O.MOV+O.LONG, dst=6, src=0, off=0, imm=0),
             Instruction(opcode=O.REG+O.MOV+O.LONG, dst=7, src=1, off=0, imm=0),
@@ -1084,7 +1087,7 @@ class Tests(TestCase):
             e.r3 = p.pH[22]
         with p.Else:
             e.r3 = 77
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),
             Instruction(opcode=O.LD+O.W, dst=0, src=1, off=4, imm=0),
             Instruction(opcode=O.LD+O.W, dst=2, src=1, off=0, imm=0),
@@ -1114,8 +1117,7 @@ class Tests(TestCase):
                 self.pq = self.ph
 
         e = P(license="GPL")
-        e.assemble()
-        self.assertEqual(e.opcodes, [
+        self.assertOpcodesEqual(e, [
             Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
             Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
             Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
@@ -1155,8 +1157,7 @@ class Tests(TestCase):
                 self.pv = self.pH[22]
 
         p = P(license="GPL")
-        p.assemble()
-        self.assertEqual(p.opcodes, [
+        self.assertOpcodesEqual(p, [
             Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
             Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
             Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
@@ -1251,6 +1252,7 @@ class KernelTests(TestCase):
         e.mI[e.r10 - 4] += e.r1
         e.a -= 3
         e.exit()
+        e.assemble()
         print(e.opcodes)
         print(e.load(log_level=1)[1])
 
