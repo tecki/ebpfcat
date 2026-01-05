@@ -27,6 +27,7 @@ from time import monotonic, time
 
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
 from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
+from ebpfcat.devices import DigitalInput
 from ebpfcat.ebpf import LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
@@ -1594,3 +1595,33 @@ class Automation1(EtherCATDevice):
                 "Too fast",
                 "Not homed",
             )[self.device.error]
+
+
+class TurboPump(EtherCATDevice):
+    rpm80 = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    speedChannel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+
+    speed = Float(accessMode=AccessMode.READONLY, unitSymbol=Unit.PERCENT)
+
+    oldvalue = -1
+
+    def get_devices(self):
+        return (self.speedDevice, self.rpm80Device)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_speedChannel = self.find_channel(self.speedChannel)
+        self.speedDevice = AnalogInputDevice(self.the_speedChannel.value)
+        self.rpm80Device = DigitalInput(self.find_channel(self.rpm80))
+
+    def update_properties(self):
+        if self.speedDevice.value != self.oldvalue:
+            self.oldvalue = self.speedDevice.value
+            self.speed = (self.speedDevice.value * self.the_speedChannel.factor
+                    + self.the_speedChannel.offset) * 10
+        if self.rpm80Device.value:
+            return State.ON
+        else:
+            return State.OFF
