@@ -573,6 +573,7 @@ class EtherCATTerminal(Device):
                         MachineState.SAFE_OPERATIONAL: State.OFF,
                         MachineState.OPERATIONAL: State.ON}[state]
                 self.status = ''
+                laststate = state
             await sleep(1)
 
     async def onDestruction(self):
