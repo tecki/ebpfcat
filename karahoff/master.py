@@ -123,8 +123,10 @@ class EtherCATMaster(Device):
         async with AsyncExitStack() as exitStack:
             await exitStack.enter_async_context(self.ethercat.run())
             self.state = State.INIT
+            self.status = "trying to scan the bus..."
             await self.scanBus()
             self.state = State.ON
+            self.status = "bus scanned"
             self.exitStack = exitStack.pop_all()
 
     async def onDestruction(self):
