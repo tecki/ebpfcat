@@ -619,7 +619,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         accessMode=AccessMode.INITONLY, defaultValue=5e-5,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     motorStep = Float(
-        displayedName='Motor Stepsize',
+        displayedName='Motor Stepsize', minExc=0,
         accessMode=AccessMode.INITONLY, defaultValue=5e-5,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
     motorStepMeasured = Float(
@@ -842,12 +842,12 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             return State.MOVING
         elif not self.isLimitless:
             if self.device.low_switch:
-                if self.device.proportional > 0:
+                if self.proportional > 0:
                     return State.MOVING_FORWARD
                 else:
                     return State.MOVING_BACK
             elif self.device.high_switch:
-                if self.device.proportional > 0:
+                if self.proportional > 0:
                     return State.MOVING_BACK
                 else:
                     return State.MOVING_FORWARD
