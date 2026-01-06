@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name="KaraHoff",
-      version="0.9.0",
+      version="1.1.0",
       author="Martin Teichmann",
       author_email="martin.teichmann@xfel.eu",
       description="A Karabo Beckhoff driver",
