@@ -791,10 +791,16 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             self.actualVelocity = self.device.velocity * self.motorStep \
                     * self.baseFrequency * now()
             self.lastvelocity = self.device.velocity
-        if self.device.low_switch != self.isCCWLimit:
-            self.isCCWLimit = self.device.low_switch
-        if self.device.high_switch != self.isCWLimit:
-            self.isCWLimit = self.device.high_switch
+        if self.proportional > 0:
+            ccwLimit = self.device.low_switch
+            cwLimit = self.device.high_switch
+        else:
+            cwLimit = self.device.low_switch
+            ccwLimit = self.device.high_switch
+        if ccwLimit != self.isCCWLimit:
+            self.isCCWLimit = ccwLimit
+        if cwLimit != self.isCWLimit:
+            self.isCWLimit = cwLimit
 
         self.device.deadband_exceeded = 0
         self.device.max_velocity = \
@@ -841,16 +847,10 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         elif self.device.deadband_exceeded and self.device.velocity != 0:
             return State.MOVING
         elif not self.isLimitless:
-            if self.device.low_switch:
-                if self.proportional > 0:
-                    return State.MOVING_FORWARD
-                else:
-                    return State.MOVING_BACK
-            elif self.device.high_switch:
-                if self.proportional > 0:
-                    return State.MOVING_BACK
-                else:
-                    return State.MOVING_FORWARD
+            if ccwLimit:
+                return State.MOVING_FORWARD
+            elif cwLimit:
+                return State.MOVING_BACK
         return State.ON
 
 
