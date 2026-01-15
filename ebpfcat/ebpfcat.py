@@ -983,8 +983,9 @@ class FastSyncGroup(SyncGroupBase, XDP):
         super().__init__(ec, devices, subprograms=devices, **kwargs)
 
     def program(self):
-        with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as p:
-            self.packet.activate(p)
+        with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER \
+                as self.packet_access:
+            self.packet.activate(self.packet_access)
             for dev in self.devices:
                 dev.program()
         self.exit(XDPExitCode.TX)

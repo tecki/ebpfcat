@@ -23,6 +23,7 @@
 from .ebpfcat import (
     BaseType, EBPFTerminal, PacketDesc, ProcessDesc, ServiceDesc, Struct)
 from .ethercat import ECCmd, SyncManager
+from .safety import SafetyMain, SafetySub
 
 
 class Generic(EBPFTerminal):

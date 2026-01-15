@@ -407,3 +407,6 @@ Reference Documentation
 
 .. automodule:: ebpfcat.ebpfcat
    :members:
+
+.. automodule:: ebpfcat.safety
+   :members:
