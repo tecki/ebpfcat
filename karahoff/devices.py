@@ -679,8 +679,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         super().join(syncGroup)
         self.device = self.Device()
         self.motor_term = self.find_channel(self.motor)
-        from ebpfcat.terminals import EL7062
-        if isinstance(self.motor_term, EL7062.Channel):
+        if hasattr(self.motor_term, 'operation_mode'):
             self.isServo = True
             self.FAULT_RESET = 0x80
             self.SHUTDOWN = 6
