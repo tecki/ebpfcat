@@ -958,7 +958,7 @@ class Terminal:
                     raise EtherCatError(f"requested index {index}, got {idx}")
                 if sdocmd & 1 and len(data) == 7:
                     data = data[:3 + (sdocmd >> 1) & 7]
-                ret += data[3:]
+                ret.append(data[3:])
                 retsize += len(data) - 3
                 if sdocmd & 1:
                     break
