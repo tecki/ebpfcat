@@ -667,6 +667,8 @@ class Terminal:
         for i in range(0, len(data), 8):
             offset, size, mode = unpack_from("<HHB", data, i)
             mode &= 0xf
+            if size == 0:
+                continue
             if mode == 0:
                 self.pdo_in_off = offset
                 self.pdo_in_sz = size
