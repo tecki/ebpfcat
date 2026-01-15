@@ -84,15 +84,18 @@ async def info():
                 print(f"{t.vendorId:X}:{t.productCode:X} "
                       f"revision {t.revisionNo:X} serial {t.serialNo}")
             if args.names:
-                infos = t.eeprom[10]
-                i = 1
-                while i < len(infos):
-                    print(infos[i+1 : i+infos[i]+1].decode("latin1"))
-                    i += infos[i] + 1
+                infos = t.eeprom.get(10)
+                if infos is None:
+                    print("No information available")
+                else:
+                    i = 1
+                    while i < len(infos):
+                        print(infos[i+1 : i+infos[i]+1].decode("latin1"))
+                        i += infos[i] + 1
 
             if args.eeprom:
                 for k, v in t.eeprom.items():
-                    print(f"{k:2}: {v}\n    {v.hex()}")
+                    print(f"{k:2}: {v}\n    {v.hex(' ')}")
 
             if args.sdo:
                 await t.to_operational(MachineState.PRE_OPERATIONAL)
