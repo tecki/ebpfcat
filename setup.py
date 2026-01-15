@@ -44,6 +44,7 @@ setup(name="KaraHoff",
               "Aerotech = karahoff.terminals:Aerotech",
               "Automation1 = karahoff.devices:Automation1",
               "TurboPump = karahoff.devices:TurboPump",
+              "Safety = karahoff.devices:Safety",
 
               "SCS_XRD_TRF = karahoff.scs:SCS_XRD_TRF",
           ],
