@@ -736,19 +736,16 @@ class SterilePacket(Packet):
             ret[pos] = ECCmd.NOP.value
         return ret
 
-    def append_fmmu(self, logical_addr):
-        self.next_logical_addr = logical_addr
+    def append_fmmu(self, logical_in, logical_out):
         fmmu_in_pos = self.size
         if self.fmmu_in_size:
             self.append(ECCmd.LRD, b"\0" * self.fmmu_in_size, 0,
-                        self.next_logical_addr, counter=self.fmmu_in_count)
+                        logical_in, counter=self.fmmu_in_count)
         fmmu_out_pos = self.size
         if self.fmmu_out_size:
             self.append_writer(ECCmd.LWR, b"\0" * self.fmmu_out_size, 0,
-                               self.next_logical_addr + self.logical_addr_inc,
-                               counter=self.fmmu_out_count)
-        return (fmmu_in_pos, fmmu_out_pos, self.next_logical_addr,
-                self.next_logical_addr + self.logical_addr_inc)
+                               logical_out, counter=self.fmmu_out_count)
+        return fmmu_in_pos, fmmu_out_pos
 
     def activate(self, ebpf):
         """generate the EBPF program that re-activates a sterile packet"""
@@ -783,15 +780,11 @@ class SyncGroupBase:
         self.ec = ec
         self.devices = devices
 
-        terminals = defaultdict(lambda: False)
+        self.terminals = defaultdict(lambda: False)
         for dev in self.devices:
             for t, rw in dev.get_terminals().items():
-                terminals[t] |= rw
+                self.terminals[t] |= rw
             dev.sync_group = self
-        # sorting is only necessary for test stability
-        self.terminals = {t: rw for t, rw in
-                          sorted(terminals.items(),
-                                 key=lambda item: item[0].position)}
 
     @asynccontextmanager
     async def map_fmmu(self):
@@ -854,16 +847,16 @@ class SyncGroupBase:
         self.packet = SterilePacket()
         terminals = {t: t.allocate(self.packet, rw)
                      for t, rw in self.terminals.items()}
-        in_pos, out_pos, logical_in, logical_out = \
-            self.packet.append_fmmu(self.ec.get_fmmu_addr())
-        offsets = {BaseType.NO_FMMU: 0,
-                   BaseType.FMMU_IN: in_pos, BaseType.FMMU_OUT: out_pos}
-        self.pdo_assign = {t: {sm: offsets[base] + off + Packet.DATAGRAM_HEADER
+        logical_in = self.ec.get_fmmu_addr()
+        logical_out = logical_in + self.packet.logical_addr_inc
+        in_pos, out_pos = self.packet.append_fmmu(logical_in, logical_out)
+        offsets = {BaseType.FMMU_IN: in_pos, BaseType.FMMU_OUT: out_pos}
+        self.pdo_assign = {t: {sm: offsets.get(base, 0) + off + Packet.DATAGRAM_HEADER
                                for sm, (base, off) in d.items()}
                            for t, d in terminals.items()}
         offsets = {BaseType.FMMU_IN: logical_in,
                    BaseType.FMMU_OUT: logical_out}
-        self.fmmu_maps = {t: {sm: offsets[base] + off
+        self.fmmu_maps = {t: {sm: offsets.get(base, base) + off
                               for sm, (base, off) in d.items()
                               if base is not BaseType.NO_FMMU}
                           for t, d in terminals.items()}
