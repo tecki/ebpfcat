@@ -356,6 +356,32 @@ class Bronkhorst(EBPFTerminal):
     status_word = ProcessDesc(0x6427, 1)
 
 
+class ELMO(EBPFTerminal):
+    compatibility = {(0x9a, 0x30924)}
+    out_pdos = [0x1601]
+    in_pdos = [0x1A00, 0x1A0D]
+
+    velocity = ProcessDesc(0x60ff, 0, 'i')
+    enable = ProcessDesc(0x6040, 0, 1)
+    reset = ProcessDesc(0x6040, 0, 7)
+    control = ProcessDesc(0x6040, 0)
+
+    status = ProcessDesc(0x6041, 0)
+    ready_switch_on = ProcessDesc(0x6041, 0, 0)
+    switched_on = ProcessDesc(0x6041, 0, 1)
+    enabled = ProcessDesc(0x6041, 0, 2)
+    error = ProcessDesc(0x6041, 0, 3)
+    switch_on_disabled = ProcessDesc(0x6041, 0, 6)
+    encoder = ProcessDesc(0x6064, 0)
+
+    low_switch = ProcessDesc(0x60fd, 0, 0)
+    high_switch = ProcessDesc(0x60fd, 0, 1)
+    stepcounter = ProcessDesc(0x6063, 0, 'i')
+
+    max_current = ServiceDesc(0x6073, 0)
+    operation_mode = ServiceDesc(0x6060, 0)
+
+
 class AerotechBase(EBPFTerminal):
     """A base class for Aerotech devices
 
