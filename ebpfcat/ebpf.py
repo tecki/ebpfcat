@@ -39,6 +39,10 @@ Instruction = namedtuple("Instruction",
                          ["opcode", "dst", "src", "off", "imm"])
 
 
+class JumpTarget:
+    pass
+
+
 class FuncId(Enum):
     unspec = 0
     map_lookup_elem = 1
@@ -306,7 +310,7 @@ class Elser:
         return self.comp.Else()
 
     def __exit__(self, exc_type, exc, tb):
-        self.comp.__exit__(exc_type, exc, tb)
+        self.comp.ElseExit()
 
 
 class Comparison(ABC):
@@ -314,21 +318,16 @@ class Comparison(ABC):
 
     def __init__(self, ebpf):
         self.ebpf = ebpf
-        self.else_origin = None
 
     def __enter__(self):
-        if self.else_origin is None:
-            self.compare(True)
+        self.compare(True)
         return Elser(self)
 
     def __exit__(self, exc_type, exc, tb):
-        if self.else_origin is None:
-            self.target()
-            return
-        assert self.ebpf.opcodes[self.else_origin] is None
-        self.ebpf.opcodes[self.else_origin] = Instruction(
-                Opcode.JMP, 0, 0,
-                len(self.ebpf.opcodes) - self.else_origin - 1, 0)
+        self.target()
+
+    def ElseExit(self):
+        self.ebpf.opcodes.append(self.jump_target)
         self.ebpf.owners, self.owners = \
                 self.ebpf.owners & self.owners, self.ebpf.owners
 
@@ -344,18 +343,15 @@ class Comparison(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def target(self, retarget=False):
-        """modify the already issued jumps to jump here
-
-        you may re-set the target a second time, but then `retarget` needs
-        to be true.
-        """
+    def target(self):
+        """issue the JumpTarget to jump here"""
         raise NotImplementedError
 
     def Else(self):
-        self.else_origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
-        self.target(True)
+        self.jump_target = JumpTarget()
+        self.ebpf.opcodes.insert(self.else_origin,
+                                 Instruction(Opcode.JMP, 0, 0,
+                                             self.jump_target, 0))
         return self
 
     def __and__(self, value):
@@ -396,28 +392,28 @@ class SimpleComparison(Comparison):
                     elif not l_long and r_long:
                         self.ebpf.r[self.dst] <<= 32
                         self.ebpf.sr[self.dst] >>= 32
-                self.origin = len(self.ebpf.opcodes)
-                self.ebpf.opcodes.append(None)
+
+                self.jump_target = JumpTarget()
+
+                if self.opcode == Opcode.JMP:
+                    inst = Instruction(Opcode.JMP, 0, 0,
+                                       self.jump_target, 0)
+                elif self.right.small_constant:
+                    inst = Instruction(
+                        self.opcode, self.dst, 0,
+                        self.jump_target, int(self.right.value))
+                else:
+                    inst = Instruction(
+                        self.opcode + Opcode.REG, self.dst, self.src,
+                        self.jump_target, 0)
+                self.ebpf.opcodes.append(inst)
         self.owners = self.ebpf.owners.copy()
 
-    def target(self, retarget=False):
-        assert retarget or self.ebpf.opcodes[self.origin] is None
-        if self.opcode == Opcode.JMP:
-            inst = Instruction(Opcode.JMP, 0, 0,
-                               len(self.ebpf.opcodes) - self.origin - 1, 0)
-        elif self.right.small_constant:
-            inst = Instruction(
-                self.opcode, self.dst, 0,
-                len(self.ebpf.opcodes) - self.origin - 1,
-                int(self.right.value))
-        else:
-            inst = Instruction(
-                self.opcode + Opcode.REG, self.dst, self.src,
-                len(self.ebpf.opcodes) - self.origin - 1, 0)
-        self.ebpf.opcodes[self.origin] = inst
-        if not retarget:
-            self.ebpf.owners, self.owners = \
-                    self.ebpf.owners & self.owners, self.ebpf.owners
+    def target(self):
+        self.else_origin = len(self.ebpf.opcodes)
+        self.ebpf.opcodes.append(self.jump_target)
+        self.ebpf.owners, self.owners = \
+            self.ebpf.owners & self.owners, self.ebpf.owners
 
 
 class AndOrComparison(Comparison):
@@ -431,15 +427,15 @@ class AndOrComparison(Comparison):
         self.negative = negative
         self.left.compare(self.is_and)
         self.right.compare(negative)
-        self.origin = len(self.ebpf.opcodes)
         if self.is_and != negative:
             self.left.target()
         self.owners = self.ebpf.owners.copy()
 
-    def target(self, retarget=False):
+    def target(self):
+        self.else_origin = len(self.ebpf.opcodes)
         if self.is_and == self.negative:
-            self.left.target(retarget)
-        self.right.target(retarget)
+            self.left.target()
+        self.right.target()
 
 
 class InvertComparison(Comparison):
@@ -451,8 +447,9 @@ class InvertComparison(Comparison):
         self.value.compare(not negative)
         self.owners = self.value.owners
 
-    def target(self, retarget=False):
-        self.value.target(retarget)
+    def target(self):
+        self.else_origin = len(self.ebpf.opcodes)
+        self.value.target()
 
 
 def ensure_expression(ebpf, value):
@@ -810,43 +807,34 @@ class AndComparison(SimpleComparison):
     # there is a special comparison with & instruction
     # it is the only one which has not inversion
     def __init__(self, ebpf, left, right):
-        Binary.__init__(self, ebpf, left, right, Opcode.AND, False, False)
-        SimpleComparison.__init__(self, ebpf, left, right, Opcode.JSET)
+        super().__init__(ebpf, left, right, Opcode.JSET)
         self.opcode = (Opcode.JSET, None, Opcode.JSET, None)
         self.invert = None
 
     def compare(self, negative):
         super().compare(False)
         if negative:
-            origin = len(self.ebpf.opcodes)
-            self.ebpf.opcodes.append(None)
+            jump_target = JumpTarget()
+            self.invert = len(self.ebpf.opcodes)
+            self.ebpf.opcodes.append(
+                    Instruction(Opcode.JMP, 0, 0, jump_target, 0))
             self.target()
-            self.origin = origin
-            self.opcode = Opcode.JMP
+            self.jump_target = jump_target
 
-    def __exit__(self, exc, etype, tb):
-        super().__exit__(exc, etype, tb)
-        if self.invert is not None:
-            olen = len(self.ebpf.opcodes)
-            assert self.ebpf.opcodes[self.invert].opcode == Opcode.JMP
-            self.ebpf.opcodes[self.invert:self.invert] = \
-                    self.ebpf.opcodes[self.else_origin+1:]
-            del self.ebpf.opcodes[olen-1:]
-            op, dst, src, off, imm = self.ebpf.opcodes[self.invert - 1]
-            self.ebpf.opcodes[self.invert - 1] = \
-                    Instruction(op, dst, src,
-                                len(self.ebpf.opcodes) - self.else_origin + 1, imm)
+    def ElseExit(self):
+        if self.invert is None:
+            return super().ElseExit()
+        oldlen = len(self.ebpf.opcodes)
+        self.ebpf.opcodes[self.invert:self.invert] = \
+                    self.ebpf.opcodes[self.else_origin:]
+        del self.ebpf.opcodes[oldlen:]
 
     def Else(self):
-        op, dst, src, off, imm = self.ebpf.opcodes[self.origin]
-        if op is Opcode.JMP:
-            self.invert = self.origin
-        else:
-            self.ebpf.opcodes[self.origin] = \
-                Instruction(op, dst, src, off+1, imm)
+        if self.invert is None:
+            return super().Else()
         self.else_origin = len(self.ebpf.opcodes)
-        self.ebpf.opcodes.append(None)
         return self
+
 
 class Constant(Expression):
     def __init__(self, ebpf, value):
@@ -1504,6 +1492,24 @@ class EBPF(EBPFBase):
     def assemble(self):
         """return the assembled program"""
         sub(EBPF, self).program()
+        i = 0
+        for op in self.opcodes:
+            if isinstance(op, JumpTarget):
+                op.position = i
+            else:
+                i += 1
+
+        opcodes = []
+        i = 1
+        for op in self.opcodes:
+            if isinstance(op, Instruction):
+                if isinstance(op.off, JumpTarget):
+                    opcodes.append(Instruction(op.opcode, op.dst, op.src,
+                                               op.off.position - i, op.imm))
+                else:
+                    opcodes.append(op)
+                i += 1
+        self.opcodes = opcodes
         return b"".join(
             pack("<BBHI", i.opcode.value, i.dst | i.src << 4,
                  i.off % 0x10000, i.imm % 0x100000000)
@@ -1542,11 +1548,11 @@ class EBPF(EBPFBase):
     def jump(self):
         """unconditionally jump to a later defined `target`"""
         comp = SimpleComparison(self, None, 0, Opcode.JMP)
-        comp.origin = len(self.opcodes)
+        comp.jump_target = JumpTarget()
         comp.dst = 0
         comp.owners = self.owners.copy()
         self.owners = set(range(11))
-        self.opcodes.append(None)
+        self.opcodes.append(Instruction(Opcode.JMP, 0, 0, comp.jump_target, 0))
         return comp
 
     def get_fd(self, fd):
