@@ -781,10 +781,10 @@ class SyncGroupBase:
         self.ec = ec
         self.devices = devices
 
-        self.terminals = defaultdict(lambda: False)
+        self.terminals = {}
         for dev in self.devices:
             for t, rw in dev.get_terminals().items():
-                self.terminals[t] |= rw
+                self.terminals[t] = self.terminals.get(t, False) | rw
             dev.sync_group = self
 
     @asynccontextmanager
