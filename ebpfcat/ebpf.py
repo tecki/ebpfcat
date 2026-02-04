@@ -35,12 +35,29 @@ from enum import Enum
 from . import bpf
 from .util import sub
 
-Instruction = namedtuple("Instruction",
-                         ["opcode", "dst", "src", "off", "imm"])
+BaseInstruction = namedtuple("BaseInstruction",
+                             ["opcode", "dst", "src", "off", "imm"])
+
+class Instruction(BaseInstruction):
+    opcode_size = 1
+
+    def set_position(self, position):
+        pass
+
+    def assemble(self):
+        return pack("<BBHI", self.opcode.value, self.dst | self.src << 4,
+                    self.off % 0x10000, self.imm % 0x100000000)
+
 
 
 class JumpTarget:
-    pass
+    opcode_size = 0
+
+    def set_position(self, position):
+        self.position = position
+
+    def assemble(self):
+        return b''
 
 
 class FuncId(Enum):
@@ -1494,10 +1511,8 @@ class EBPF(EBPFBase):
         sub(EBPF, self).program()
         i = 0
         for op in self.opcodes:
-            if isinstance(op, JumpTarget):
-                op.position = i
-            else:
-                i += 1
+            op.set_position(i)
+            i += op.opcode_size
 
         opcodes = []
         i = 1
@@ -1508,12 +1523,9 @@ class EBPF(EBPFBase):
                                                op.off.position - i, op.imm))
                 else:
                     opcodes.append(op)
-                i += 1
+            i += op.opcode_size
         self.opcodes = opcodes
-        return b"".join(
-            pack("<BBHI", i.opcode.value, i.dst | i.src << 4,
-                 i.off % 0x10000, i.imm % 0x100000000)
-            for i in self.opcodes)
+        return b"".join(op.assemble() for op in self.opcodes)
 
     def load(self, log_level=0, log_size=10 * 4096):
         """load the program into the kernel"""
