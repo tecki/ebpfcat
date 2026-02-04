@@ -662,11 +662,12 @@ class Terminal:
         self.pdo_in_addr = 0x818
         self.pdo_out_addr = 0x810
 
-        for i in range(0, len(data), 8):
+        # it is the first occurence we want to save
+        # so we go through it backwards
+        assert len(data) >= 8 and len(data) % 8 == 0
+        for i in range(len(data) - 8, -1, -8):
             offset, size, mode = unpack_from("<HHB", data, i)
             mode &= 0xf
-            if size == 0:
-                continue
             if mode == 0:
                 self.pdo_in_off = offset
                 self.pdo_in_sz = size
