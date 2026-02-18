@@ -32,14 +32,15 @@ from ebpfcat.ebpf import AsLong, LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
-    AccessMode, Assignment, Bool, Double, Float, Int16, Int32, Int64, MetricPrefix,
-    Overwrite, QuantityValue, Slot, State, String, TimeMixin, Timestamp,
-    UInt16, UInt64, Unit, background, get_timestamp, isSet, unit)
+    AccessMode, Assignment, Bool, Double, Float, Int8, Int16, Int32, Int64,
+    MetricPrefix, Overwrite, QuantityValue, Slot, State, String, TimeMixin,
+    Timestamp, UInt16, UInt64, Unit, background, getDevice, get_timestamp,
+    isSet, unit, waitUntilNew)
 from numpy import polyfit
 from numpy.linalg import LinAlgError
 
 from .interlock import Interlock, InterlockSlot
-from .master import EtherCATDevice
+from .master import EtherCATDevice, TerminalUnknownError
 
 
 def now():
@@ -195,14 +196,39 @@ class OptionalMixin(EtherCATDevice):
         ret = super().get_devices()
         return ret + tuple(self.switchDevices)
 
+    foreignError = False
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if self.foreignError:
+            return State.ERROR, self.foreignError
+        return ret
+
+    async def monitorForeign(self, device):
+        try:
+            dev = await getDevice(device)
+            async with dev:
+                await dev.on()
+                while True:
+                    await waitUntilNew(dev.state)
+                    if dev.state == State.ON:
+                        self.foreignError = False
+                    else:
+                        self.foreignError = 'foreign fuse is not on'
+        except:
+            self.foreignError = 'monitoring foreign fuse failed'
+
     def join(self, syncGroup):
         super().join(syncGroup)
+        switchDevices = []
         if self.switchChannel:
-            self.switchDevices = tuple(
-                optionalFusedOutput(self.find_channel(c))
-                for c in self.switchChannel.split(','))
-        else:
-            self.switchDevices = ()
+            for c in self.switchChannel.split(','):
+                try:
+                    switchDevices.append(
+                            optionalFusedOutput(self.find_channel(c)))
+                except TerminalUnknownError:
+                    background(self.monitorForeign(c))
+        self.switchDevices = tuple(switchDevices)
 
 
 class OptionalSwitchMixin(OptionalMixin):
@@ -212,9 +238,11 @@ class OptionalSwitchMixin(OptionalMixin):
         accessMode=AccessMode.INITONLY, defaultValue=False)
 
     def update_properties(self):
+        ret = super().update_properties()
         for d in self.switchDevices:
             if d.value == 2:
                 return State.ERROR, 'fuse reported error'
+        return ret
 
     def initialize(self):
         super().initialize()
