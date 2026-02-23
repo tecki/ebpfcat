@@ -906,8 +906,7 @@ class FollowerDevice(MotorDevice):
 
     def calculate_speed(self):
         super().calculate_speed()
-        with (self.doFollow != 0) \
-                & (self.leader.device.enabled != 0):
+        with (self.doFollow != 0) & (self.leader.device.enabled != 0):
             self.ebpf.stmp += \
                 (int(self.motors_factor * self.follow_factor * (1 << 16)) \
                 * self.leader.device.velocity) >> 16
@@ -978,6 +977,62 @@ class MotorFollower(Motor):
 class RotationFollower(MotorFollower, RotationMotor):
     maxLag = Overwrite(unitSymbol=Unit.DEGREE,
                        metricPrefixSymbol=MetricPrefix.NONE)
+
+
+class FixedFollowerDevice(MotorDevice):
+    def calculate_speed(self):
+        super().calculate_speed()
+        self.ebpf.stmp += \
+            (int(self.motors_factor * self.follow_factor * (1 << 16)) \
+            * self.leader.device.velocity) >> 16
+
+    def program(self):
+        self.set_control_word = self.leader.device.control_word
+        self.target = AsLong((self.leader.device.encoder
+                       * int(self.encoders_factor * self.follow_factor
+                             * (1 << 16))) >> 16) + self.follow_offset
+        with abs(self.target - self.encoder) > self.follow_lag:
+            self.set_control_word = self.SWITCH_OFF
+            self.leader.device.set_control_word = self.leader.SWITCH_OFF
+        super().program()
+
+
+class FixedMotorFollower(Motor):
+    """A stepper motor that always follows another motor"""
+    Device = FixedFollowerDevice
+
+    leader = String(assignment=Assignment.MANDATORY)
+    factor = Float(accessMode=AccessMode.INITONLY, defaultValue=1)
+    follow_offset = Float(
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0)
+    maxLag = Float(
+        displayedName='Maximum Lag',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0.1)
+    follow_lag = Float(
+        displayedName='Lag',
+        accessMode=AccessMode.READONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        leader = self.getLocalDevice(self.leader)
+        self.device.leader = leader
+        self.device.SWITCH_OFF = self.SWITCH_OFF
+        self.device.follow_factor = self.factor.value
+        self.device.motors_factor = (leader.motorStep / self.motorStep).value
+        self.device.encoders_factor = (leader.encodeStep
+                                       / self.encodeStep).value
+        self.device.follow_lag = int(self.maxLag // self.encodeStep)
+        self.device.follow_offset = \
+            int((self.follow_offset - self.offset + leader.offset)
+                // self.encodeStep)
+        self.device.set_control_word = self.ENABLE
+
+    def update_properties(self):
+        self.follow_lag = (self.device.target - self.device.encoder) * self.encodeStep
+        return super().update_properties()
 
 
 class SynchronizeDevice(RotationDevice):
