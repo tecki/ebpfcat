@@ -1379,17 +1379,17 @@ class SlowRoughingValve(Valve):
         self.slowDevice = optionalFusedOutput(
             self.find_channel(self.slowCoil))
 
-    @Slot(allowedStates=
+    @InterlockSlot(allowedStates=
           {State.CLOSED, State.CLOSING, State.MOVING, State.EMPTYING})
-    async def open(self):
+    def open(self):
         self.slowDevice.value = False
-        await super().open()
+        super().open.synchronous(self)
 
-    @Slot(allowedStates=
+    @InterlockSlot(allowedStates=
           {State.OPENED, State.OPENING, State.MOVING, State.EMPTYING})
-    async def close(self):
+    def close(self):
         self.slowDevice.value = False
-        await super().close()
+        super().close.synchronous(self)
 
     @Slot(allowedStates=
           {State.CLOSED, State.CLOSING, State.MOVING, State.EMPTYING})

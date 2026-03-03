@@ -35,6 +35,12 @@ class InterlockSlot(Slot):
         self.synchronous = func
         return super().__call__(wrapper)
 
+    def __get__(self, instance, owner):
+        ret = super().__get__(instance, owner)
+        if instance is not None:
+            ret.__func__.synchronous = self.synchronous
+        return ret
+
 
 class InterlockCondition(Configurable):
     parent = None
