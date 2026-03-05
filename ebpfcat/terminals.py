@@ -302,14 +302,14 @@ class EL7332(EBPFTerminal):
 class EPP2308(EBPFTerminal):
     compatibilty = {(2, 0x64765649)}
 
-    channel1 = ProcessDesc(0x6000, 1)
-    channel2 = ProcessDesc(0x6010, 1)
-    channel3 = ProcessDesc(0x6020, 1)
-    channel4 = ProcessDesc(0x6030, 1)
-    channel5 = ProcessDesc(0x7040, 1)
-    channel6 = ProcessDesc(0x7050, 1)
-    channel7 = ProcessDesc(0x7060, 1)
-    channel8 = ProcessDesc(0x7070, 1)
+    input1 = ProcessDesc(0x6000, 1)
+    input2 = ProcessDesc(0x6010, 1)
+    input3 = ProcessDesc(0x6020, 1)
+    input4 = ProcessDesc(0x6030, 1)
+    output1 = ProcessDesc(0x7040, 1)
+    output2 = ProcessDesc(0x7050, 1)
+    output3 = ProcessDesc(0x7060, 1)
+    output4 = ProcessDesc(0x7070, 1)
 
 
 class EPP3184(EBPFTerminal):
