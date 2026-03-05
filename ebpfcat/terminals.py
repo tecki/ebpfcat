@@ -129,11 +129,14 @@ class EL2624(EBPFTerminal):
     channel4 = ProcessDesc(0x7030, 1)
 
 
-class EL4104(EBPFTerminal):
-    ch1_value = ProcessDesc(0x7000, 1)
-    ch2_value = ProcessDesc(0x7010, 1)
-    ch3_value = ProcessDesc(0x7020, 1)
-    ch4_value = ProcessDesc(0x7030, 1)
+class EL4134(EBPFTerminal):
+    # used to be for EL4104, but had not compatibility set
+    compatibility = {(2, 0x10263052)}
+
+    channel1 = ProcessDesc(0x7000, 1)
+    channel2 = ProcessDesc(0x7010, 1)
+    channel3 = ProcessDesc(0x7020, 1)
+    channel4 = ProcessDesc(0x7030, 1)
 
 
 class EL3164(EBPFTerminal):
@@ -294,6 +297,43 @@ class EL7332(EBPFTerminal):
 
     channel1 = Channel(0)
     channel2 = Channel(0x10)
+
+
+class EPP2308(EBPFTerminal):
+    compatibilty = {(2, 0x64765649)}
+
+    channel1 = ProcessDesc(0x6000, 1)
+    channel2 = ProcessDesc(0x6010, 1)
+    channel3 = ProcessDesc(0x6020, 1)
+    channel4 = ProcessDesc(0x6030, 1)
+    channel5 = ProcessDesc(0x7040, 1)
+    channel6 = ProcessDesc(0x7050, 1)
+    channel7 = ProcessDesc(0x7060, 1)
+    channel8 = ProcessDesc(0x7070, 1)
+
+
+class EPP3184(EBPFTerminal):
+    compatibility = {(2, 0x64768d09), (2, 0x64768e49)}
+
+    class Channel(Struct):
+        value = ProcessDesc(0x6010, 0x11)
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
+    channel3 = Channel(0x20)
+    channel4 = Channel(0x30)
+
+
+class EL3202(EBPFTerminal):
+    compatibility = {(2, 0xC823052)}
+
+    class Input(Struct):
+        underrange = ProcessDesc(0x6010, 1)
+        overrange = ProcessDesc(0x6010, 2)
+        value = ProcessDesc(0x6010, 0x11)
+
+    channel1 = Input(0)
+    channel2 = Input(0x10)
 
 
 class EPP4304(EBPFTerminal):
