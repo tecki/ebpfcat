@@ -243,8 +243,6 @@ class EtherCATSyncGroupBase(Device):
             list(chain.from_iterable(d.get_devices() for d in self.devs)))
         self.syncGroup.name = self.deviceId.value
         self.syncGroup.cycletime = float(self.cycletime / unit.second)
-        for d in self.devs:
-            d.initialize()
         self.state = State.OFF
         self.syncGroup.start()
         self.state = State.ON
