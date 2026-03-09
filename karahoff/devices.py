@@ -289,9 +289,9 @@ class DigitalOutput(OptionalSwitchMixin):
         ret = super().update_properties()
         if ret is not None:
             return ret
-        if all(d.data for d in self.switchDevices):
+        if all(d.value for d in self.switchDevices):
             return State.ON
-        if any(d.data for d in self.switchDevices):
+        if any(d.value for d in self.switchDevices):
             return State.CHANGING
         return State.OFF
 
