@@ -1420,6 +1420,95 @@ class Valve(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                 return State.OPENED
 
 
+class ImpulseValveDevice(Device):
+    coilOpen = TerminalVar()
+    coilClose = TerminalVar()
+    openSwitch = TerminalVar()
+    closeSwitch = TerminalVar()
+
+    target = DeviceVar('B')
+
+    def update(self):
+        self.coilOpen = 0
+        self.coilClose = 0
+        if self.openSwitch != self.closeSwitch and self.target == 0:
+            self.lastGood = monotonic()
+        elif self.target > 1 and monotonic() - self.lastGood > self.movingTime:
+            self.target = 1  # error
+        if self.target == 2:
+            if self.openSwitch:
+                self.target = 0
+            else:
+                self.coilOpen = 1
+        elif self.target == 3:
+            if self.closeSwitch:
+                self.target = 0
+            else:
+                self.coilClose = 1
+
+
+class ImpulseValve(OptionalKeepOnMixin, Interlock, EtherCATDevice):
+    """A standard valve, one coil and two limit switches"""
+    coilOpen = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+    coilClose = String(accessMode=AccessMode.INITONLY,
+                       assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY)
+    movingTime = Float(
+        displayedName='moving time limit',
+        description="""the maximum time the valve may not be at its limit
+        before it is considered an error""",
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
+        defaultValue=3)
+
+    isOpened = Bool(displayedName='Is Open?', accessMode=AccessMode.READONLY)
+    isClosed = Bool(displayedName='Is Closed?', accessMode=AccessMode.READONLY)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = ImpulseValveDevice()
+        self.device.coilOpen = self.find_channel(self.coilOpen)
+        self.device.coilClose = self.find_channel(self.coilClose)
+        self.device.openSwitch = self.find_channel(self.openSwitch)
+        self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        self.device.movingTime = self.movingTime.value
+        self.device.lastGood = monotonic()
+
+    @InterlockSlot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
+    def open(self):
+        self.device.target = 2
+
+    @InterlockSlot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
+    def close(self):
+        self.device.target = 3
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        await super().reset()
+        self.device.target = 0
+
+    def update_properties(self):
+        if self.device.openSwitch != self.isOpened:
+            self.isOpened = self.device.openSwitch
+        if self.device.closeSwitch != self.isClosed:
+            self.isClosed = self.device.closeSwitch
+        ret = super().update_properties()
+        if self.device.target == 1:
+            return State.ERROR
+        if isinstance(ret, tuple) and ret[0] == State.INTERLOCKED:
+            return ret
+        if self.device.target == 2:
+            return State.OPENING
+        elif self.device.target == 3:
+            return State.CLOSING
+        elif self.device.openSwitch:
+            return State.OPENED
+        elif self.device.closeSwitch:
+            return State.CLOSED
+        return State.ERROR
+
+
 class SlowRoughingValve(Valve):
     """A valve with a second coil for slow pumping"""
     slowCoil = String(accessMode=AccessMode.INITONLY,
