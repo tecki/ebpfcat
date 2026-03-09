@@ -333,6 +333,9 @@ class Device(SubProgram):
         and let :meth:`update` and :meth:`fast_update` do the same.
         """
 
+    def initialize(self):
+        """overwrite this method with code to initialize upon startup"""
+
 
 class ServiceDesc:
     def __init__(self, index, subidx):
@@ -890,6 +893,8 @@ class SyncGroup(SyncGroupBase):
                                                self.ec.ethertype)
         self.current_data = bytearray(self.asm_packet)
         self.task = ensure_future(self.run())
+        for dev in self.devices:
+            dev.initialize()
         return self.task
 
 
@@ -933,6 +938,8 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
         async with self.ec.run():
             self.asm_packet = self.packet.assemble(self.packet_index,
                                                    self.ec.ethertype)
+            for dev in self.devices:
+                dev.initialize()
             await self.run()
 
     async def wait_for_process(self):
@@ -993,6 +1000,8 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     async def run(self):
         with self.ec.register_sync_group(self) as self.packet_index:
+            for dev in self.devices:
+                dev.initialize()
             self.wkc_errors = 0
             self.asm_packet = self.packet.sterile(self.packet_index,
                                                   self.ec.ethertype)
