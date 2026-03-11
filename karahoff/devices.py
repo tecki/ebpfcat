@@ -1863,3 +1863,33 @@ class Safety(EtherCATDevice):
         self.bool_setter(self.dtz, 0x40)
         self.bool_setter(self.gtz, 0x10)
         self.bool_setter(self.rry, 0x80)
+
+
+class TrainTriggerDevice(Device):
+    output = TerminalVar()
+    phase = DeviceVar("Q")
+    modulo = DeviceVar("Q")
+    dutyCycle = DeviceVar("Q")
+
+    def program(self):
+        self.output = 0
+        with (ktime(self.ebpf) - self.phase) % self.modulo < self.dutyCycle:
+            self.output = 1
+
+
+class TrainTrigger(EtherCATDevice):
+    outputChannel = String(accessMode=AccessMode.INITONLY,
+                           assignment=Assignment.MANDATORY)
+    dutyCycle = Double(unitSymbol=Unit.PERCENT, defaultValue=10)
+    timediff = int((monotonic() - time()) * 1e9)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = TrainTriggerDevice()
+        self.device.output = self.find_channel(self.outputChannel)
+
+    def update_properties(self):
+        self.device.modulo = int(TimeMixin._period * 1000)
+        self.device.phase =  int(self.timediff + TimeMixin._time_sec * 1e9
+                                 + TimeMixin._time_frac * 1e-9)
+        self.device.dutyCycle = int(self.dutyCycle * self.device.modulo)
