@@ -133,10 +133,10 @@ class EL4134(EBPFTerminal):
     # used to be for EL4104, but had not compatibility set
     compatibility = {(2, 0x10263052)}
 
-    channel1 = ProcessDesc(0x7000, 1)
-    channel2 = ProcessDesc(0x7010, 1)
-    channel3 = ProcessDesc(0x7020, 1)
-    channel4 = ProcessDesc(0x7030, 1)
+    channel1 = ProcessDesc(0x7000, 1, "h")
+    channel2 = ProcessDesc(0x7010, 1, "h")
+    channel3 = ProcessDesc(0x7020, 1, "h")
+    channel4 = ProcessDesc(0x7030, 1, "h")
 
 
 class EL3164(EBPFTerminal):
