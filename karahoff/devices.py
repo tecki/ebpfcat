@@ -363,12 +363,10 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
 
 class AnalogOutputDevice(Device):
     value = TerminalVar()
-    set_value = DeviceVar(write=True)
+    set_value = DeviceVar('i', write=True)
 
     def update(self):
-        if not isSet(self.owner.value):
-            return
-        self.value = int(self.owner.value)
+        self.value = self.set_value
 
     def program(self):
         self.value = self.set_value
@@ -388,7 +386,6 @@ class AnalogOutput(EtherCATDevice):
     def join(self, syncGroup):
         super().join(syncGroup)
         self.device = AnalogOutputDevice()
-        self.device.owner = self
         self.device.value = self.find_channel(self.channel)
         self.state = State.ON
 
