@@ -313,15 +313,36 @@ class EPP2308(EBPFTerminal):
 
 
 class EPP3184(EBPFTerminal):
-    compatibility = {(2, 0x64768d09), (2, 0x64768e49)}
+    compatibility = {(2, 0x64768d09)}
 
     class Channel(Struct):
-        value = ProcessDesc(0x6010, 0x11)
+        value = ProcessDesc(0x6000, 0x11)
+
+        factor = 10 / 32767  # see manual version 1.4, section 5.2.2
+        offset = 0
 
     channel1 = Channel(0)
     channel2 = Channel(0x10)
     channel3 = Channel(0x20)
     channel4 = Channel(0x30)
+
+
+class EPP3204(EBPFTerminal):
+    compatibility = {(2, 0x64768e49), (2, 0x64769529)}
+
+    class Channel(Struct):
+        value = ProcessDesc(0x6000, 0x11)
+
+        factor = 0.01
+        offset = 0
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
+    channel3 = Channel(0x20)
+    channel4 = Channel(0x30)
+
+
+EPP3314 = EPP3204  # lazy coding
 
 
 class EL3202(EBPFTerminal):
@@ -344,7 +365,7 @@ class EPP4304(EBPFTerminal):
         overrange = ProcessDesc(0x6010, 2)
         value = ProcessDesc(0x6010, 0x11)
 
-        factor = 327.68e-6
+        factor = 327.68e-6  # see manual version 1.3, Section 3.2.4.1
         offset = 0
 
     input1 = Input(0)
@@ -355,7 +376,7 @@ class EPP4304(EBPFTerminal):
         error = ProcessDesc(0x6030, 7)
         value = ProcessDesc(0x7030, 1)
 
-        factor = 305.19e-6
+        factor = 305.19e-6  # see manual version 1.3, Section 3.2.5.1
         offset = 0
 
     output1 = Output(0)
