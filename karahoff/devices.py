@@ -27,7 +27,7 @@ from time import monotonic, time
 
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
 from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
-from ebpfcat.devices import DigitalInput
+from ebpfcat.devices import DigitalInput as DigitalInputDevice
 from ebpfcat.ebpf import AsLong, LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.safety import SafetyDevice
@@ -297,6 +297,23 @@ class DigitalOutput(OptionalSwitchMixin):
 
     on = Overwrite(allowedStates={State.OFF})
     off = Overwrite(allowedStates={State.ON})
+
+
+class DigitalInput(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    value = Bool(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        value = bool(self.device.value)
+
+        if value != self.value:
+            self.value = value
+        return State.ON if value else State.OFF
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = DigitalInputDevice(self.find_channel(self.channel))
 
 
 class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
@@ -1803,7 +1820,7 @@ class TurboPump(EtherCATDevice):
         super().join(syncGroup)
         self.the_speedChannel = self.find_channel(self.speedChannel)
         self.speedDevice = AnalogInputDevice(self.the_speedChannel.value)
-        self.rpm80Device = DigitalInput(self.find_channel(self.rpm80))
+        self.rpm80Device = DigitalInputDevice(self.find_channel(self.rpm80))
 
     def update_properties(self):
         if self.speedDevice.value != self.oldvalue:
