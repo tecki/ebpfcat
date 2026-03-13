@@ -188,6 +188,7 @@ def optionalFusedOutput(channel):
 
 class OptionalMixin(EtherCATDevice):
     switchChannel = String(
+        displayedName='Power output channels',
         accessMode=AccessMode.INITONLY,
         description="""List here the digital output channels (comma separated)
         that need to be on for this device to function. Leave empty if there
@@ -280,7 +281,9 @@ class OptionalKeepOnMixin(OptionalMixin):
 
 
 class DigitalOutput(OptionalSwitchMixin):
-    switchChannel = Overwrite(assignment=Assignment.MANDATORY)
+    switchChannel = Overwrite(
+        assignment=Assignment.MANDATORY, displayedName='Channel',
+        description='The digital output channel to be switched')
 
     def get_devices(self):
         return self.switchDevices
