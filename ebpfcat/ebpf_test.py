@@ -860,18 +860,28 @@ class Tests(TestCase):
     def test_negation(self):
         e = EBPF()
         e.r7 = -e.r1
+        e.r7 = -e.r7
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0)])
+            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
+            Instruction(opcode=O.NEG+O.LONG, dst=7, src=0, off=0, imm=0)])
 
     def test_absolute(self):
         e = EBPF()
         e.r7 = abs(e.r1)
-        e.x3 = abs(e.x1)
+        with abs(e.r7) > 3:
+            e.x3 = abs(e.x1)
+        self.maxDiff = None
         self.assertEqual(e.opcodes, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.JSGE, dst=7, src=0, off=1, imm=0),
             Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
+
+            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=7, off=0, imm=0),
+            Instruction(opcode=O.JSGE, dst=0, src=0, off=1, imm=0),
+            Instruction(opcode=O.LONG+O.NEG, dst=0, src=0, off=0, imm=0),
+            Instruction(opcode=O.JLE, dst=0, src=0, off=3, imm=3),
+
             Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=1, off=0, imm=0),
             Instruction(opcode=O.JSGE, dst=3, src=0, off=1, imm=0),
             Instruction(opcode=O.NEG+O.LONG, dst=3, src=0, off=0, imm=0),

@@ -711,9 +711,10 @@ class Unary(Expression):
 
     @contextmanager
     def calculate(self, dst, long, force=False):
-        with self.arg.calculate(dst, long, force) as (dst, long):
-            self.calculate_unary(dst, long)
-            yield dst, long
+        with self.ebpf.get_free_register(dst) as new_dst:
+            with self.arg.calculate(new_dst, long, True) as (new_dst, long):
+                self.calculate_unary(new_dst, long)
+                yield new_dst, long
 
     def contains(self, no):
         return self.arg.contains(no)
