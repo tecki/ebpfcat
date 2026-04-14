@@ -21,6 +21,7 @@ A collection of simple devices
     :members:
 """
 from asyncio import Event, Lock, sleep
+from ast import literal_eval
 from math import sqrt
 from struct import pack, unpack
 from time import monotonic, time
@@ -1839,18 +1840,7 @@ class TurboPump(EtherCATDevice):
 class Safety(EtherCATDevice):
     mainTerminal = String(accessMode=AccessMode.INITONLY,
                           assignment=Assignment.MANDATORY)
-    safe_state = Int32(accessMode=AccessMode.READONLY)
     generic_input = Int32(accessMode=AccessMode.READONLY)
-
-    running = Bool(accessMode=AccessMode.READONLY)
-    button_pressed = Bool(accessMode=AccessMode.READONLY)
-    manual_mode = Bool(accessMode=AccessMode.READONLY)
-    auto_mode = Bool(accessMode=AccessMode.READONLY)
-    hutch_searched = Bool(accessMode=AccessMode.READONLY)
-    dty = Bool(accessMode=AccessMode.READONLY)
-    dtz = Bool(accessMode=AccessMode.READONLY)
-    gtz = Bool(accessMode=AccessMode.READONLY)
-    rry = Bool(accessMode=AccessMode.READONLY)
 
     def join(self, syncGroup):
         super().join(syncGroup)
@@ -1859,30 +1849,35 @@ class Safety(EtherCATDevice):
 
     acknowledge_flag = 0
 
-    def bool_setter(self, prop, mask):
-        value = self.device.generic_input & mask != 0
-        if getattr(self, prop.descriptor.key) != value:
-            setattr(self, prop.descriptor.key, value)
-
     @Slot()
     async def acknowledge(self):
-        self.acknowledge_flag = 1
+        self.acknowledge_flag = self.ACKNOWLEDGE_BIT
         await sleep(0.2)
         self.acknowledge_flag = 0
 
+    safe_states = {0: State.OFF, 1: State.ON, 3: State.STOPPED,
+                   6: State.STARTING, 8: State.SWITCHING_ON}
+
+    input_map = ()
+
     def update_properties(self):
-        self.safe_state = self.device.safe_logic_state
+        state = self.safe_states.get(self.device.safe_logic_state,
+                                     State.UNKNOWN)
+
         self.generic_input = self.device.generic_input
-        self.device.generic_output = 2 + self.acknowledge_flag
-        self.bool_setter(self.button_pressed, 0x100)
-        self.bool_setter(self.hutch_searched, 0x10)
-        self.bool_setter(self.manual_mode, 4)
-        self.bool_setter(self.auto_mode, 2)
-        self.bool_setter(self.running, 1)
-        self.bool_setter(self.dty, 0x20)
-        self.bool_setter(self.dtz, 0x40)
-        self.bool_setter(self.gtz, 0x10)
-        self.bool_setter(self.rry, 0x80)
+        self.device.generic_output = self.RUN_BIT | self.acknowledge_flag
+        for bits, descr in self.input_map:
+            descr.__set__(self, self.device.generic_input & bits != 0)
+        return state
+
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        input_map = []
+        for k, v in cls.__dict__.items():
+            alias = getattr(v, 'alias', None)
+            if alias is not None:
+                input_map.append((literal_eval(alias), v))
+        cls.input_map = cls.input_map + tuple(input_map)
 
 
 class TrainTriggerDevice(Device):

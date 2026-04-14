@@ -51,6 +51,8 @@ setup(name="KaraHoff",
               "Safety = karahoff.devices:Safety",
 
               "SCS_XRD_TRF = karahoff.scs:SCS_XRD_TRF",
+              "HRIXSSafety = karahoff.scs:HRIXSSafety",
+              "FFTSafety = karahoff.scs:FFTSafety",
           ],
       },
       requires=[],

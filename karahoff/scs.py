@@ -1,8 +1,9 @@
 from karabo.middlelayer import (
-    AccessMode, Double, Slot, State, String, Unit, unit)
+    AccessMode, Bool, Double, Slot, State, String, Unit, unit)
 from numpy import arcsin, arctan, pi, sin, sqrt, tan
 
 from .master import EtherCATDevice
+from .devices import Safety
 
 SIN = sin(23.75 * pi / 180)
 TAN = tan(23.75 * pi / 180)
@@ -53,3 +54,38 @@ class SCS_XRD_TRF(EtherCATDevice):
     @Slot()
     async def off(self):
         self.state = State.OFF
+
+
+class HRIXSSafety(Safety):
+    running = Bool(alias='1', accessMode=AccessMode.READONLY)
+    button_pressed = Bool(alias='0x100', accessMode=AccessMode.READONLY)
+    manual_mode = Bool(alias='4', accessMode=AccessMode.READONLY)
+    auto_mode = Bool(alias='2', accessMode=AccessMode.READONLY)
+    hutch_searched = Bool(alias='0x10', accessMode=AccessMode.READONLY)
+    dty = Bool(alias='0x20', accessMode=AccessMode.READONLY)
+    dtz = Bool(alias='0x40', accessMode=AccessMode.READONLY)
+    gtz = Bool(alias='0x10', accessMode=AccessMode.READONLY)
+    rry = Bool(alias='0x80', accessMode=AccessMode.READONLY)
+
+    RUN_BIT = 2
+    ACKNOWLEDGE_BIT = 1
+
+    def update_properties(self):
+        state = super().update_properties()
+        if state is State.ON and self.device.generic_input & 1:
+            state = State.RUNNING
+        return state
+
+
+class FFTSafety(Safety):
+    RUN_BIT = 1
+    ACKNOWLEDGE_BIT = 2
+
+    running = Bool(alias='0x10', accessMode=AccessMode.READONLY)
+    switchedOn = Bool(alias='2', accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        state = super().update_properties()
+        if state is State.ON and self.device.generic_input & 2:
+            state = State.RUNNING
+        return state
