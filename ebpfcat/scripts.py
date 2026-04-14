@@ -20,6 +20,7 @@ from argparse import ArgumentParser
 import asyncio
 from functools import wraps
 from hashlib import sha1
+import logging
 from pprint import PrettyPrinter
 from struct import unpack
 import sys
@@ -73,7 +74,14 @@ async def info():
     parser.add_argument("-p", "--pdo", action="store_true")
     parser.add_argument("-e", "--eeprom", action="store_true")
     parser.add_argument("-r", "--reset", action="store_true")
+    parser.add_argument("-vv", "--verbose", action="store_true")
+    parser.add_argument("-vvv", "--very-verbose", action="store_true")
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO)
+    if args.very_verbose:
+        logging.basicConfig(level=logging.DEBUG)
 
     ec = ParallelEtherCat(args.interface)
     async with ec.run():

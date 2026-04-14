@@ -632,7 +632,9 @@ class Terminal:
 
         state, *_ = await self.get_state()
         if state is MachineState.INIT:
+            logger.info('terminal "%s" not yet initialized', self.name)
             return await self.initialize(relative=relative, absolute=absolute)
+        logger.info('terminal "%s" already initialized', self.name)
 
         await self.read_eeprom()
         sm = await self.read(0x800, data=0x80)
