@@ -429,20 +429,18 @@ class MonitoredOutputDevice(Device):
 
     ramping = DeviceVar('i')
     value = DeviceVar('q')
+    target = DeviceVar('q')
+    rampSpeed = DeviceVar('d')
 
     def update(self):
-        target = int(self.owner.target / (self.owner.outputFactor
-                                          * self.owner.outputCalibration))
-        now = monotonic() * unit.second
-        diff = int(
-            self.owner.rampSpeed * (now - self.lastTime)
-            / (self.owner.outputFactor * self.owner.outputCalibration))
-        if self.owner.rampSpeed == 0 or abs(target - self.lastValue) < diff:
-            self.lastValue = self.outputTerm = target
+        now = monotonic()
+        diff = int(self.rampSpeed * (now - self.lastTime))
+        if self.rampSpeed == 0 or abs(self.target - self.lastValue) < diff:
+            self.lastValue = self.outputTerm = self.target
             self.lastTime = now
             self.ramping = 0
         else:
-            self.ramping = target - self.outputTerm
+            self.ramping = self.target - self.outputTerm
             self.lastValue = self.outputTerm = \
                     self.lastValue + diff if target > self.outputTerm \
                     else self.lastValue - diff
@@ -469,41 +467,65 @@ class MonitoredOutput(EtherCATDevice):
         defaultValue=1, accessMode=AccessMode.INITONLY,
         description="divide the output value by this factor")
 
-    target = Float(
+    device = None
+    lastValue = 0
+
+    @Double(
         unitSymbol=Unit.VOLT, defaultValue=0,
         description="the target voltage to go to")
+    async def target(self, value):
+        if isSet(value) and self.device is not None:
+            self.device.target = \
+                int(value / (self.outputFactor / self.outputCalibration))
+        self.target = value
+
     value = Float(
         unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY,
         description="the voltage read back from the input")
-    lastValue = 0
-    rampSpeed = Float(
+
+    @Double(
         unitSymbol=Unit.VOLT_PER_SECOND, defaultValue=0,
         description="ramp the output voltage by this speed. "
         "Put 0 for immediate setting")
+    async def rampSpeed(self, value):
+        if isSet(value) and self.device is not None:
+            self.device.rampSpeed = \
+                int(value / (self.outputFactor / self.outputCalibration)
+                    * unit.second)
+        self.rampSpeed = value
 
     def join(self, syncGroup):
         super().join(syncGroup)
         self.device = MonitoredOutputDevice()
-        self.device.lastTime = monotonic() * unit.second
-        self.device.owner = self
+        self.device.lastTime = monotonic()
         inputChannel = self.find_channel(self.inputChannel)
         self.device.inputTerm = inputChannel.value
         self.inputFactor = inputChannel.factor * unit.volt
         outputChannel = self.find_channel(self.outputChannel)
         self.device.outputTerm = outputChannel.value
         self.outputFactor = outputChannel.factor * unit.volt
+        self.target = self.target
+        self.rampSpeed = self.rampSpeed
 
     def update_properties(self):
         if self.lastValue != self.device.value:
             self.lastValue = self.device.value
             self.value = self.device.value * self.inputFactor \
-                         * self.inputCalibration * now()
+                         / self.inputCalibration * now()
         if self.device.ramping == 0:
             return State.ON
         elif self.device.ramping > 0:
             return State.RAMPING_UP
         else:
             return State.RAMPING_DOWN
+
+
+class MonitoredCurrent(MonitoredOutput):
+    target = Overwrite(unitSymbol=Unit.AMPERE)
+    value = Overwrite(unitSymbol=Unit.AMPERE)
+    rampSpeed = Overwrite(unitSymbol=Unit.AMPERE_PER_SECOND)
+    inputCalibration = Overwrite(unitSymbol=Unit.OHM)
+    outputCalibration = Overwrite(unitSymbol=Unit.OHM)
 
 
 class CounterDevice(Device):
