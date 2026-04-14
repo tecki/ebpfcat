@@ -67,9 +67,18 @@ class GenericInput(EtherCATDevice):
 class AnalogInput(EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY,
                      assignment=Assignment.MANDATORY)
+    unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
+    prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
 
     value = Double(accessMode=AccessMode.READONLY)
     lastvalue = None
+
+    async def onInitialization(self):
+        if self.unit:
+            self.__class__.value = Overwrite(
+                unitSymbol=getattr(Unit, self.unit.value),
+                metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
+            await self.publishInjectedParameters()
 
     def update_properties(self):
         if self.device.value != self.lastvalue:
