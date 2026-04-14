@@ -129,22 +129,62 @@ class EL2624(EBPFTerminal):
     channel4 = ProcessDesc(0x7030, 1)
 
 
+class EL2911(SafetyMain):
+    input1 = ProcessDesc(0x6011, 1)
+    input2 = ProcessDesc(0x6011, 2)
+    input3 = ProcessDesc(0x6011, 3)
+    input4 = ProcessDesc(0x6011, 4)
+    output1 = ProcessDesc(0x7001, 1)
+
+
+class EL3154(EBPFTerminal):
+    compatibility = {(2, 0xC523052)}
+
+    class Channel(Struct):
+        attrs = ProcessDesc(0x6000, 1, 'H')
+        value = ProcessDesc(0x6000, 0x11, 'h')
+        factor = 16/32767
+        offset = 4
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
+    channel3 = Channel(0x20)
+    channel4 = Channel(0x30)
+
+
+class EL3164(EBPFTerminal):
+    compatibility = {(2, 0x0c5c3052), (2, 0xc203052)}
+
+    class Channel(Struct):
+        attrs = ProcessDesc(0x6000, 1, 'H')
+        value = ProcessDesc(0x6000, 0x11, 'h')
+        factor = 10/32767
+        offset = 0
+
+    channel1 = Channel(0)
+    channel2 = Channel(0x10)
+    channel3 = Channel(0x20)
+    channel4 = Channel(0x30)
+
+
+class EL4122(EBPFTerminal):
+    compatibility = {(2, 0x101A3052)}
+
+    class Channel(Struct):
+        value = ProcessDesc(0x3000, 1, 'h')
+        factor = 16/32767
+        offset = 4
+
+    channel1 = Channel(1)
+    channel2 = Channel(2)
+
+
 class EL4134(EBPFTerminal):
     # used to be for EL4104, but had not compatibility set
     compatibility = {(2, 0x10263052)}
 
-    channel1 = ProcessDesc(0x7000, 1, "h")
-    channel2 = ProcessDesc(0x7010, 1, "h")
-    channel3 = ProcessDesc(0x7020, 1, "h")
-    channel4 = ProcessDesc(0x7030, 1, "h")
-
-
-class EL3164(EBPFTerminal):
-    compatibility = {(2, 0x0c5c3052)}
-
     class Channel(Struct):
-        attrs = ProcessDesc(0x6000, 1, 'H')
-        value = ProcessDesc(0x6000, 0x11)
+        value = ProcessDesc(0x7000, 1, 'h')
         factor = 10/32767
         offset = 0
 
