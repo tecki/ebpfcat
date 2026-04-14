@@ -34,10 +34,10 @@ from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.safety import SafetyDevice
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
-    AccessMode, Assignment, Bool, Double, Float, Int8, Int16, Int32, Int64,
-    MetricPrefix, Overwrite, QuantityValue, Slot, State, String, TimeMixin,
-    Timestamp, UInt16, UInt64, Unit, background, getDevice, get_timestamp,
-    isSet, unit, waitUntilNew)
+    AccessMode, Assignment, Bool, Double, Float, UInt8, Int8, Int16, Int32,
+    Int64, MetricPrefix, Overwrite, QuantityValue, Slot, State, String,
+    TimeMixin, Timestamp, UInt16, UInt64, Unit, background, getDevice,
+    get_timestamp, isSet, unit, waitUntilNew)
 from numpy import polyfit
 from numpy.linalg import LinAlgError
 
@@ -608,6 +608,7 @@ class MotorDevice(Device):
     target = DeviceVar('q')
     proportional = DeviceVar('q')
     lasttime = DeviceVar('Q')
+    use_steps = DeviceVar('B')
     velocity_diff = LocalVar('q')
 
     def calculate_speed(self):
@@ -622,15 +623,21 @@ class MotorDevice(Device):
                 self.lasttime = self.ebpf.tmp
 
         self.control_word = self.set_control_word
-        with abs(self.target - self.encoder) > self.deadband as Else:
-            if self.reduced_current is not None:
-                self.reduced_current = False
-            self.deadband_exceeded = 1
-        if self.reduced_current is not None:
-            with Else:
-                self.reduced_current = True
         with self.ebpf.stmp:
-            self.ebpf.stmp = self.target - self.encoder
+            if self.stepcounter is None:
+                self.ebpf.stmp = self.target - self.encoder
+            else:
+                with self.use_steps == 0 as Else:
+                    self.ebpf.stmp = self.target - self.encoder
+                with Else:
+                    self.ebpf.stmp = self.target - self.stepcounter
+            with abs(self.ebpf.stmp) > self.deadband as Else:
+                if self.reduced_current is not None:
+                    self.reduced_current = False
+                self.deadband_exceeded = 1
+            if self.reduced_current is not None:
+                with Else:
+                    self.reduced_current = True
             self.calculate_speed()
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
@@ -642,7 +649,7 @@ class MotorDevice(Device):
                     self.ebpf.stmp = 0
                     self.target = self.encoder
             if self.encoder_error is not None:
-                with self.encoder_error:
+                with (self.encoder_error != 0) & (self.use_steps == 0):
                     self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
             with self.ebpf.stmp > self.last_velocity + self.velocity_diff as Else:
@@ -775,15 +782,17 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         await self.state_change.wait()
 
     def _move(self):
+        self.device.use_steps = 0
         self.device.target = int((self.targetPosition - self.offset)
                                  // self.encodeStep)
         self.device.set_control_word = self.ENABLE
 
     @Slot(displayedName='Stop',
-          allowedStates={State.ON, State.MOVING,
+          allowedStates={State.ON, State.MOVING, State.RUNNING,
                          State.MOVING_FORWARD, State.MOVING_BACK})
     async def stop(self):
         self.device.target = self.device.encoder
+        self.device.use_steps = 0
 
     @Slot(displayedName='On',
           allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED,
@@ -794,9 +803,11 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
 
     @InterlockSlot(displayedName='Off',
                    allowedStates={State.ON, State.MOVING, State.ENGAGED,
-                                  State.MOVING_FORWARD, State.MOVING_BACK})
+                                  State.MOVING_FORWARD, State.MOVING_BACK,
+                                  State.RUNNING})
     def off(self):
         self.device.set_control_word = self.SWITCH_OFF
+        self.device.use_steps = 0
 
     @Slot(displayedName='Step Up',
           allowedStates={State.OFF, State.ON, State.MOVING,
@@ -811,6 +822,24 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     async def stepDown(self):
         self.targetPosition = self.actualPosition - self.stepSize
         await self.move()
+
+    @Slot(displayedName='Step Up (open loop)',
+          allowedStates={State.OFF, State.ON, State.ERROR})
+    async def stepUpOpenLoop(self):
+        self.device.use_steps = 1
+        self.device.target = \
+            self.device.stepcounter + int(self.stepSize / self.motorStep)
+        await self.state_change.wait()
+        self.device.set_control_word = self.ENABLE
+
+    @Slot(displayedName='Step Down (open loop)',
+          allowedStates={State.OFF, State.ON, State.ERROR})
+    async def stepDownOpenLoop(self):
+        self.device.use_steps = 1
+        self.device.target = \
+            self.device.stepcounter - int(self.stepSize / self.motorStep)
+        await self.state_change.wait()
+        self.device.set_control_word = self.ENABLE
 
     @Slot()
     async def reset(self):
@@ -831,7 +860,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
 
     def update_properties(self):
         self.device.max_acceleration = \
-            int((self.maxAcceleration/ self.motorStep / 1e9 * 2**32).value)
+            int((self.maxAcceleration / self.motorStep / 1e9 * 2**32).value)
         if abs(self.device.encoder - self.lastposition) > 3:
             self.actualPosition = (self.device.encoder * self.encodeStep
                                    + self.offset) * now()
@@ -858,8 +887,11 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.device.max_velocity = \
             min(0x7fff, int(self.targetVelocity / self.motorStep
                             / self.baseFrequency))
-        self.device.proportional = int(self.proportional * self.encodeStep
-                                       / self.motorStep * (1 << 16))
+        if self.device.use_steps == 0:
+            self.device.proportional = int(self.proportional * self.encodeStep
+                                           / self.motorStep * (1 << 16))
+        else:
+            self.device.proportional = int(abs(self.proportional * (1 << 16)))
         self.device.deadband = int(self.deadband // self.encodeStep)
 
         if self.state == State.MOVING:
@@ -896,6 +928,11 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                 return State.SWITCHING_ON
             else:
                 return State.OFF
+        elif self.device.use_steps != 0:
+            if not self.device.deadband_exceeded:
+                self.device.set_control_word = self.SWITCH_OFF
+                self.device.use_steps = 0
+            return State.RUNNING
         elif self.device.deadband_exceeded and self.device.velocity != 0:
             return State.MOVING
         elif not self.isLimitless:
