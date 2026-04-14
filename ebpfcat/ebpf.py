@@ -657,28 +657,27 @@ class Binary(Expression):
 
     @contextmanager
     def calculate(self, dst, long, force=False):
-        orig_dst = dst
-        if isinstance(self.right, Expression) and self.right.contains(dst):
-            dst = None
-        with self.ebpf.get_free_register(dst) as dst:
-            with self.left.calculate(dst, long, True) as (dst, l_long):
+        new_dst = None if self.right.contains(dst) else dst
+        with self.ebpf.get_free_register(new_dst) as new_dst:
+            with self.left.calculate(new_dst, long, True) as (new_dst, l_long):
                 if long is None:
                     long = l_long
             if self.right.small_constant:
                 self.ebpf.append(self.operator + Opcode.LONG * long,
-                                 dst, 0, 0, int(self.right.value))
+                                 new_dst, 0, 0, int(self.right.value))
             else:
                 with self.right.calculate(None, long) as (src, r_long):
                     self.ebpf.append(
                         self.operator + Opcode.REG
                         + Opcode.LONG * ((r_long or l_long)
                                          if long is None else long),
-                        dst, src, 0, 0)
-            if orig_dst is None or orig_dst == dst:
-                yield dst, long
+                        new_dst, src, 0, 0)
+            if dst is None or new_dst == dst:
+                yield new_dst, long
                 return
-        self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long, orig_dst, dst, 0, 0)
-        yield orig_dst, long
+        self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long,
+                         dst, new_dst, 0, 0)
+        yield dst, long
 
     def contains(self, no):
         return self.left.contains(no) or (isinstance(self.right, Expression)
