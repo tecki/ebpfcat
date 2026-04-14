@@ -243,7 +243,7 @@ class OptionalMixin(EtherCATDevice):
         self.switchDevices = tuple(switchDevices)
 
 
-class OptionalSwitchMixin(OptionalMixin):
+class OptionalSwitchMixin(Interlock, OptionalMixin):
     startupValue = Bool(
         displayedName="Start Powered?",
         description="Should the power be automatically switched on?",
@@ -267,11 +267,10 @@ class OptionalSwitchMixin(OptionalMixin):
             d.value = 1
         await self.state_change.wait()
 
-    @Slot()
-    async def off(self):
+    @InterlockSlot()
+    def off(self):
         for d in self.switchDevices:
             d.value = 0
-        await self.state_change.wait()
 
 
 class OptionalKeepOnMixin(OptionalMixin):
@@ -309,7 +308,11 @@ class DigitalOutput(OptionalSwitchMixin):
         return State.OFF
 
     on = Overwrite(allowedStates={State.OFF})
-    off = Overwrite(allowedStates={State.ON})
+
+    @InterlockSlot(allowedStates={State.ON})
+    def off(self):
+        for d in self.switchDevices:
+            d.value = 0
 
 
 class DigitalInput(EtherCATDevice):
