@@ -449,7 +449,7 @@ class MonitoredOutputDevice(Device):
         self.value = self.inputTerm
 
 
-class MonitoredOutput(EtherCATDevice):
+class MonitoredOutput(Interlock, EtherCATDevice):
     """A combination of an analog output and input
 
     This device writes to an analog output and reads from another
@@ -472,7 +472,8 @@ class MonitoredOutput(EtherCATDevice):
 
     @Double(
         unitSymbol=Unit.VOLT, defaultValue=0,
-        description="the target voltage to go to")
+        description="the target voltage to go to",
+        allowedStates={State.ON, State.RAMPING_UP, State.RAMPING_DOWN})
     async def target(self, value):
         if isSet(value) and self.device is not None:
             self.device.target = \
@@ -512,12 +513,26 @@ class MonitoredOutput(EtherCATDevice):
             self.lastValue = self.device.value
             self.value = self.device.value * self.inputFactor \
                          / self.inputCalibration * now()
-        if self.device.ramping == 0:
+        ret = super().update_properties()
+        if ret is not None:
+            return ret
+        if self.state == State.OFF:
+            return State.OFF
+        elif self.device.ramping == 0:
             return State.ON
         elif self.device.ramping > 0:
             return State.RAMPING_UP
         else:
             return State.RAMPING_DOWN
+
+    @InterlockSlot()
+    def off(self):
+        self.device.target = 0
+        self.state = State.OFF
+
+    @Slot(allowedStates={State.OFF})
+    async def on(self):
+        self.state = State.ON
 
 
 class MonitoredCurrent(MonitoredOutput):
