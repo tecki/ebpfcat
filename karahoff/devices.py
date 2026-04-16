@@ -471,6 +471,19 @@ class MonitoredOutput(Interlock, EtherCATDevice):
 
     actualOutput = Double(accessMode=AccessMode.READONLY)
 
+    upperLimit = Double(
+        displayedName='Upper Limit',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.VOLT, defaultValue=10)
+    lowerLimit = Double(
+        displayedName='Lower Limit',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.VOLT, defaultValue=0)
+
+    async def onInitialization(self):
+        await super().onInitialization()
+        self.__class__.target = Overwrite(minInc=self.lowerLimit.value,
+                                          maxInc=self.upperLimit.value)
+        await self.publishInjectedParameters()
+
     device = None
     lastValue = 0
 
@@ -480,9 +493,10 @@ class MonitoredOutput(Interlock, EtherCATDevice):
         allowedStates={State.ON, State.RAMPING_UP, State.RAMPING_DOWN})
     async def target(self, value):
         if isSet(value) and self.device is not None:
-            self.device.target = \
-                int(value / (self.outputFactor / self.outputCalibration))
-        await self.state_change.wait()
+            if self.lowerLimit <= value <= self.upperLimit:
+                self.device.target = \
+                    int(value / (self.outputFactor / self.outputCalibration))
+            await self.state_change.wait()
 
     value = Float(
         unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY,
@@ -551,6 +565,8 @@ class MonitoredOutput(Interlock, EtherCATDevice):
 class MonitoredCurrent(MonitoredOutput):
     target = Overwrite(unitSymbol=Unit.AMPERE)
     value = Overwrite(unitSymbol=Unit.AMPERE)
+    upperLimit = Overwrite(unitSymbol=Unit.AMPERE)
+    lowerLimit = Overwrite(unitSymbol=Unit.AMPERE)
     rampSpeed = Overwrite(unitSymbol=Unit.AMPERE_PER_SECOND)
     inputCalibration = Overwrite(unitSymbol=Unit.OHM)
     outputCalibration = Overwrite(unitSymbol=Unit.OHM)
