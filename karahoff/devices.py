@@ -20,9 +20,10 @@ A collection of simple devices
 .. autoclass:: Shutter()
     :members:
 """
+import struct
 from asyncio import Event, Lock, sleep
 from ast import literal_eval
-from math import sqrt
+from math import copysign, sqrt
 from struct import pack, unpack
 from time import monotonic, time
 
@@ -435,17 +436,18 @@ class MonitoredOutputDevice(Device):
     def update(self):
         now = monotonic()
         diff = int(self.rampSpeed * (now - self.lastTime))
-        if self.rampSpeed == 0 or abs(self.target - self.lastValue) < diff:
-            self.lastValue = self.outputTerm = self.target
-            self.lastTime = now
-            self.ramping = 0
-        else:
-            self.ramping = self.target - self.outputTerm
-            self.lastValue = self.outputTerm = \
-                    self.lastValue + diff if target > self.outputTerm \
-                    else self.lastValue - diff
-            if diff > 0:
+        try:
+            if self.rampSpeed == 0 or abs(self.target - self.lastValue) < diff:
+                self.lastValue = self.outputTerm = self.target
                 self.lastTime = now
+                self.ramping = 0
+            elif diff > 0:
+                self.ramping = self.target - self.outputTerm
+                self.lastValue = self.outputTerm = \
+                        self.lastValue + int(copysign(diff, self.ramping))
+                self.lastTime = now
+        except struct.error:
+            self.target = 0
         self.value = self.inputTerm
 
 
@@ -467,6 +469,8 @@ class MonitoredOutput(Interlock, EtherCATDevice):
         defaultValue=1, accessMode=AccessMode.INITONLY,
         description="divide the output value by this factor")
 
+    actualOutput = Double(accessMode=AccessMode.READONLY)
+
     device = None
     lastValue = 0
 
@@ -478,7 +482,7 @@ class MonitoredOutput(Interlock, EtherCATDevice):
         if isSet(value) and self.device is not None:
             self.device.target = \
                 int(value / (self.outputFactor / self.outputCalibration))
-        self.target = value
+        await self.state_change.wait()
 
     value = Float(
         unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY,
@@ -513,6 +517,14 @@ class MonitoredOutput(Interlock, EtherCATDevice):
             self.lastValue = self.device.value
             self.value = self.device.value * self.inputFactor \
                          / self.inputCalibration * now()
+        output = (self.device.outputTerm
+                  * (self.outputFactor / self.outputCalibration)).value
+        if output != self.actualOutput:
+            self.actualOutput = output
+        target = self.device.target \
+                  * (self.outputFactor / self.outputCalibration)
+        if target != self.target:
+            self.target = target
         ret = super().update_properties()
         if ret is not None:
             return ret
@@ -528,6 +540,7 @@ class MonitoredOutput(Interlock, EtherCATDevice):
     @InterlockSlot()
     def off(self):
         self.device.target = 0
+        self.target = 0
         self.state = State.OFF
 
     @Slot(allowedStates={State.OFF})
