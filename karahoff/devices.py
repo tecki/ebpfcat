@@ -457,19 +457,24 @@ class MonitoredOutput(Interlock, EtherCATDevice):
     This device writes to an analog output and reads from another
     one. One may ramp the voltage slowly.
     """
-    inputChannel = String(accessMode=AccessMode.INITONLY,
+    inputChannel = String(displayedName='Input Channel',
+                          accessMode=AccessMode.INITONLY,
                           assignment=Assignment.MANDATORY)
-    outputChannel = String(accessMode=AccessMode.INITONLY,
+    outputChannel = String(displayedName='Output Channel',
+                           accessMode=AccessMode.INITONLY,
                            assignment=Assignment.MANDATORY)
 
     inputCalibration = Float(
+        displayedName='Input Calibration Factor',
         defaultValue=1, accessMode=AccessMode.INITONLY,
         description="multiply the input by this factor")
     outputCalibration = Float(
+        displayedName='Output Calibration Factor',
         defaultValue=1, accessMode=AccessMode.INITONLY,
         description="divide the output value by this factor")
 
-    actualOutput = Double(accessMode=AccessMode.READONLY)
+    actualOutput = Double(
+        displayedName='Actual Output', accessMode=AccessMode.READONLY)
 
     upperLimit = Double(
         displayedName='Upper Limit',
@@ -499,11 +504,13 @@ class MonitoredOutput(Interlock, EtherCATDevice):
             await self.state_change.wait()
 
     value = Float(
+        displayedName='Readback Value',
         unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY,
         description="the voltage read back from the input")
 
     @Double(
-        unitSymbol=Unit.VOLT_PER_SECOND, defaultValue=0,
+        displayedName='Ramping Speed',
+        unitSymbol=Unit.VOLT_PER_SECOND, defaultValue=0, minInc=0,
         description="ramp the output voltage by this speed. "
         "Put 0 for immediate setting")
     async def rampSpeed(self, value):

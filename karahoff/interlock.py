@@ -47,6 +47,12 @@ class InterlockCondition(Configurable):
 
     @String(defaultValue='False')
     async def condition(self, value):
+        """if this Python expression becomes True, trigger the command
+
+        You may use names of Karabo devices that follow the naming convention,
+        they will magically be converted into Python variables that reference
+        to these devices.
+        """
         if self.parent is None:
             self.condition = value
             return
@@ -60,7 +66,10 @@ class InterlockCondition(Configurable):
         self.parent = parent
         self.locals, self.compiled = self.compile(self.condition)
 
-    override = Bool(defaultValue=False)
+    override = Bool(
+        description='Ignore this condition for now. It automatically becomes '
+        'active again once the interlock condition is good.',
+        defaultValue=False)
     timeout = Float(defaultValue=0, unitSymbol=Unit.SECOND)
 
     lastgood = 0
@@ -103,7 +112,7 @@ class Interlock(EtherCATDevice):
         nodes = [k for k, v in cls.__dict__.items()
                  if isinstance(v, InterlockSlot)]
         for k in nodes:
-            node = Node(InterlockCondition)
+            node = Node(InterlockCondition, displayedName=f'{k}-Interlock')
             setattr(cls, f'{k}Interlock', node)
             node.__set_name__(cls, f'{k}Interlock')
         cls.interlock_nodes = cls.interlock_nodes + nodes
