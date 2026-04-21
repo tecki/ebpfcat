@@ -406,7 +406,7 @@ class EBPFTerminal(Terminal):
             await self.write_pdos(0x1c12, self.out_pdos)
         if self.in_pdos is not None:
             await self.write_pdos(0x1c13, self.in_pdos)
-        self.pdos = {}
+        # we used to set self.pdos = {}, but that seems no good for safety term
         outbits, inbits = await self.parse_pdos()
         self.pdo_out_sz = int((outbits + 7) // 8)
         assert not self.pdo_out_sz or self.pdo_out_off
