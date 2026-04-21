@@ -784,9 +784,9 @@ class SyncGroupBase:
 
         self.terminals = {}
         for dev in self.devices:
+            dev.sync_group = self
             for t, rw in dev.get_terminals().items():
                 self.terminals[t] = self.terminals.get(t, False) | rw
-            dev.sync_group = self
 
     @asynccontextmanager
     async def map_fmmu(self):
