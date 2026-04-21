@@ -37,13 +37,40 @@ class SimulatedEBPF(EBPFBase):
                     unique.add(k)
 
 
+class Memoryview:
+    """a pickle-able memoryview
+
+    ctypes has the annoying property that it accesses memory byte-by-byte,
+    while memoryview uses memcpy, which tries to use as big a unit size
+    as possible. This makes synchronization much better.
+    """
+    def __init__(self, array):
+        self.array = array
+        self.memview = memoryview(array).cast('B')
+
+    def __getitem__(self, key):
+        return self.memview[key]
+
+    def __setitem__(self, key, value):
+        self.memview[key] = value
+
+    def __getstate__(self):
+        return self.array
+
+    def __setstate__(self, array):
+        self.__init__(array)
+
+    def __buffer__(self, flags):
+        return self.memview
+
+
 class ProcessEBPF(SimulatedEBPF):
     def __init__(self, **kwargs):
         self.ctx = get_context('spawn')
         super().__init__(**kwargs)
 
     def get_array(self, size):
-        return self.ctx.Array('B', size).get_obj()
+        return Memoryview(self.ctx.Array('B', size).get_obj())
 
     @property
     def running(self):
