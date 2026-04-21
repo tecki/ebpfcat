@@ -22,7 +22,8 @@ from . import ebpf
 from .arraymap import ArrayMap
 from .ebpf import (
     AssembleError, EBPF, FuncId, Opcode, OpcodeFlags, Opcode as O, LocalVar,
-    SimulatedEBPF, SubProgram, ktime)
+    SubProgram, ktime)
+from .simulated import ProcessEBPF, SimulatedEBPF
 from .hashmap import HashMap
 from .xdp import XDP, PacketVar
 from .bpf import ProgType
@@ -1223,6 +1224,18 @@ class ProcessSubProgram(SubProgram):
         self.b += 7
 
 
+class ProcessEBPFProgram(ProcessEBPF):
+    map = ArrayMap()
+    a = map.globalVar()
+
+    async def subprocess_loop(self):
+        from asyncio import sleep
+
+        while self.running:
+            self.a += 1
+            await sleep(0.01)
+
+
 class SimulatedTests(TestCase):
     def test_minimal(self):
         class Program(SimulatedEBPF):
@@ -1290,6 +1303,23 @@ class SimulatedTests(TestCase):
         proc.join()
         self.assertEqual(p.a, 3)
         self.assertEqual(s.b, 7)
+
+    def test_process_ebpf(self):
+        import asyncio
+
+        p = ProcessEBPFProgram()
+        async def run():
+            task = p.start()
+            for i in range(10):
+                await asyncio.sleep(0.1)
+                if p.a > 0:
+                    break
+            else:
+                self.fail()
+            task.cancel()
+            await task
+        with self.assertRaises(asyncio.CancelledError):
+            asyncio.run(run())
 
 
 if __name__ == "__main__":

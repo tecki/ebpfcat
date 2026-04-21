@@ -21,7 +21,6 @@
 =================================================================
 """
 import asyncio
-import gc
 import os
 import shutil
 import struct
@@ -32,7 +31,6 @@ from asyncio import (
 from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from enum import Enum
-from multiprocessing import Array, Process, Value, get_context
 from random import randrange
 from struct import pack, unpack_from
 from time import monotonic
@@ -42,11 +40,12 @@ from .bpf import (
     MapType, ProgType, create_map, delete_elem, lookup_elem, obj_get, obj_pin,
     prog_test_run, update_elem)
 from .ebpf import (
-    EBPFBase, FuncId, MemoryDesc, SimulatedEBPF, SubProgram, prandom)
+    EBPFBase, FuncId, MemoryDesc, SubProgram, prandom)
 from .ethercat import (
     ECCmd, EtherCat, EtherCatError, MachineState, Packet, SyncManager,
     Terminal)
 from .lock import LockFile, ParallelMailboxLock
+from .simulated import ProcessEBPF
 from .util import logger
 from .xdp import XDP
 from .xdp import PacketVar as XDPPacketVar
@@ -771,7 +770,6 @@ class BaseType(Enum):
 
 class SyncGroupBase:
     missed_counter = 0
-    running = True
     cycletime = 0.01  # cycle time of the PLC loop
     task = None
 
@@ -892,13 +890,14 @@ class SyncGroup(SyncGroupBase):
         self.asm_packet = self.packet.assemble(self.packet_index,
                                                self.ec.ethertype)
         self.current_data = bytearray(self.asm_packet)
+        self.running = True
         self.task = ensure_future(self.run())
         for dev in self.devices:
             dev.initialize()
         return self.task
 
 
-class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
+class ProcessSyncGroup(SyncGroup, ProcessEBPF):
     """A :class:`SyncGroup` running in a separate process
 
     In order to lower latency, one may run a sync group in a different
@@ -913,26 +912,7 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
     wkc_errors = properties.globalVar('I')
 
     def __init__(self, ec, devices, **kwargs):
-        self.ctx = get_context('spawn')
         super().__init__(ec, devices, subprograms=devices, **kwargs)
-
-    def get_array(self, size):
-        return self.ctx.Array('B', size).get_obj()
-
-    @property
-    def running(self):
-        """is the subprocess supposted to run?"""
-        return self.runningValue.value
-
-    def subprocess_run(self):
-        gc.collect()
-        gc.disable()
-        param = os.sched_param(os.sched_get_priority_max(os.SCHED_RR))
-        os.sched_setscheduler(0, os.SCHED_RR, param)
-        if self.name != 'No Name':
-            with open('/proc/self/comm', 'w') as fout:
-                fout.write(self.name[-15:])
-        asyncio.run(self.subprocess_loop())
 
     async def subprocess_loop(self):
         async with self.ec.run():
@@ -942,41 +922,18 @@ class ProcessSyncGroup(SyncGroup, SimulatedEBPF):
                 dev.initialize()
             await self.run()
 
-    async def wait_for_process(self):
-        fd = os.pidfd_open(self.process.pid)
-        loop = get_event_loop()
-        error = None
-        while True:
-            future = loop.create_future()
-            loop.add_reader(fd, future.set_result, None)
-            try:
-                await future
-            except CancelledError as error:
-                self.runningValue.value = False
-            else:
-                if error is None:
-                    return
-                else:
-                    raise error
-            finally:
-                loop.remove_reader(fd)
-
     @property
     def current_data(self):
         return memoryview(self._current_data.get_obj()).cast('B')
 
     def start(self):
         assert isinstance(self.ec, ParallelEtherCat)
-        self.runningValue = self.ctx.Value('B')
-        self.runningValue.value = True
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
         self.task = None
         self._current_data = self.ctx.Array('B', max(46, self.packet.size))
-        self.process = self.ctx.Process(target=self.subprocess_run)
-        self.process.start()
-        self.task = ensure_future(self.wait_for_process())
+        self.task = ProcessEBPF.start(self)
         return self.task
 
 
@@ -1026,6 +983,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
 
     def start(self):
         self.allocate()
+        self.running = True
         self.task = ensure_future(self.run())
         return self.task
 

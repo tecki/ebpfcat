@@ -1275,20 +1275,6 @@ class EBPFBase:
         return self
 
 
-class SimulatedEBPF(EBPFBase):
-    loaded = True
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        unique = set()
-        for cls in self.__class__.__mro__:
-            for k, v in cls.__dict__.items():
-                if k not in unique and isinstance(v, Map):
-                    size = v.collect(self)
-                    setattr(self, k, self.get_array(size))
-                    unique.add(k)
-
-
 class EBPF(EBPFBase):
     """The base class for all EBPF programs
 
