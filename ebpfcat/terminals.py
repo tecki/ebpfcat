@@ -403,7 +403,7 @@ class EPP4304(EBPFTerminal):
     class Input(Struct):
         underrange = ProcessDesc(0x6010, 1)
         overrange = ProcessDesc(0x6010, 2)
-        value = ProcessDesc(0x6010, 0x11)
+        value = ProcessDesc(0x6010, 0x11, 'h')
 
         factor = 327.68e-6  # see manual version 1.3, Section 3.2.4.1
         offset = 0
@@ -414,7 +414,7 @@ class EPP4304(EBPFTerminal):
     class Output(Struct):
         impedanceError = ProcessDesc(0x6030, 1)
         error = ProcessDesc(0x6030, 7)
-        value = ProcessDesc(0x7030, 1)
+        value = ProcessDesc(0x7030, 1, 'h')
 
         factor = 305.19e-6  # see manual version 1.3, Section 3.2.5.1
         offset = 0

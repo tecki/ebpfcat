@@ -81,7 +81,7 @@ class DigitalInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
-    value = DeviceVar(write=False)
+    value = DeviceVar('B', write=False)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -100,7 +100,7 @@ class DigitalOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    value = DeviceVar(write=True)
+    value = DeviceVar('B')
     data = TerminalVar()
 
     def __init__(self, data):

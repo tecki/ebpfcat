@@ -23,7 +23,7 @@ __all__ = ["ArrayMap"]
 
 from itertools import chain
 from mmap import mmap
-from struct import calcsize, pack, pack_into, unpack_from
+from struct import calcsize, pack, unpack_from
 
 from .bpf import MapFlags, MapType, create_map, lookup_elem, update_elem
 from .ebpf import Expression, FuncId, Map, MemoryDesc
