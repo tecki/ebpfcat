@@ -447,7 +447,7 @@ class MonitoredOutputDevice(Device):
                         self.lastValue + int(copysign(diff, self.ramping))
                 self.lastTime = now
         except struct.error:
-            self.target = 0
+            pass
         self.value = self.inputTerm
 
 
@@ -501,7 +501,7 @@ class MonitoredOutput(Interlock, EtherCATDevice):
             if self.lowerLimit <= value <= self.upperLimit:
                 self.device.target = \
                     int(value / (self.outputFactor / self.outputCalibration))
-            await self.state_change.wait()
+                self.target = value
 
     value = Float(
         displayedName='Readback Value',
@@ -542,10 +542,6 @@ class MonitoredOutput(Interlock, EtherCATDevice):
                   * (self.outputFactor / self.outputCalibration)).value
         if output != self.actualOutput:
             self.actualOutput = output
-        target = self.device.target \
-                  * (self.outputFactor / self.outputCalibration)
-        if target != self.target:
-            self.target = target
         ret = super().update_properties()
         if ret is not None:
             return ret
