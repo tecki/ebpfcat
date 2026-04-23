@@ -484,6 +484,8 @@ class Expression:
     __ne__ = comparison(Opcode.JNE, Opcode.JEQ, Opcode.JNE, Opcode.JEQ)
 
     def _sum(self, value, opcode):
+        if not isinstance(value, Expression) and value == 0:
+            return self
         value = ensure_expression(self.ebpf, value)
         myself = self
         if self.fixed != value.fixed:
@@ -502,6 +504,8 @@ class Expression:
     __rmod__ = lambda self, value: Constant(self.ebpf, value) % self
 
     def __mul__(self, value):
+        if not isinstance(value, Expression) and value == 1:
+            return self
         value = ensure_expression(self.ebpf, value)
         ret = Binary(self.ebpf, self, value, Opcode.MUL,
                      self.signed or value.signed, self.fixed or value.fixed)
@@ -511,6 +515,8 @@ class Expression:
     __rmul__ = __mul__
 
     def __truediv__(self, value):
+        if not isinstance(value, Expression) and value == 1:
+            return self
         value = ensure_expression(self.ebpf, value)
         myself = self
         if not self.fixed and value.fixed:
@@ -762,7 +768,8 @@ class Sum(Binary):
 
     def __add__(self, value):
         try:
-            self.right.value += index(value)
+            return Sum(self.ebpf, self.left,
+                       Constant(self.ebpf, self.right.value + index(value)))
         except TypeError:
             return super().__add__(value)
 
@@ -770,9 +777,10 @@ class Sum(Binary):
 
     def __sub__(self, value):
         try:
-            self.right.value -= index(value)
+            return Sum(self.ebpf, self.left,
+                       Constant(self.ebpf, self.right.value - index(value)))
         except TypeError:
-            return super().__add__(value)
+            return super().__sub__(value)
 
 
 class AndExpression(Binary):
@@ -1053,6 +1061,14 @@ class Memory(Expression):
                                       and self.fmt[-1] in 'qQx'))
             self.ebpf.append(opcode + fmt_to_opcode(self.fmt),
                              dst, src, offset, 0)
+
+    def __setitem__(self, key, value):
+        getattr(self.ebpf, f'm{self.fmt[-1]}') \
+                [self.address + calcsize(self.fmt[-1]) * key] = value
+
+    def __getitem__(self, key):
+        return getattr(self.ebpf, f'm{self.fmt[-1]}') \
+                [self.address + calcsize(self.fmt[-1]) * key]
 
 
 

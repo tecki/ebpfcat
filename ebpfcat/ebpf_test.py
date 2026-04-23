@@ -533,6 +533,29 @@ class Tests(TestCase):
            Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
         ])
 
+    def test_array(self):
+        class Local(EBPF):
+            ar = LocalVar('5B')
+
+        e = Local(ProgType.XDP, "GPL")
+        e.ar[1] = 3
+        e.r1 = e.ar[3]
+        e.ar[e.r1] = 7
+        e.r2 = e.ar[e.r1]
+
+        self.maxDiff = None
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.ST+O.B, dst=10, src=0, off=-4, imm=3),
+            Instruction(opcode=O.LD+O.B, dst=1, src=10, off=-2, imm=0),
+            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=10, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=0, src=0, off=0, imm=-5),
+            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=O.ST+O.B, dst=0, src=0, off=0, imm=7),
+            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=2, src=10, off=0, imm=0),
+            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=-5),
+            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=2, src=1, off=0, imm=0),
+            Instruction(opcode=O.LD+O.B, dst=2, src=2, off=0, imm=0),
+        ])
 
     def test_jump(self):
         e = EBPF()
