@@ -431,23 +431,48 @@ class MonitoredOutputDevice(Device):
     ramping = DeviceVar('i')
     value = DeviceVar('q')
     target = DeviceVar('q')
-    rampSpeed = DeviceVar('d')
+    rampSpeed = DeviceVar('q')
+    lastValue = DeviceVar('i')
+    lastTime = DeviceVar('Q')
 
     def update(self):
         now = monotonic()
-        diff = int(self.rampSpeed * (now - self.lastTime))
+        diff = int(self.rampSpeed * (now - self.lastTime) / 1e6)
         try:
             if self.rampSpeed == 0 or abs(self.target - self.lastValue) < diff:
                 self.lastValue = self.outputTerm = self.target
                 self.lastTime = now
                 self.ramping = 0
-            elif diff > 0:
-                self.ramping = self.target - self.outputTerm
+            else:
+                self.ramping = self.target - self.lastValue
                 self.lastValue = self.outputTerm = \
                         self.lastValue + int(copysign(diff, self.ramping))
-                self.lastTime = now
+                if diff != 0:
+                    self.lastTime = now
         except struct.error:
             pass
+        self.value = self.inputTerm
+
+    def program(self):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = (self.rampSpeed
+                             * ((ktime(self.ebpf) - self.lastTime) // 1000)
+                             // 1000000000000)
+            with (self.rampSpeed == 0) | \
+                    (abs(self.target - self.lastValue) < self.ebpf.tmp) \
+                    as Else:
+                self.lastValue = self.outputTerm = self.target
+                self.lastTime = ktime(self.ebpf)
+                self.ramping = 0
+            with Else, self.rampSpeed != 0:
+                self.ramping = self.target - self.lastValue
+                with self.ramping > 0 as Else:
+                    self.lastValue += self.ebpf.tmp
+                with Else:
+                    self.lastValue -= self.ebpf.tmp
+                self.outputTerm = self.lastValue
+                with self.ebpf.tmp != 0:
+                    self.lastTime = ktime(self.ebpf)
         self.value = self.inputTerm
 
 
@@ -517,7 +542,7 @@ class MonitoredOutput(Interlock, EtherCATDevice):
         if isSet(value) and self.device is not None:
             self.device.rampSpeed = \
                 int(value / (self.outputFactor / self.outputCalibration)
-                    * unit.second)
+                    * unit.second * 1e6)
         self.rampSpeed = value
 
     def join(self, syncGroup):
