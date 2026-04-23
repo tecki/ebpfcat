@@ -36,7 +36,7 @@ from ebpfcat.ebpfcat import (
 from ebpfcat.ethercat import EEPROM, EtherCatError, MachineState, SyncManager
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
-    AccessMode, Assignment, Configurable, Device, Double, Float, Int64,
+    AccessMode, Assignment, Bool, Configurable, Device, Double, Float, Int64,
     MetricPrefix, Simple, Slot, State, String, Unit, VectorHash, VectorInt64,
     VectorString, background, getDevice, isSet, unit, waitUntil)
 
@@ -199,6 +199,7 @@ class EtherCATSyncGroupBase(Device):
     cycletime = Double(accessMode=AccessMode.INITONLY, defaultValue=10,
                        unitSymbol=Unit.SECOND,
                        metricPrefixSymbol=MetricPrefix.MILLI)
+    debug = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
     max_wkc_errors = ml.UInt32(
         displayedName='Working Counter Error Limit',
         description='Stop the sync group in case of that many WKC errors',
@@ -243,6 +244,7 @@ class EtherCATSyncGroupBase(Device):
             list(chain.from_iterable(d.get_devices() for d in self.devs)))
         self.syncGroup.name = self.deviceId.value
         self.syncGroup.cycletime = float(self.cycletime / unit.second)
+        self.syncGroup.debug = self.debug.value
         self.state = State.OFF
         self.syncGroup.start()
         self.state = State.ON
