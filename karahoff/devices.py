@@ -2082,7 +2082,7 @@ class PatternTriggerDevice(Device):
                     self.output = self.onValue
 
 
-class PatternTrigger(EtherCATDevice):
+class PatternTrigger(Interlock, EtherCATDevice):
     outputChannel = String(accessMode=AccessMode.INITONLY,
                            assignment=Assignment.MANDATORY)
     duration = Double(unitSymbol=Unit.SECOND, minInc=0, maxInc=100,
@@ -2129,6 +2129,15 @@ class PatternTrigger(EtherCATDevice):
         super().join(syncGroup)
         self.device = PatternTriggerDevice()
         self.device.output = self.find_channel(self.outputChannel)
+        self.state = State.ON
+
+    @Slot(allowedStates={State.OFF})
+    async def on(self):
+        self.state = State.ON
+
+    @InterlockSlot(allowedStates={State.ON})
+    def off(self):
+        self.state = State.OFF
 
     def update_properties(self):
         timediff = int((monotonic() - time()) * 1e9)
@@ -2141,5 +2150,16 @@ class PatternTrigger(EtherCATDevice):
         self.device.duration = int(self.duration / unit.ns)
         self.device.patternlength = len(self.rawPattern)
         self.device.pattern = self.pattern
-        self.device.onValue = self.onValue.value
-        self.device.offValue = self.offValue.value
+        if self.state == State.ON:
+            self.device.onValue = self.onValue.value
+            self.device.offValue = self.offValue.value
+        else:
+            self.device.onValue = self.device.offValue = 0
+        ret = super().update_properties()
+        if ret is None:
+            if self.state == State.INTERLOCKED:
+                return State.OFF, ''
+            else:
+                return self.state, ''
+        else:
+            return ret
