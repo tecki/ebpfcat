@@ -2059,15 +2059,13 @@ class PatternTriggerDevice(Device):
     MAXPATTERNLEN = 320
     assert MAXPATTERNLEN % (8 * 4) == 0
 
-    onValue = DeviceVar('i')
-    offValue = DeviceVar('i')
+    onValue = 1
+    offValue = 0
     trainbase = DeviceVar("q")
     trainlength = DeviceVar("Q")
     patternlength = DeviceVar('H')
     pattern = DeviceVar(f'{(MAXPATTERNLEN + 7) // 8}B')
     duration = DeviceVar('Q')
-
-    trainId = DeviceVar('Q')
 
     def program(self):
         self.output = self.offValue
@@ -2082,15 +2080,18 @@ class PatternTriggerDevice(Device):
                     self.output = self.onValue
 
 
-class PatternTrigger(Interlock, EtherCATDevice):
+class AnalogPatternDevice(PatternTriggerDevice):
+    onValue = DeviceVar('i')
+    offValue = DeviceVar('i')
+
+
+class PatternTrigger(EtherCATDevice):
     outputChannel = String(accessMode=AccessMode.INITONLY,
                            assignment=Assignment.MANDATORY)
     duration = Double(unitSymbol=Unit.SECOND, minInc=0, maxInc=100,
                       metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=10)
     delay = Double(unitSymbol=Unit.SECOND,
                    metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=10)
-    offValue = Int16(defaultValue=0)
-    onValue = Int16(defaultValue=0)
 
     @String(defaultValue='AB')
     async def rawPattern(self, value):
@@ -2115,9 +2116,10 @@ class PatternTrigger(Interlock, EtherCATDevice):
 
     async def follow(self):
         with await getDevice(self.master) as device:
-            self.rawPattern = device.rawPattern
-            self.setPattern()
-            await waitUntilNew(device.rawPattern)
+            while True:
+                self.rawPattern = device.rawPattern
+                self.setPattern()
+                await waitUntilNew(device.rawPattern)
 
     @String(accessMode=AccessMode.INITONLY)
     async def master(self, value):
@@ -2127,17 +2129,12 @@ class PatternTrigger(Interlock, EtherCATDevice):
 
     def join(self, syncGroup):
         super().join(syncGroup)
+        self.special_join()
+
+    def special_join(self):
         self.device = PatternTriggerDevice()
         self.device.output = self.find_channel(self.outputChannel)
         self.state = State.ON
-
-    @Slot(allowedStates={State.OFF})
-    async def on(self):
-        self.state = State.ON
-
-    @InterlockSlot(allowedStates={State.ON})
-    def off(self):
-        self.state = State.OFF
 
     def update_properties(self):
         timediff = int((monotonic() - time()) * 1e9)
@@ -2150,12 +2147,43 @@ class PatternTrigger(Interlock, EtherCATDevice):
         self.device.duration = int(self.duration / unit.ns)
         self.device.patternlength = len(self.rawPattern)
         self.device.pattern = self.pattern
+        return super().update_properties()
+
+
+class PatternTriggerVolt(Interlock, PatternTrigger):
+    offValue = Int16(defaultValue=0, unitSymbol=Unit.VOLT)
+    onValue = Int16(defaultValue=0, unitSymbol=Unit.VOLT)
+    outputCalibration = Float(
+        displayedName='Output Calibration Factor',
+        defaultValue=1, accessMode=AccessMode.INITONLY,
+        description="divide the output value by this factor")
+
+    def special_join(self):
+        self.device = AnalogPatternDevice()
+        outputChannel = self.find_channel(self.outputChannel)
+        self.device.output = outputChannel.value
+        self.outputFactor = outputChannel.factor * unit.volt
+        self.state = State.ON
+
+    @Slot(allowedStates={State.OFF})
+    async def on(self):
+        self.state = State.ON
+
+    @InterlockSlot(allowedStates={State.ON})
+    def off(self):
+        self.state = State.OFF
+
+    def update_properties(self):
+        ret = super().update_properties()
+
         if self.state == State.ON:
-            self.device.onValue = self.onValue.value
-            self.device.offValue = self.offValue.value
+            self.device.onValue = int(
+                self.onValue / (self.outputFactor / self.outputCalibration))
+            self.device.offValue = int(
+                self.offValue / (self.outputFactor / self.outputCalibration))
         else:
             self.device.onValue = self.device.offValue = 0
-        ret = super().update_properties()
+
         if ret is None:
             if self.state == State.INTERLOCKED:
                 return State.OFF, ''
@@ -2163,3 +2191,9 @@ class PatternTrigger(Interlock, EtherCATDevice):
                 return self.state, ''
         else:
             return ret
+
+
+class PatternTriggerCurrent(PatternTriggerVolt):
+    onValue = Overwrite(unitSymbol=Unit.AMPERE)
+    offValue = Overwrite(unitSymbol=Unit.AMPERE)
+    outputCalibration = Overwrite(unitSymbol=Unit.OHM)
