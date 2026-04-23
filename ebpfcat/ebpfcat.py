@@ -940,12 +940,19 @@ class ProcessSyncGroup(SyncGroup, ProcessEBPF):
 class FastSyncGroup(SyncGroupBase, XDP):
     """A :class:`SyncGroup` where all devices are EBPF programs"""
     license = "GPL"
+    debug = False
 
     properties = ArrayMap()
     wkc_errors = properties.globalVar('I')
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(ec, devices, subprograms=devices, **kwargs)
+
+    def load(self, *args, **kwargs):
+        if self.debug:
+            return super().load(*args, log_level=1, **kwargs)
+        else:
+            return super().load()
 
     def program(self):
         with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER \
