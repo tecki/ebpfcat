@@ -167,6 +167,18 @@ class EL3164(EBPFTerminal):
     channel4 = Channel(0x30)
 
 
+class EL4102(EBPFTerminal):
+    compatibility = {(2, 268841042)}
+
+    class Channel(Struct):
+        value = ProcessDesc(0x3000, 1, 'h')
+        factor = 10/32767
+        offset = 0
+
+    channel1 = Channel(1)
+    channel2 = Channel(2)
+
+
 class EL4122(EBPFTerminal):
     compatibility = {(2, 0x101A3052)}
 
