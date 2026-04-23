@@ -2051,3 +2051,95 @@ class TrainTrigger(EtherCATDevice):
         self.device.phase =  int(self.timediff + TimeMixin._time_sec * 1e9
                                  + TimeMixin._time_frac * 1e-9)
         self.device.dutyCycle = int(self.dutyCycle * self.device.modulo)
+
+
+class PatternTriggerDevice(Device):
+    output = TerminalVar()
+
+    MAXPATTERNLEN = 320
+    assert MAXPATTERNLEN % (8 * 4) == 0
+
+    onValue = DeviceVar('i')
+    offValue = DeviceVar('i')
+    trainbase = DeviceVar("q")
+    trainlength = DeviceVar("Q")
+    patternlength = DeviceVar('H')
+    pattern = DeviceVar(f'{(MAXPATTERNLEN + 7) // 8}B')
+    duration = DeviceVar('Q')
+
+    trainId = DeviceVar('Q')
+
+    def program(self):
+        self.output = self.offValue
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf) - self.trainbase
+            with self.ebpf.tmp % self.trainlength < self.duration:
+                self.ebpf.tmp = (self.ebpf.tmp // self.trainlength) \
+                                % self.patternlength
+                with (self.ebpf.tmp < self.MAXPATTERNLEN) \
+                    & ((self.pattern[self.ebpf.tmp >> 3]
+                        >> (self.ebpf.tmp % 8)) & 1 != 0):
+                    self.output = self.onValue
+
+
+class PatternTrigger(EtherCATDevice):
+    outputChannel = String(accessMode=AccessMode.INITONLY,
+                           assignment=Assignment.MANDATORY)
+    duration = Double(unitSymbol=Unit.SECOND, minInc=0, maxInc=100,
+                      metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=10)
+    delay = Double(unitSymbol=Unit.SECOND,
+                   metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=10)
+    offValue = Int16(defaultValue=0)
+    onValue = Int16(defaultValue=0)
+
+    @String(defaultValue='AB')
+    async def rawPattern(self, value):
+        if not value:
+            return
+        self.rawPattern = value
+        self.setPattern()
+
+    @String(defaultValue='A')
+    async def triggerKeys(self, value):
+        self.triggerKeys = value
+        self.triggerSet = set(value)
+        self.setPattern()
+
+    triggerSet = ''
+
+    def setPattern(self):
+        mask = sum(2 ** i for i, key in enumerate(self.rawPattern)
+                   if key in self.triggerSet)
+        self.pattern = tuple((mask >> i) & 0xff for i in
+                             range(0, PatternTriggerDevice.MAXPATTERNLEN, 8))
+
+    async def follow(self):
+        with await getDevice(self.master) as device:
+            self.rawPattern = device.rawPattern
+            self.setPattern()
+            await waitUntilNew(device.rawPattern)
+
+    @String(accessMode=AccessMode.INITONLY)
+    async def master(self, value):
+        self.master = value
+        if value:
+            background(self.follow())
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = PatternTriggerDevice()
+        self.device.output = self.find_channel(self.outputChannel)
+
+    def update_properties(self):
+        timediff = int((monotonic() - time()) * 1e9)
+        self.device.trainlength = int(TimeMixin._period * 1000)
+        self.device.trainbase = int(
+                timediff + self.delay / unit.ns
+                + TimeMixin._time_sec * 1e9 + TimeMixin._time_frac * 1e-9
+                - (TimeMixin._tid % len(self.rawPattern))
+                  * self.device.trainlength)
+        self.device.duration = int(self.duration / unit.ns)
+        self.device.patternlength = len(self.rawPattern)
+        self.device.pattern = self.pattern
+        self.device.onValue = self.onValue.value
+        self.device.offValue = self.offValue.value
