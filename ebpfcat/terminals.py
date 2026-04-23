@@ -121,12 +121,16 @@ class EL2819(EBPFTerminal):
 
 
 class EL2624(EBPFTerminal):
-    compatibility = {(2, 171978834)}
+    # EL2624, EL2124
+    compatibility = {(2, 171978834), (2, 139210834)}
 
     channel1 = ProcessDesc(0x7000, 1)
     channel2 = ProcessDesc(0x7010, 1)
     channel3 = ProcessDesc(0x7020, 1)
     channel4 = ProcessDesc(0x7030, 1)
+
+
+EL2124 = EL2624
 
 
 class EL2911(SafetyMain):
