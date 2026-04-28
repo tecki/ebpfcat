@@ -294,6 +294,10 @@ class DigitalOutput(OptionalSwitchMixin):
     switchChannel = Overwrite(
         assignment=Assignment.MANDATORY, displayedName='Channel',
         description='The digital output channel to be switched')
+    pulseDuration = Double(
+        displayedName='Pulse Duration', defaultValue=1,
+        unitSymbol=Unit.SECOND, minExc=0)
+    pulseStart = None
 
     def get_devices(self):
         return self.switchDevices
@@ -302,18 +306,33 @@ class DigitalOutput(OptionalSwitchMixin):
         ret = super().update_properties()
         if ret is not None:
             return ret
+        if self.pulseStart is not None:
+            if monotonic() - self.pulseStart \
+                    < self.pulseDuration / unit.second:
+                for d in self.switchDevices:
+                    d.value = 1
+                return State.RUNNING
+            else:
+                for d in self.switchDevices:
+                    d.value = 0
+                self.pulseStart = None
         if all(d.value for d in self.switchDevices):
             return State.ON
         if any(d.value for d in self.switchDevices):
             return State.CHANGING
         return State.OFF
 
-    on = Overwrite(allowedStates={State.OFF})
+    on = Overwrite(allowedStates={State.OFF, State.RUNNING})
 
-    @InterlockSlot(allowedStates={State.ON})
+    @InterlockSlot(allowedStates={State.ON, State.RUNNING})
     def off(self):
         for d in self.switchDevices:
             d.value = 0
+
+    @Slot(allowedStates={State.OFF})
+    async def pulse(self):
+        self.pulseStart = monotonic()
+        self.state = State.RUNNING
 
 
 class DigitalInput(EtherCATDevice):
