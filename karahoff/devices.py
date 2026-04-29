@@ -70,6 +70,7 @@ class AnalogInput(EtherCATDevice):
                      assignment=Assignment.MANDATORY)
     unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
     prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
+    calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
 
     value = Double(accessMode=AccessMode.READONLY)
     lastvalue = None
@@ -83,8 +84,8 @@ class AnalogInput(EtherCATDevice):
 
     def update_properties(self):
         if self.device.value != self.lastvalue:
-            self.value = self.device.value * self.the_channel.factor \
-                    + self.the_channel.offset
+            self.value = (self.device.value * self.the_channel.factor \
+                    + self.the_channel.offset) / self.calibration.value
             self.lastvalue = self.device.value
 
     def join(self, syncGroup):
