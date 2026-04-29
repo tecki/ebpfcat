@@ -2183,24 +2183,31 @@ class PatternTriggerVolt(Interlock, PatternTrigger):
         outputChannel = self.find_channel(self.outputChannel)
         self.device.output = outputChannel.value
         self.outputFactor = outputChannel.factor * unit.volt
-        self.state = State.ON
+        self.state = State.OFF
 
-    @Slot(allowedStates={State.OFF})
+    @Slot(allowedStates={State.OFF, State.RUNNING})
     async def on(self):
         self.state = State.ON
 
-    @InterlockSlot(allowedStates={State.ON})
+    @Slot(allowedStates={State.OFF, State.ON})
+    async def run(self):
+        self.state = State.RUNNING
+
+    @InterlockSlot(allowedStates={State.ON, State.RUNNING})
     def off(self):
         self.state = State.OFF
 
     def update_properties(self):
         ret = super().update_properties()
 
-        if self.state == State.ON:
+        if self.state == State.RUNNING:
             self.device.onValue = int(
                 self.onValue / (self.outputFactor / self.outputCalibration))
             self.device.offValue = int(
                 self.offValue / (self.outputFactor / self.outputCalibration))
+        elif self.state == State.ON:
+            self.device.offValue = self.device.onValue = int(
+                self.onValue / (self.outputFactor / self.outputCalibration))
         else:
             self.device.onValue = self.device.offValue = 0
 
