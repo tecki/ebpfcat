@@ -2171,8 +2171,8 @@ class PatternTrigger(EtherCATDevice):
 
 
 class PatternTriggerVolt(Interlock, PatternTrigger):
-    offValue = Int16(defaultValue=0, unitSymbol=Unit.VOLT)
-    onValue = Int16(defaultValue=0, unitSymbol=Unit.VOLT)
+    offValue = Double(defaultValue=0, unitSymbol=Unit.VOLT)
+    onValue = Double(defaultValue=0, unitSymbol=Unit.VOLT)
     outputCalibration = Float(
         displayedName='Output Calibration Factor',
         defaultValue=1, accessMode=AccessMode.INITONLY,
