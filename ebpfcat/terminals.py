@@ -401,6 +401,19 @@ class EPP3204(EBPFTerminal):
 EPP3314 = EPP3204  # lazy coding
 
 
+class EL3102(EBPFTerminal):
+    compatibility = {(2, 203305042)}
+
+    class Input(Struct):
+        status = ProcessDesc(0x3100, 1)
+        value = ProcessDesc(0x3100, 2, 'h')
+        offset = 0
+        factor = 10/32767
+
+    channel1 = Input(1)
+    channel2 = Input(2)
+
+
 class EL3202(EBPFTerminal):
     compatibility = {(2, 0xC823052)}
 
