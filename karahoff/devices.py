@@ -21,25 +21,27 @@ A collection of simple devices
     :members:
 """
 import struct
-from asyncio import Event, Lock, sleep
 from ast import literal_eval
+from asyncio import Event, Lock, sleep
 from math import copysign, sqrt
 from struct import pack, unpack
 from time import monotonic, time
 
 from ebpfcat.devices import AnalogInput as AnalogInputDevice
-from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
 from ebpfcat.devices import DigitalInput as DigitalInputDevice
+from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
 from ebpfcat.ebpf import AsLong, LocalVar, ktime
 from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
 from ebpfcat.safety import SafetyDevice
 from ebpfcat.serial import Serial
 from karabo.middlelayer import (
-    AccessMode, Assignment, Bool, Double, Float, UInt8, Int8, Int16, Int32,
-    Int64, MetricPrefix, Overwrite, QuantityValue, Slot, State, String,
-    TimeMixin, Timestamp, UInt16, UInt64, Unit, background, getDevice,
-    get_timestamp, isSet, unit, waitUntilNew)
-from numpy import polyfit
+    AccessMode, Assignment, Bool, Configurable, Double, Float, Int8, Int16,
+    Int32, Int64, MetricPrefix, Node, OutputChannel, Overwrite, QuantityValue,
+    Slot, State, String, TimeMixin, Timestamp, UInt8, UInt16, UInt64, Unit,
+    VectorFloat, background, get_timestamp, getDevice, isSet, unit,
+    waitUntilNew)
+from numpy import array, polyfit, roll
+from numpy.fft import fft
 from numpy.linalg import LinAlgError
 
 from .interlock import Interlock, InterlockSlot
@@ -2224,3 +2226,101 @@ class PatternTriggerCurrent(PatternTriggerVolt):
     onValue = Overwrite(unitSymbol=Unit.AMPERE)
     offValue = Overwrite(unitSymbol=Unit.AMPERE)
     outputCalibration = Overwrite(unitSymbol=Unit.OHM)
+
+
+class FrequencyAnalyzerDevice(Device):
+    channel = TerminalVar()
+    interval = DeviceVar('Q')
+    MODULO = 256
+    data = DeviceVar(f'{MODULO}i')
+
+    def program(self):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = (ktime(self.ebpf) // self.interval) % self.MODULO
+            with self.ebpf.tmp < self.MODULO as Else:
+                self.data[self.ebpf.tmp] = self.channel
+
+
+class Trace(Configurable):
+    data = VectorFloat(accessMode=AccessMode.READONLY,
+                       minSize=FrequencyAnalyzerDevice.MODULO,
+                       maxSize=FrequencyAnalyzerDevice.MODULO)
+
+
+class Intermediate(Configurable):
+    data = Node(Trace)
+
+
+class FrequencyAnalyzer(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    interval = Double(defaultValue=10,
+                      unitSymbol=Unit.SECOND,
+                      metricPrefixSymbol=MetricPrefix.MILLI)
+    spectrumAbsolute = OutputChannel(Intermediate)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = FrequencyAnalyzerDevice()
+        self.device.channel = self.find_channel(self.channel).value
+
+    last_update = 0
+
+    def update_properties(self):
+        self.device.interval = int(self.interval / (1 * unit.ns))
+        now = monotonic() * unit.second
+        if now - self.last_update > self.interval * self.device.MODULO:
+            self.last_update = now
+            self.spectrumAbsolute.schema.data = abs(fft(self.device.data))
+            self.spectrumAbsolute.writeDataNoWait()
+
+
+class FastRead(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
+    prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
+    calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    value = Double(accessMode=AccessMode.READONLY)
+    trace = OutputChannel(Intermediate)
+
+    task = None
+
+    async def onInitialization(self):
+        if self.unit:
+            self.__class__.value = Overwrite(
+                unitSymbol=getattr(Unit, self.unit.value),
+                metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
+            await self.publishInjectedParameters()
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = FrequencyAnalyzerDevice()
+        channel = self.find_channel(self.channel)
+        self.device.channel = channel.value
+        self.factor = getattr(channel, 'factor', 1)
+        self.offset = getattr(channel, 'offset', 0)
+        if self.task is not None and not self.task.done():
+            self.task.cancel()
+
+        self.task = background(self.runner())
+
+    async def runner(self):
+        while True:
+            trainId = time() - TimeMixin._time_sec \
+                    - 1e-18 * TimeMixin._time_frac
+            period = TimeMixin._period * 1e-6
+            await sleep(period - trainId % period)
+            if not isinstance(self.device.interval, int):
+                continue
+            self.device.interval = int(1 / (8 * unit.hertz * unit.ns
+                                            * self.device.MODULO))
+            last = (monotonic()
+                    // (8 * self.device.MODULO)) % self.device.MODULO
+            data = array(self.device.data)
+            self.trace.schema.data.data = \
+                    ((roll(data, -last) * self.factor + self.offset)
+                     / self.calibration).value.astype('f')
+            self.trace.writeDataNoWait()
+            self.value = ((data.mean() * self.factor + self.offset)
+                          / self.calibration).value
