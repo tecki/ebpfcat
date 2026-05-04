@@ -774,8 +774,7 @@ class SyncGroupBase:
             for t, rw in dev.get_terminals().items():
                 self.terminals[t] = self.terminals.get(t, False) | rw
 
-    @asynccontextmanager
-    async def map_fmmu(self):
+    async def run(self):
         async with AsyncExitStack() as stack:
             for terminal, bases in self.fmmu_maps.items():
                 try:
@@ -790,12 +789,11 @@ class SyncGroupBase:
                 except Exception as e:
                     e.add_note(f'while fmmu-mapping {terminal.name}')
                     raise
-            yield
+            await self.inner_loop()
 
-    async def run(self):
-        data = self.asm_packet
-        self.wkc_errors = 0
-        async with self.map_fmmu():
+    async def inner_loop(self):
+            data = self.asm_packet
+            self.wkc_errors = 0
             lasttime = monotonic()
             await gather(*[t.to_operational(MachineState.SAFE_OPERATIONAL)
                            for t, rw in self.terminals.items()])
@@ -869,7 +867,6 @@ class SyncGroup(SyncGroupBase):
         return self.current_data
 
     def start(self):
-        assert self.task is None or self.task.done()
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
@@ -877,10 +874,10 @@ class SyncGroup(SyncGroupBase):
                                                self.ec.ethertype)
         self.current_data = bytearray(self.asm_packet)
         self.running = True
-        self.task = ensure_future(self.run())
+        task = ensure_future(self.run())
         for dev in self.devices:
             dev.initialize()
-        return self.task
+        return task
 
 
 class ProcessSyncGroup(SyncGroup, ProcessEBPF):
@@ -906,7 +903,7 @@ class ProcessSyncGroup(SyncGroup, ProcessEBPF):
                                                    self.ec.ethertype)
             for dev in self.devices:
                 dev.initialize()
-            await self.run()
+            await super().inner_loop()
 
     @property
     def current_data(self):
@@ -917,10 +914,12 @@ class ProcessSyncGroup(SyncGroup, ProcessEBPF):
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
-        self.task = None
         self._current_data = self.ctx.Array('B', max(46, self.packet.size))
-        self.task = ProcessEBPF.start(self)
-        return self.task
+        task = ensure_future(self.run())
+        return task
+
+    async def inner_loop(self):
+        await ProcessEBPF.start(self)
 
 
 class FastSyncGroup(SyncGroupBase, XDP):
@@ -977,8 +976,4 @@ class FastSyncGroup(SyncGroupBase, XDP):
     def start(self):
         self.allocate()
         self.running = True
-        self.task = ensure_future(self.run())
-        return self.task
-
-    def cancel(self):
-        self.task.cancel()
+        return ensure_future(self.run())
