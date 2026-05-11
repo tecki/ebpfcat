@@ -23,7 +23,6 @@
 import asyncio
 import os
 import shutil
-import struct
 import tempfile
 from asyncio import (
     CancelledError, TimeoutError, ensure_future, gather, get_event_loop, sleep,
@@ -32,7 +31,7 @@ from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from enum import Enum
 from random import randrange
-from struct import pack, unpack_from
+from struct import calcsize, pack, unpack_from
 from time import monotonic
 
 from .arraymap import ArrayGlobalVarDesc, ArrayMap
@@ -139,50 +138,37 @@ class PacketVar(MemoryDesc):
         self.sm = sm
         self.position = position
         self.size = size
+        if isinstance(size, int):
+            self.struct = None
+        else:
+            self.struct = '<' + self.size
+            self.structsize = calcsize(self.struct)
 
     def set(self, device, value):
         if device.sync_group.current_data is None:
             super().__set__(device, value)
         else:
             start = self._start(device)
-            if isinstance(self.size, int):
+            data = device.sync_group.current_data
+            if self.struct is None:
                 mask = 1 << self.size
-                def set(instance, value):
-                    assert instance is device
-                    data = device.sync_group.current_data
-                    if value:
-                        data[start] |= mask
-                    else:
-                        data[start] &= ~mask
+                if value:
+                    data[start] |= mask
+                else:
+                    data[start] &= ~mask
             else:
-                mystruct = struct.Struct('<' + self.size)
-                s = slice(start, start + mystruct.size)
-                def set(instance, value):
-                    assert instance is device
-                    data = device.sync_group.current_data
-                    data[s] = mystruct.pack(value)
-            self.set = set
-            set(device, value)
+                data[start : start+self.structsize] = pack(self.struct, value)
 
     def get(self, device):
         if device.sync_group.current_data is None:
             return super().__get__(device, None)
         else:
             start = self._start(device)
-            if isinstance(self.size, int):
-                mask = 1 << self.size
-                def get(instance):
-                    assert instance is device
-                    data = instance.sync_group.current_data
-                    return bool(data[start] & mask)
+            data = device.sync_group.current_data
+            if self.struct is None:
+                return bool(data[start] & (1 << self.size))
             else:
-                mystruct = struct.Struct("<" + self.size)
-                def get(instance):
-                    assert instance is device
-                    data = instance.sync_group.current_data
-                    return mystruct.unpack_from(data, start)[0]
-            self.get = get
-            return get(device)
+                return unpack_from(self.struct, data, start)[0]
 
     def _start(self, device):
         return device.sync_group.pdo_assign[self.terminal][self.sm] \
