@@ -1098,15 +1098,15 @@ class Terminal:
         if write:
             offset = self.pdo_out_off
             size = self.pdo_out_sz
-            start = 1
+            index = 0
+            if self.fmmu_used[0] is not None:
+                raise EtherCatError(f'write fmmu already set in {self.name}')
         else:
             offset = self.pdo_in_off
             size = self.pdo_in_sz
-            start = len(self.fmmu_used)
+            index = self.fmmu_used[1:].index(None) + 1
         assert size is not None
         assert offset is not None
-
-        index = start - self.fmmu_used[start::-1].index(None) - 1
 
         self.fmmu_used[index] = logical
         try:
