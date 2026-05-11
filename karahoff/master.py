@@ -246,7 +246,7 @@ class EtherCATSyncGroupBase(Device):
         self.syncGroup.cycletime = float(self.cycletime / unit.second)
         self.syncGroup.debug = self.debug.value
         self.state = State.OFF
-        self.syncGroup.start()
+        self.syncGroupTask = self.syncGroup.start()
         self.state = State.ON
         self.task = background(self.run())
 
@@ -254,7 +254,7 @@ class EtherCATSyncGroupBase(Device):
         try:
             last_wkc_errors = self.syncGroup.wkc_errors
 
-            while not self.syncGroup.task.done():
+            while not self.syncGroupTask.done():
                 if last_wkc_errors < self.syncGroup.wkc_errors:
                     self.state = State.ERROR
                     self.status = 'working counter mismatches: ' \
@@ -277,7 +277,7 @@ class EtherCATSyncGroupBase(Device):
                         await sleep(self.interval.value / len(self.devs))
                 else:
                     await sleep(self.interval.value)
-            self.syncGroup.task.result()  # raises error if problem
+            self.syncGroupTask.result()  # raises error if problem
         except CancelledError:
             pass
         except Exception as e:
@@ -285,8 +285,8 @@ class EtherCATSyncGroupBase(Device):
             self.logger.exception('Sync group %s failed', self.deviceId)
             raise
         finally:
-            if not self.syncGroup.task.done():
-                self.syncGroup.task.cancel()
+            if not self.syncGroupTask.done():
+                self.syncGroupTask.cancel()
             self.state = State.ERROR
             for d in self.devs:
                 d.state = State.UNKNOWN
