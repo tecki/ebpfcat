@@ -869,13 +869,13 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
           allowedStates={State.OFF, State.ON, State.MOVING,
                          State.MOVING_FORWARD, State.MOVING_BACK})
     async def move(self):
-        self._move()
+        self.do_move()
         # just in case await twice, to guarantee the device goes to the right
         # state. Not sure whether that's actually necessay, didn't test
         await self.state_change.wait()
         await self.state_change.wait()
 
-    def _move(self):
+    def do_move(self):
         self.device.use_steps = 0
         self.device.target = int((self.targetPosition - self.offset)
                                  // self.encodeStep)
@@ -900,6 +900,9 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                                   State.MOVING_FORWARD, State.MOVING_BACK,
                                   State.RUNNING})
     def off(self):
+        self.do_off()
+
+    def do_off(self):
         self.device.set_control_word = self.SWITCH_OFF
         self.device.use_steps = 0
 
@@ -1148,6 +1151,7 @@ class MotorFollower(Motor):
             * self.factor)
         self.device.doFollow = 1
         self.device.set_control_word = self.ENABLE
+        await self.state_change.wait()
         await self.state_change.wait()
 
     def update_properties(self):
