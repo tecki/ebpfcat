@@ -1,7 +1,8 @@
-from asyncio import gather
+from asyncio import gather, sleep
 
 from karabo.middlelayer import (
-    AccessMode, Bool, Double, Slot, State, String, Unit, unit, waitUntil)
+    AccessMode, Bool, DeviceNode, Double, KaraboError, Slot, State, String,
+    Unit, background, unit, waitUntil)
 from numpy import arcsin, arctan, pi, sin, sqrt, tan
 
 from .master import EtherCATDevice
@@ -16,6 +17,8 @@ class SCS_XRD_TRF(EtherCATDevice):
     trf1 = String(accessMode=AccessMode.INITONLY)
     trf2 = String(accessMode=AccessMode.INITONLY)
     trf3 = String(accessMode=AccessMode.INITONLY)
+    rry = DeviceNode()
+    lightBarrier = DeviceNode()
 
     targetPosition = Double(unitSymbol=Unit.DEGREE)
     actualPosition = Double(accessMode=AccessMode.READONLY,
@@ -24,6 +27,13 @@ class SCS_XRD_TRF(EtherCATDevice):
                        unitSymbol=Unit.DEGREE)
     trf3error = Double(accessMode=AccessMode.READONLY,
                        unitSymbol=Unit.DEGREE)
+
+    rryerror = Double(accessMode=AccessMode.READONLY,
+                      unitSymbol=Unit.DEGREE)
+
+    async def onInitialization(self):
+        await super().onInitialization()
+        background(self.rryFollower())
 
     def get_devices(self):
         return ()
@@ -45,18 +55,44 @@ class SCS_XRD_TRF(EtherCATDevice):
 
         self.state = State.OFF
 
+    async def rryFollower(self):
+        try:
+            while True:
+                if self.state == State.ON:
+                    self.rry.targetPosition = self.actualPosition
+                    try:
+                        await self.rry.move()
+                    except KaraboError:
+                        self.m1.do_off()
+                        self.m2.do_off()
+                        self.m3.do_off()
+                        try:
+                            await self.rry.off()
+                        except KaraboError:
+                            pass
+                        self.state = State.ERROR
+                        self.status = 'error in RRY'
+                await sleep(0.3)
+        finally:
+            self.status = 'RRY follower failed'
+
+
     def update_properties(self):
         current = 2 * arcsin(sin(self.m2.actualPosition / 2) * SIN)
         self.actualPosition = current + OFFSET
         target = -arctan(tan(current / 2) / sqrt(TAN**2 - tan(current / 2)**2))
         self.trf1error = self.m1.actualPosition - target
         self.trf3error = self.m3.actualPosition - target
+        self.rryerror = self.rry.actualPosition - self.actualPosition
         if abs(self.trf1error.value) > 0.1 \
-                or abs(self.trf3error.value) > 0.1:
+                or abs(self.trf3error.value) > 0.1 \
+                or abs(self.rryerror.value) > 1 \
+                or self.lightBarrier.state != State.ON:
             if self.state != State.ERROR:
                 self.m1.do_off()
                 self.m2.do_off()
                 self.m3.do_off()
+                background(self.rry.off())
             state = State.ERROR
         elif self.m1.state != State.ENGAGED or self.m3.state != State.ENGAGED:
             state = State.OFF
@@ -77,10 +113,12 @@ class SCS_XRD_TRF(EtherCATDevice):
     @Slot(allowedStates={State.OFF})
     async def move(self):
         await self.m2.on()
+        await sleep(0.3)
         assert self.m2.state == State.ON
         await self.m1.couple()
-        assert self.m1.state == State.ENGAGED
         await self.m3.couple()
+        await sleep(0.3)
+        assert self.m1.state == State.ENGAGED
         assert self.m3.state == State.ENGAGED
         self.m2.targetPosition = 2 * arcsin(sin((self.targetPosition - OFFSET) / 2) / SIN)
         await self.m2.move()
