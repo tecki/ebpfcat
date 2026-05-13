@@ -40,7 +40,7 @@ from karabo.middlelayer import (
     Slot, State, String, TimeMixin, Timestamp, UInt8, UInt16, UInt64, Unit,
     VectorFloat, background, get_timestamp, getDevice, isSet, unit,
     waitUntilNew)
-from numpy import array, polyfit, roll
+from numpy import array, polyfit, roll, sign
 from numpy.fft import fft
 from numpy.linalg import LinAlgError
 
@@ -1280,6 +1280,33 @@ class FixedMotorFollower(Motor):
     def update_properties(self):
         self.follow_lag = (self.device.target - self.device.encoder) * self.encodeStep
         return super().update_properties()
+
+
+class DisengagementMotor(Motor):
+    disengagementSize = Double(unitSymbol=Unit.METER,
+                               metricPrefixSymbol=MetricPrefix.MILLI,
+                               defaultValue=1)
+
+    laststate = None
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if isinstance(ret, tuple):
+            state = ret[0]
+        else:
+            state = ret
+
+        if state == State.MOVING and self.laststate != State.MOVING:
+            self.disengagementDirection = sign(self.device.target
+                                               - self.device.encoder)
+        elif state != State.MOVING and self.laststate == State.MOVING:
+            self.device.use_steps = 1
+            self.device.target = self.device.stepcounter \
+                - int(self.disengagementDirection
+                      * self.disengagementSize / self.motorStep)
+            self.device.set_control_word = self.ENABLE
+        self.laststate = state
+        return ret
 
 
 class SynchronizeDevice(RotationDevice):
