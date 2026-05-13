@@ -150,7 +150,7 @@ class HRIXSSafety(Safety):
     button_pressed = Bool(alias='0x100', accessMode=AccessMode.READONLY)
     manual_mode = Bool(alias='4', accessMode=AccessMode.READONLY)
     auto_mode = Bool(alias='2', accessMode=AccessMode.READONLY)
-    hutch_searched = Bool(alias='0x10', accessMode=AccessMode.READONLY)
+    hutch_searched = Bool(alias='8', accessMode=AccessMode.READONLY)
     dty = Bool(alias='0x20', accessMode=AccessMode.READONLY)
     dtz = Bool(alias='0x40', accessMode=AccessMode.READONLY)
     gtz = Bool(alias='0x10', accessMode=AccessMode.READONLY)
