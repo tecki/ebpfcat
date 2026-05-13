@@ -26,7 +26,7 @@ this modules contains the code to actually talk to EtherCAT terminals.
 """
 from asyncio import (
     CancelledError, Event, Future, Lock, Protocol, Queue, TaskGroup,
-    ensure_future, get_event_loop)
+    ensure_future, gather, get_event_loop)
 from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
 from itertools import count, pairwise
@@ -639,6 +639,14 @@ class Terminal:
         await self.read_eeprom()
         sm = await self.read(0x800, data=0x80)
         self.parse_sync_managers(sm)
+
+    async def reset(self):
+        tasks = []
+        for c in 'RES':
+            p = Packet()
+            p.append(ECCmd.FPWR, c.encode(), 0, self.position, 0x40)
+            tasks.append(self.ec.roundtrip_packet(p))
+        await gather(*tasks)
 
     async def set_watchdog(self, pdi, process):
         """set the watchdog time for the PDI and process data watchdog

@@ -98,10 +98,9 @@ async def info():
                                        for i, t in zip(terminals, terms)))
         else:
             term = Terminal(ec)
+            await term.gentle_initialize(-args.terminal)
             if args.reset:
-                await term.initialize(-args.terminal)
-            else:
-                await term.gentle_initialize(-args.terminal)
+                await term.reset()
             terms = [term]
 
         for i, t in enumerate(terms, args.terminal if args.terminal else 0):
