@@ -123,7 +123,7 @@ async def info():
                     print(f"{k:2}: {v}\n    {v.hex(' ')}")
 
             if args.sdo:
-                await t.to_operational(MachineState.PRE_OPERATIONAL)
+                await t.set_state(MachineState.PRE_OPERATIONAL)
                 ret = await t.read_ODlist()
                 for k, v in ret.items():
                     print(f"{k:X}:")
@@ -141,7 +141,7 @@ async def info():
                                     print(f"        {r}")
                                     print(f"        {r!r}")
             if args.pdo:
-                await t.to_operational(MachineState.PRE_OPERATIONAL)
+                await t.set_state(MachineState.PRE_OPERATIONAL)
                 await t.parse_pdos()
                 for (idx, subidx), (sm, pos, fmt) in t.pdos.items():
                     print(f"{idx:4X}:{subidx:02X} {sm.name} {pos} {fmt}")
@@ -207,7 +207,7 @@ async def create_test():
         await t.initialize(-i)
         sdo = {}
         if t.has_mailbox():
-            await t.to_operational(MachineState.PRE_OPERATIONAL)
+            await t.set_state(MachineState.PRE_OPERATIONAL)
             odlist = await t.read_ODlist()
 
             for k, v in odlist.items():

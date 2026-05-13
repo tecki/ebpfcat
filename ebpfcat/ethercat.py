@@ -766,6 +766,12 @@ class Terminal:
         assert isinstance(state, MachineState)
         await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
                                 state.value)
+        newstate = None
+        while state != newstate:
+            newstate, error, status = await self.get_state()
+            if error:
+                raise EtherCatError(f'could not set state {state}, '
+                                    f'error {status} in terminal {self.name}')
 
     async def get_state(self):
         """get the current state, error flag and status word"""

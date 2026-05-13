@@ -795,8 +795,7 @@ class SyncGroupBase:
             data = self.asm_packet
             self.wkc_errors = 0
             lasttime = monotonic()
-            await gather(*[t.to_operational(MachineState.SAFE_OPERATIONAL)
-                           for t, rw in self.terminals.items()])
+
             future = self.ec.roundtrip_packet(data, self.packet_index)
             await gather(*[t.set_state(MachineState.OPERATIONAL)
                            for t, rw in self.terminals.items() if rw])
