@@ -178,3 +178,32 @@ class FFTSafety(Safety):
         if state is State.ON and self.device.generic_input & 2:
             state = State.RUNNING
         return state
+
+
+class SCS_DRX(EtherCATDevice):
+    def get_devices(self):
+        return ()
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+
+        self.dtz = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/DTZ')
+        self.gtz = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/GTZ')
+        self.dty = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/DTY1')
+        self.drx = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/DRX')
+
+    def update_properties(self):
+        target = -arctan2(self.dty.actualPosition,
+                          self.dtz.actualPosition - self.gtz.actualPosition)
+        if not isSet(self.drx.actualPosition):
+            return State.UNKNOWN
+        if abs(target - self.drx.actualPosition) > 0.1 * unit.degree:
+            self.dtz.off()
+            self.gtz.off()
+            self.dty.off()
+            self.drx.off()
+            return State.ERROR
+        else:
+            self.drx.targetPosition = target
+            self.drx.do_move()
+            return State.ON
