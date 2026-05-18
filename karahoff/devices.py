@@ -722,7 +722,7 @@ class MotorDevice(Device):
     reduced_current = TerminalVar()
     stepcounter = TerminalVar()
 
-    encoder_error = TerminalVar()
+    encoder_ready = TerminalVar()
 
     set_control_word = DeviceVar('H')
     deadband_exceeded = DeviceVar('b')
@@ -773,8 +773,8 @@ class MotorDevice(Device):
                       | ((self.high_switch != 0) & (self.ebpf.stmp > 0))):
                     self.ebpf.stmp = 0
                     self.target = self.encoder
-            if self.encoder_error is not None:
-                with (self.encoder_error != 0) & (self.use_steps == 0):
+            if self.encoder_ready is not None:
+                with (self.encoder_ready == 0) & (self.use_steps == 0):
                     self.ebpf.stmp = 0
             self.velocity = self.ebpf.stmp
             with self.ebpf.stmp > self.last_velocity + self.velocity_diff as Else:
@@ -881,7 +881,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.device.high_switch = self.motor_term.high_switch
         if isinstance(self.encoder_term, Struct):
             self.device.encoder = self.encoder_term.position
-            self.device.encoder_error = self.encoder_term.error
+            self.device.encoder_ready = self.encoder_term.ready
             self.terminals = dict(M=self.motor_term, E=self.encoder_term)
         else:
             self.device.encoder = self.encoder_term
@@ -1041,7 +1041,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
 
         if (ret := super().update_properties()) is not None:
             return ret
-        elif self.terminals["E"] is not None and self.device.encoder_error:
+        elif self.terminals["E"] is not None and not self.device.encoder_ready:
             return State.ERROR, f'encoder reported error'
         elif self.motor_term.error.get(self.device):
             return State.ERROR, 'motor reported error'
