@@ -625,6 +625,8 @@ class Terminal:
             self.position, = await self.ec.roundtrip(ECCmd.APRD, relative,
                                                      0x10, "H")
             if self.position == 0:
+                logger.info('terminal "%s" at %i has no address, initializing',
+                            self.name, relative)
                 return await self.initialize(relative=relative)
         else:
             self.position = absolute
@@ -633,7 +635,7 @@ class Terminal:
         state, *_ = await self.get_state()
         if state is MachineState.INIT:
             logger.info('terminal "%s" not yet initialized', self.name)
-            return await self.initialize(relative=relative, absolute=absolute)
+            return await self.initialize(absolute=self.position)
         logger.info('terminal "%s" already initialized', self.name)
 
         await self.read_eeprom()
