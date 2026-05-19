@@ -231,6 +231,7 @@ class EL5042(EBPFTerminal):
         position = ProcessDesc(0x6000, 0x11, 'q')
         warning = ProcessDesc(0x6000, 1)
         error = ProcessDesc(0x6000, 2)
+        ready = ProcessDesc(0x6000, 3)
         status = ProcessDesc(0x6000, 1, "H")
         invalid = ProcessDesc(0x6000, 0xE)
 
