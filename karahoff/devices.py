@@ -1046,7 +1046,14 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             return ret
         elif self.terminals["E"] is not None and not self.device.encoder_ready:
             return State.ERROR, f'encoder reported error'
-        elif self.motor_term.error.get(self.device):
+        if abs(self.device.encoder - self.lastposition) > 3:
+            self.actualPosition = (self.device.encoder * self.encodeStep
+                                   + self.offset) * now()
+            self.rawPosition = self.device.encoder
+            if not isSet(self.targetPosition):
+                self.targetPosition = self.actualPosition
+            self.lastposition = self.device.encoder
+        if self.motor_term.error.get(self.device):
             return State.ERROR, 'motor reported error'
         elif self.isServo \
                 and not self.motor_term.ready_switch_on.get(self.device):
