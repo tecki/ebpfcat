@@ -30,6 +30,7 @@ class SCS_XRD_TRF(EtherCATDevice):
 
     rryerror = Double(accessMode=AccessMode.READONLY,
                       unitSymbol=Unit.DEGREE)
+    ignoreRRY = Bool(defaultValue=False)
 
     async def onInitialization(self):
         await super().onInitialization()
@@ -58,7 +59,7 @@ class SCS_XRD_TRF(EtherCATDevice):
     async def rryFollower(self):
         try:
             while True:
-                if self.state == State.ON:
+                if self.state == State.ON and not self.ignoreRRY:
                     self.rry.targetPosition = self.actualPosition
                     try:
                         await self.rry.move()
@@ -86,13 +87,14 @@ class SCS_XRD_TRF(EtherCATDevice):
         self.rryerror = self.rry.actualPosition - self.actualPosition
         if abs(self.trf1error.value) > 0.1 \
                 or abs(self.trf3error.value) > 0.1 \
-                or abs(self.rryerror.value) > 1 \
-                or self.lightBarrier.state != State.ON:
+                or (not self.ignoreRRY and abs(self.rryerror.value) > 1) \
+                or (not self.ignoreRRY and self.lightBarrier.state != State.ON):
             if self.state != State.ERROR:
                 self.m1.do_off()
                 self.m2.do_off()
                 self.m3.do_off()
-                background(self.rry.off())
+                if not self.ignoreRRY:
+                    background(self.rry.off())
             state = State.ERROR
         elif self.m1.state != State.ENGAGED or self.m3.state != State.ENGAGED:
             state = State.OFF
