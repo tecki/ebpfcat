@@ -428,22 +428,45 @@ class AnalogOutputDevice(Device):
         self.value = self.set_value
 
 
-class AnalogOutput(EtherCATDevice):
+class AnalogOutput(OptionalMixin, EtherCATDevice):
     channel = String(accessMode=AccessMode.INITONLY,
                      assignment=Assignment.MANDATORY)
+    unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
+    prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
+    calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
 
-    @Int16()
+    async def onInitialization(self):
+        if self.unit:
+            self.__class__.value = Overwrite(
+                unitSymbol=getattr(Unit, self.unit.value),
+                metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
+            await self.publishInjectedParameters()
+
+    @Double()
     async def value(self, value):
         if not isSet(value):
             return
-        self.device.set_value = int(value)
+        self.device.set_value = \
+                int((value/ (self.outputFactor / self.calibration)).value)
         self.value = value
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if ret is None:
+            return State.ON
+        else:
+            return ret
 
     def join(self, syncGroup):
         super().join(syncGroup)
         self.device = AnalogOutputDevice()
-        self.device.value = self.find_channel(self.channel)
-        self.state = State.ON
+        channel = self.find_channel(self.channel)
+        if isinstance(channel, Struct):
+            self.device.value = channel.value
+            self.outputFactor = channel.factor
+        else:
+            self.device.value = channel
+            self.outputFactor = 1
 
 
 class MonitoredOutputDevice(Device):
