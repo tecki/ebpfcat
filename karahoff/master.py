@@ -281,7 +281,6 @@ class EtherCATSyncGroupBase(Device):
         except CancelledError:
             pass
         except Exception as e:
-            self.status = str(e)
             self.logger.exception('Sync group %s failed', self.deviceId)
             raise
         finally:
@@ -372,8 +371,11 @@ class EtherCATDevice(Device):
         device = self.getLocalDevice(terminal)
         if device is None:
             ret = self.ethercat.term_by_name.get(terminal)
-        else:
+        elif isinstance(device, EtherCATTerminal):
             ret = device.terminal
+        else:
+            self.status = f'not a terminal {name}'
+            raise TerminalUnknownError(name)
         if ret is None:
             self.status = f'missing terminal {name}'
             raise TerminalUnknownError(name)
