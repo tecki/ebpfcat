@@ -36,6 +36,16 @@ class Skip(EBPFTerminal):
         pass
 
 
+class Calibrated(Struct):
+    """A :class:`Struct` that has a calibration
+
+    the :class:`ProcessDesc` to be calibrated should be called :attr:`value`.
+    This value should be multiplied by :attr:`factor` and :attr:`offset` added.
+    """
+    factor = 1
+    offset = 0
+
+
 class EL1124(EBPFTerminal):
     compatibility = {(2, 0x4643052), }
 
@@ -144,7 +154,7 @@ class EL2911(SafetyMain):
 class EL3154(EBPFTerminal):
     compatibility = {(2, 0xC523052)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         attrs = ProcessDesc(0x6000, 1, 'H')
         value = ProcessDesc(0x6000, 0x11, 'h')
         factor = 16/32767
@@ -159,7 +169,7 @@ class EL3154(EBPFTerminal):
 class EL3164(EBPFTerminal):
     compatibility = {(2, 0x0c5c3052), (2, 0xc203052)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         attrs = ProcessDesc(0x6000, 1, 'H')
         value = ProcessDesc(0x6000, 0x11, 'h')
         factor = 10/32767
@@ -174,10 +184,9 @@ class EL3164(EBPFTerminal):
 class EL4102(EBPFTerminal):
     compatibility = {(2, 268841042)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         value = ProcessDesc(0x3000, 1, 'h')
         factor = 10/32767
-        offset = 0
 
     channel1 = Channel(1)
     channel2 = Channel(2)
@@ -186,7 +195,7 @@ class EL4102(EBPFTerminal):
 class EL4122(EBPFTerminal):
     compatibility = {(2, 0x101A3052)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         value = ProcessDesc(0x3000, 1, 'h')
         factor = 16/32767
         offset = 4
@@ -199,7 +208,7 @@ class EL4134(EBPFTerminal):
     # used to be for EL4104, but had not compatibility set
     compatibility = {(2, 0x10263052)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         value = ProcessDesc(0x7000, 1, 'h')
         factor = 10/32767
         offset = 0
@@ -372,11 +381,10 @@ class EPP2308(EBPFTerminal):
 class EPP3184(EBPFTerminal):
     compatibility = {(2, 0x64768d09)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         value = ProcessDesc(0x6000, 0x11)
 
         factor = 10 / 32767  # see manual version 1.4, section 5.2.2
-        offset = 0
 
     channel1 = Channel(0)
     channel2 = Channel(0x10)
@@ -387,11 +395,10 @@ class EPP3184(EBPFTerminal):
 class EPP3204(EBPFTerminal):
     compatibility = {(2, 0x64768e49), (2, 0x64769529)}
 
-    class Channel(Struct):
+    class Channel(Calibrated):
         value = ProcessDesc(0x6000, 0x11)
 
         factor = 0.01
-        offset = 0
 
     channel1 = Channel(0)
     channel2 = Channel(0x10)
@@ -405,10 +412,9 @@ EPP3314 = EPP3204  # lazy coding
 class EL3102(EBPFTerminal):
     compatibility = {(2, 203305042)}
 
-    class Input(Struct):
+    class Input(Calibrated):
         status = ProcessDesc(0x3100, 1)
         value = ProcessDesc(0x3100, 2, 'h')
-        offset = 0
         factor = 10/32767
 
     channel1 = Input(1)
@@ -430,24 +436,22 @@ class EL3202(EBPFTerminal):
 class EPP4304(EBPFTerminal):
     compatibility = {(2, 0x6476D309)}
 
-    class Input(Struct):
+    class Input(Calibrated):
         underrange = ProcessDesc(0x6010, 1)
         overrange = ProcessDesc(0x6010, 2)
         value = ProcessDesc(0x6010, 0x11, 'h')
 
         factor = 327.68e-6  # see manual version 1.3, Section 3.2.4.1
-        offset = 0
 
     input1 = Input(0)
     input2 = Input(0x10)
 
-    class Output(Struct):
+    class Output(Calibrated):
         impedanceError = ProcessDesc(0x6030, 1)
         error = ProcessDesc(0x6030, 7)
         value = ProcessDesc(0x7030, 1, 'h')
 
         factor = 305.19e-6  # see manual version 1.3, Section 3.2.5.1
-        offset = 0
 
     output1 = Output(0)
     output2 = Output(0x10)
