@@ -38,7 +38,7 @@ def entrypoint(func):
 @entrypoint
 async def scanbus():
     parser = ArgumentParser(
-        prog = "ec-info",
+        prog = "ec-scanbus",
         description = "Retrieve information from an EtherCat bus")
     parser.add_argument("interface")
     parser.add_argument("-i", "--ids", action="store_true")
