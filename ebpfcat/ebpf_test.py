@@ -166,6 +166,35 @@ class Tests(TestCase):
              Instruction(opcode=O.LONG+O.RSH, dst=5, src=0, off=0, imm=2),
             ])
 
+    def test_double_add(self):
+        e = EBPF()
+        e.owners = {1, 2}
+        e.mI[(e.r1 + 3) + 7] = 3
+        e.mI[7 + (e.r1 + 3)] = 3
+        e.mI[(e.r1 + 3) + e.r2] = 5
+        e.mI[(e.r1 + 3) - 7] = 3
+        e.mI[7 - (e.r1 + 3)] = 3
+        e.mI[(e.r1 + 3) - e.r2] = 5
+        self.maxDiff = None
+        self.assertEqual(e.opcodes, [
+            Instruction(opcode=O.W+O.ST, dst=1, src=0, off=10, imm=3),
+            Instruction(opcode=O.W+O.ST, dst=1, src=0, off=10, imm=3),
+            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=O.W+O.ST, dst=0, src=0, off=0, imm=5),
+            Instruction(opcode=O.W+O.ST, dst=1, src=0, off=-4, imm=3),
+            Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=7),
+            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=3, src=1, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG, dst=3, src=0, off=0, imm=3),
+            Instruction(opcode=O.SUB+O.REG+O.LONG, dst=0, src=3, off=0, imm=0),
+            Instruction(opcode=O.W+O.ST, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=0, src=1, off=0, imm=0),
+            Instruction(opcode=O.ADD+O.LONG, dst=0, src=0, off=0, imm=3),
+            Instruction(opcode=O.SUB+O.REG+O.LONG, dst=0, src=2, off=0, imm=0),
+            Instruction(opcode=O.W+O.ST, dst=0, src=0, off=0, imm=5),
+        ])
+
     def test_fixed(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3, 4, 5, 6}
