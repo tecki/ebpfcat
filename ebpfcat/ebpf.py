@@ -1472,12 +1472,16 @@ class EBPF(EBPFBase):
 
         super().__init__(**kwargs)
 
-        for k, v in self.__class__.__dict__.items():
-            if isinstance(v, Map):
-                if load_maps is None:
-                    v.init(self, None)
-                else:
-                    v.init(self, bpf.obj_get(load_maps + k))
+        unique = set()
+        for cls in self.__class__.__mro__:
+            for k, v in cls.__dict__.items():
+                if k not in unique and isinstance(v, Map):
+                    if load_maps is None:
+                        v.init(self, None)
+                    else:
+                        v.init(self, bpf.obj_get(load_maps + k))
+                    unique.add(k)
+
 
     def pin_maps(self, path):
         """pin the maps of this program to files with prefix `path`

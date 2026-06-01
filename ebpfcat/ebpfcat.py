@@ -249,7 +249,7 @@ class DeviceVar(ArrayGlobalVarDesc):
         print(self.my_data)  # should print 7 once the program is running
     """
     def __init__(self, size="I", write=False):
-        super().__init__(FastSyncGroup.properties, size)
+        super().__init__(SyncGroupBase.properties, size)
         self.write = write
 
     def __get__(self, instance, owner):
@@ -761,6 +761,9 @@ class SyncGroupBase:
     logical_in = logical_out = None
     name = 'No Name'
 
+    properties = ArrayMap()
+    wkc_errors = properties.globalVar('I')
+
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
         self.ec = ec
@@ -888,9 +891,6 @@ class ProcessSyncGroup(SyncGroup, ProcessEBPF):
     or read (but not write) :class:`TerminalVar`\\ s.
     """
 
-    properties = ArrayMap()
-    wkc_errors = properties.globalVar('I')
-
     def __init__(self, ec, devices, **kwargs):
         super().__init__(ec, devices, subprograms=devices, **kwargs)
 
@@ -923,9 +923,6 @@ class FastSyncGroup(SyncGroupBase, XDP):
     """A :class:`SyncGroup` where all devices are EBPF programs"""
     license = "GPL"
     debug = False
-
-    properties = ArrayMap()
-    wkc_errors = properties.globalVar('I')
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(ec, devices, subprograms=devices, **kwargs)
