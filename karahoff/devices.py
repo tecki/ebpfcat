@@ -973,20 +973,24 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.device.set_control_word = 0
         self.keepDisabled = True
 
-    lastvelocity = lastposition = 100j  # always far away from the real value
+    lastvelocity = lastposition = None
     baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
+
+    def calculate_position(self):
+        return self.device.encoder * self.encodeStep + self.offset
 
     def update_properties(self):
         self.device.max_acceleration = \
             int((self.maxAcceleration / self.motorStep / 1e9 * 2**32).value)
-        if abs(self.device.encoder - self.lastposition) > 3:
-            self.actualPosition = (self.device.encoder * self.encodeStep
-                                   + self.offset) * now()
+        if self.lastposition is None \
+                or abs(self.device.encoder - self.lastposition) > 3:
+            self.actualPosition = self.calculate_position() * now()
             self.rawPosition = self.device.encoder
             if not isSet(self.targetPosition):
                 self.targetPosition = self.actualPosition
             self.lastposition = self.device.encoder
-        if abs(self.device.velocity - self.lastvelocity) > 3:
+        if self.lastvelocity is None \
+                or abs(self.device.velocity - self.lastvelocity) > 3:
             self.actualVelocity = self.device.velocity * self.motorStep \
                     * self.baseFrequency * now()
             self.lastvelocity = self.device.velocity
@@ -1063,7 +1067,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
 
 class RotationDevice(MotorDevice):
     def calculate_speed(self):
-        if self.modulo:
+        if self.goAround:
             # we need to add a huge number to avoid signed modulo
             self.ebpf.stmp = (
                 self.ebpf.stmp
@@ -1096,15 +1100,40 @@ class RotationMotor(Motor):
                                metricPrefixSymbol=MetricPrefix.NONE)
     stepSize = Overwrite(unitSymbol=Unit.DEGREE,
                          metricPrefixSymbol=MetricPrefix.NONE)
+    turn = Int8(defaultValue=0)
+    goAround = Bool(
+        displayedName='Go Around', defaultValue=True,
+        description='If True, when going full circle, we are again at the '
+        'same position as before, we do not need to keep track about the '
+        'revolutions we do. For motors which cannot go full circle, set to '
+        'true as we do not want to take track of revolutions in this case.',
+        accessMode=AccessMode.INITONLY)
     modulo = Float(
-        description="""Restart counting at this position.
-        Set to 0 if motor cannot go around.""",
+        description="""Restart counting at this position""",
         unitSymbol=Unit.DEGREE, defaultValue=360,
         accessMode=AccessMode.INITONLY)
 
     def join(self, syncGroup):
         super().join(syncGroup)
-        self.device.modulo = int(self.modulo // (2 * self.encodeStep))
+        self.device.modulo = int(abs(self.modulo // (2 * self.encodeStep)))
+        self.device.goAround = self.goAround.value
+
+    def calculate_position(self):
+        ret = super().calculate_position()
+        if not self.goAround:
+            ret += self.turn * self.modulo
+        return ret
+
+    def update_properties(self):
+        if self.lastposition is None:
+            return super().update_properties()
+        if self.device.encoder - self.lastposition > self.device.modulo:
+            self.turn -= 1
+            self.device.target += 2 * self.device.modulo
+        elif self.device.encoder - self.lastposition < -self.device.modulo:
+            self.turn += 1
+            self.device.target -= 2 * self.device.modulo
+        return super().update_properties()
 
 
 class FollowerDevice(MotorDevice):
