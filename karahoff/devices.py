@@ -482,18 +482,18 @@ class MonitoredOutputDevice(Device):
 
     def update(self):
         now = monotonic()
-        diff = int(self.rampSpeed * (now - self.lastTime) / 1e6)
+        diff = int(self.rampSpeed * (now - self.lastTime / 1e6) / 1e6)
         try:
             if self.rampSpeed == 0 or abs(self.target - self.lastValue) < diff:
                 self.lastValue = self.outputTerm = self.target
-                self.lastTime = now
+                self.lastTime = int(now * 1e6)
                 self.ramping = 0
             else:
                 self.ramping = self.target - self.lastValue
                 self.lastValue = self.outputTerm = \
                         self.lastValue + int(copysign(diff, self.ramping))
                 if diff != 0:
-                    self.lastTime = now
+                    self.lastTime = int(now * 1e6)
         except struct.error:
             pass
         self.value = self.inputTerm
@@ -578,17 +578,11 @@ class MonitoredOutput(Interlock, EtherCATDevice):
         unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY,
         description="the voltage read back from the input")
 
-    @Double(
+    rampSpeed = Double(
         displayedName='Ramping Speed',
         unitSymbol=Unit.VOLT_PER_SECOND, defaultValue=0, minInc=0,
         description="ramp the output voltage by this speed. "
         "Put 0 for immediate setting")
-    async def rampSpeed(self, value):
-        if isSet(value) and self.device is not None:
-            self.device.rampSpeed = \
-                int(value / (self.outputFactor / self.outputCalibration)
-                    * unit.second * 1e6)
-        self.rampSpeed = value
 
     def join(self, syncGroup):
         super().join(syncGroup)
@@ -600,8 +594,9 @@ class MonitoredOutput(Interlock, EtherCATDevice):
         outputChannel = self.find_channel(self.outputChannel)
         self.device.outputTerm = outputChannel.value
         self.outputFactor = outputChannel.factor * unit.volt
-        self.target = self.target
-        self.rampSpeed = self.rampSpeed
+        self.device.rampSpeed = \
+            int(self.rampSpeed / (self.outputFactor / self.outputCalibration)
+                * unit.second * 1e6)
 
     def update_properties(self):
         if self.lastValue != self.device.value:
@@ -610,6 +605,9 @@ class MonitoredOutput(Interlock, EtherCATDevice):
                          / self.inputCalibration * now()
         output = (self.device.outputTerm
                   * (self.outputFactor / self.outputCalibration)).value
+        self.device.rampSpeed = \
+            int(self.rampSpeed / (self.outputFactor / self.outputCalibration)
+                * unit.second * 1e6)
         if output != self.actualOutput:
             self.actualOutput = output
         ret = super().update_properties()
