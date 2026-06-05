@@ -422,7 +422,10 @@ class AnalogOutputDevice(Device):
     set_value = DeviceVar('i', write=True)
 
     def update(self):
-        self.value = self.set_value
+        try:
+            self.value = self.set_value
+        except struct.error:
+            pass
 
     def program(self):
         self.value = self.set_value
@@ -434,17 +437,24 @@ class AnalogOutput(OptionalMixin, EtherCATDevice):
     unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
     prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
     calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    upperLimit = Double(accessMode=AccessMode.INITONLY, defaultValue=0x7fff)
+    lowerLimit = Double(accessMode=AccessMode.INITONLY, defaultValue=0)
+
 
     async def onInitialization(self):
+        kwargs = dict(minInc=self.lowerLimit.value,
+                      maxInc=self.upperLimit.value)
         if self.unit:
-            self.__class__.value = Overwrite(
+            kwargs.update(
                 unitSymbol=getattr(Unit, self.unit.value),
                 metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
-            await self.publishInjectedParameters()
+        self.__class__.value = Overwrite(**kwargs)
+        await self.publishInjectedParameters()
 
     @Double()
     async def value(self, value):
-        if not isSet(value):
+        if not isSet(value) or \
+                not (self.lowerLimit <= value.value <= self.upperLimit):
             return
         self.device.set_value = \
                 int((value/ (self.outputFactor / self.calibration)).value)
