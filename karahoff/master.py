@@ -233,6 +233,7 @@ class EtherCATSyncGroupBase(Device):
                         d.join(self)
                     except Exception as e:
                         e.add_note(f'while {d.deviceId} is joining')
+                        self.status = f'error in {d.deviceId}: {e}'
                         raise
                 break
             except TerminalUnknownError as e:
@@ -264,22 +265,31 @@ class EtherCATSyncGroupBase(Device):
                         return
                 else:
                     last_wkc_errors = last_good_wkc = self.syncGroup.wkc_errors
-                    if self.state != State.RUNNING:
+                    if self.state != State.RUNNING \
+                            and self.syncGroup.current_data is not None:
                         self.state = State.RUNNING
                         self.status = ''
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
-                        if (newstate := d.update_properties()) is not None:
-                            if isinstance(newstate, State):
-                                d.set_state(newstate)
-                            else:
-                                d.set_state(*newstate)
+                        try:
+                            if (newstate := d.update_properties()) is not None:
+                                if isinstance(newstate, State):
+                                    d.set_state(newstate)
+                                else:
+                                    d.set_state(*newstate)
+                        except Exception as e:
+                            d.logger.exception("error in update_properties")
+                            d.status = str(e)
+                            d.state = State.ERROR
+                            self.state = State.ERROR
+                            self.status = f"error in {d.deviceId}"
+                            raise
                         await sleep(self.interval.value / len(self.devs))
                 else:
                     await sleep(self.interval.value)
             self.syncGroupTask.result()  # raises error if problem
         except CancelledError:
-            pass
+            self.state = State.OFF
         except Exception as e:
             self.logger.exception('Sync group %s failed', self.deviceId)
             raise
