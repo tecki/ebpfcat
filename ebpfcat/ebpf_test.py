@@ -60,6 +60,12 @@ class Tests(TestCase):
         e.append(Opcode.MUL, 3, 4, 0x2c3d, 0x2d3e4f5e)
         self.assertEqual(e.assemble(), b"$C=,^O>-")
 
+    def test_assemble_long(self):
+        e = EBPF()
+        e.r5 = 0x3333333344444444
+        self.assertEqual(e.assemble(),
+                         b'\x18\x05\x00\x00DDDD\x00\x00\x00\x003333')
+
     def test_assign(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
