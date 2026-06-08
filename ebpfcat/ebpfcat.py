@@ -793,42 +793,48 @@ class SyncGroupBase:
                     raise
             await self.inner_loop()
 
-    async def inner_loop(self):
-            data = self.asm_packet
-            self.wkc_errors = 0
-            lasttime = monotonic()
+    async def clear_safe_errors(self):
+        """clear the error why we went to safe operational"""
+        await sleep(0.2)  # assure the watchdog kicks in
+        await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL,
+                                   clear_error=True)
+                       for t, rw in self.terminals.items() if rw])
 
-            future = self.ec.roundtrip_packet(data, self.packet_index)
-            await gather(*[t.set_state(MachineState.OPERATIONAL)
-                           for t, rw in self.terminals.items() if rw])
-            self.wkc_errors = 1  # write actions are ignored before
+    async def inner_loop(self):
+        data = self.asm_packet
+        self.wkc_errors = 0
+        lasttime = monotonic()
+
+        await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL, clear_error=True)
+                       for t, rw in self.terminals.items() if rw])
+        future = self.ec.roundtrip_packet(data, self.packet_index)
+        await gather(*[t.set_state(MachineState.OPERATIONAL)
+                       for t, rw in self.terminals.items() if rw])
+        self.wkc_errors = 1  # write actions are ignored before
+
+        while self.running:
             try:
-                while self.running:
-                    try:
-                        data = await wait_for(future, timeout=0.02)
-                    except TimeoutError:
-                        self.missed_counter += 1
-                        logger.warning(
-                            "%s: did not receive Ethercat response in time %i",
-                            self.name, self.missed_counter)
-                        future = self.ec.roundtrip_packet(data,
-                                                          self.packet_index)
-                        continue
-                    data = self.update_devices(data)
-                    newtime = monotonic()
-                    if newtime - lasttime > self.cycletime:
-                        logger.warning('%s: response time exceeded (%.0f ms)',
-                                       self.name, (newtime - lasttime) * 1000)
-                    await sleep(self.cycletime - (newtime - lasttime))
-                    newtime = monotonic()
-                    if newtime - lasttime > 0.05:
-                        logger.warning('%s: excessive cycle time (%.0f ms)',
-                                       self.name, (newtime - lasttime) * 1000)
-                    lasttime = newtime
-                    future = self.ec.roundtrip_packet(data, self.packet_index)
-            finally:
-                await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL)
-                               for t, rw in self.terminals.items() if rw])
+                data = await wait_for(future, timeout=0.02)
+            except TimeoutError:
+                self.missed_counter += 1
+                logger.warning(
+                    "%s: did not receive Ethercat response in time %i",
+                    self.name, self.missed_counter)
+                future = self.ec.roundtrip_packet(data,
+                                                  self.packet_index)
+                continue
+            data = self.update_devices(data)
+            newtime = monotonic()
+            if newtime - lasttime > self.cycletime:
+                logger.warning('%s: response time exceeded (%.0f ms)',
+                               self.name, (newtime - lasttime) * 1000)
+            await sleep(self.cycletime - (newtime - lasttime))
+            newtime = monotonic()
+            if newtime - lasttime > 0.05:
+                logger.warning('%s: excessive cycle time (%.0f ms)',
+                               self.name, (newtime - lasttime) * 1000)
+            lasttime = newtime
+            future = self.ec.roundtrip_packet(data, self.packet_index)
 
     def allocate(self):
         self.packet = SterilePacket()

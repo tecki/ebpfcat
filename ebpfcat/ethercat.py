@@ -765,9 +765,16 @@ class Terminal:
                 await parse(parse_eeprom(self.eeprom[50]), SyncManager.IN)
                 if 50 in self.eeprom else 0)
 
-    async def set_state(self, state):
+    async def set_state(self, state, *, clear_error=False):
         """try to set the state"""
         assert isinstance(state, MachineState)
+        if clear_error:
+            try:
+                await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
+                                        state.value | 0x10)
+            except EtherCatError:
+                logger.debug('failed clearing error, was there '
+                             f'no error in terminal "{self.name}"?')
         await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
                                 state.value)
         newstate = None
