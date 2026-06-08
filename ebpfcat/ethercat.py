@@ -389,6 +389,8 @@ class EtherCat(Protocol):
 
         Send the ``packet`` to the loop and wait that it comes back,
         and return that to the caller. """
+        if self.transport.is_closing():
+            raise EtherCatError('transport already closed')
         if index is None:
             index = randint(2000, 1000000000)
             while index in self.wait_futures:
