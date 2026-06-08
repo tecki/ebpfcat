@@ -26,7 +26,7 @@ from unittest import TestCase, main, skip
 from unittest.mock import Mock
 
 from .devices import AnalogInput, AnalogOutput, Motor
-from .terminals import EL4104, EL3164, EK1814, Skip
+from .terminals import EL4134, EL3164, EK1814, Skip
 from .ethercat import ECCmd, MachineState, Terminal
 from .ebpfcat import (
     FastSyncGroup, SyncGroup, TerminalVar, Device, EBPFTerminal, PacketDesc,
@@ -42,12 +42,12 @@ class SimpleTests(TestCase):
     def test_device(self):
         ec = SimpleEtherCat('test network')
         ec.next_logical_addr = 7
-        term = EL4104(ec)
+        term = EL4134(ec)
         term.position = 3
         term.pdos = {(0x7000, 1): (SyncManager.OUT, 3, 'h')}
         term.pdo_in_sz = 0
         term.pdo_out_sz = 12
-        device = AnalogOutput(term.ch1_value)
+        device = AnalogOutput(term.channel1.value)
         sg = SyncGroup(ec, [device])
         sg.allocate()
         sg.current_data = bytearray(b'abcdefghijklmnopqrstuvwxyzABCDEFG')
@@ -206,7 +206,7 @@ class Tests(TestCase):
     @mockAsync
     async def test_output(self):
         ec = MockEtherCat(self)
-        ti = mockTerminal(ec, EL4104)
+        ti = mockTerminal(ec, EL4134)
         ti.use_fmmu = False
         terms = [Skip(ec), Skip(ec), ti]
         ec.expected = [
@@ -286,7 +286,7 @@ class Tests(TestCase):
         ec.expected = None
 
         ti = mockTerminal(ec, EL3164)
-        to = mockTerminal(ec, EL4104)
+        to = mockTerminal(ec, EL4134)
         td = mockTerminal(ec, EK1814)
         ti.use_fmmu = False
         to.use_fmmu = False
