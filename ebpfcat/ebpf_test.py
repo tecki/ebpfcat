@@ -21,8 +21,8 @@ from unittest import TestCase, main
 from . import ebpf
 from .arraymap import ArrayMap, PerCPUArrayMap
 from .ebpf import (
-    AssembleError, EBPF, FuncId, Member, Opcode, OpcodeFlags, Opcode as O,
-    LocalVar, Structure, SubProgram, ktime)
+    AssembleError, EBPF, FuncId, HugeInstruction, Member, Opcode, OpcodeFlags,
+    Opcode as O, LocalVar, Structure, SubProgram, ktime)
 from .simulated import ProcessEBPF, SimulatedEBPF
 from .hashmap import HashMap, Dict
 from .xdp import XDP, PacketVar
@@ -291,15 +291,13 @@ class Tests(TestCase):
            Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
            Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=3),
            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=3, src=4, off=0, imm=0),
-           Instruction(opcode=O.DW, dst=7, src=0, off=0, imm=1410065408),
-           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=2),
+           HugeInstruction(opcode=O.DW, dst=7, src=0, off=0, imm=10000000000),
            Instruction(opcode=O.MUL+O.REG+O.LONG, dst=3, src=7, off=0, imm=0),
            Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=350000),
            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=5, src=6, off=0, imm=0),
            Instruction(opcode=O.DIV+O.LONG, dst=5, src=0, off=0, imm=3),
            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.DW, dst=7, src=0, off=0, imm=1410065408),
-           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=2),
+           HugeInstruction(opcode=O.DW, dst=7, src=0, off=0, imm=10000000000),
            Instruction(opcode=O.REG+O.LONG+O.MUL, dst=1, src=7, off=0, imm=0),
            Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
            Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
@@ -328,11 +326,9 @@ class Tests(TestCase):
            Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
            Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=350000),
            Instruction(opcode=O.DIV+O.REG+O.LONG, dst=3, src=4, off=0, imm=0),
-           Instruction(opcode=O.DW, dst=5, src=0, off=0, imm=4230196224),
-           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=6),
+           HugeInstruction(opcode=O.DW, dst=5, src=0, off=0, imm=30000000000),
            Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.DW, dst=4, src=0, off=0, imm=2050327040),
-           Instruction(opcode=O.W, dst=0, src=0, off=0, imm=10),
+           HugeInstruction(opcode=O.DW, dst=4, src=0, off=0, imm=45000000000),
            Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
            Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=3),
            Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
@@ -818,18 +814,14 @@ class Tests(TestCase):
         e.r3 = 0x90000000
 
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=24, dst=3, src=0, off=0, imm=878082192),
-            Instruction(opcode=0, dst=0, src=0, off=0, imm=18),
+            HugeInstruction(opcode=O.DW, dst=3, src=0, off=0, imm=78187493520),
             Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
             Instruction(opcode=0, dst=0, src=0, off=0, imm=0),
             Instruction(opcode=O.JNE, dst=3, src=0, off=4, imm=0),
             Instruction(opcode=O.REG+O.LONG+O.MOV, dst=3, src=4, off=0, imm=0),
-            Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=878082192),
-            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=18),
+            HugeInstruction(opcode=O.DW, dst=0, src=0, off=0, imm=78187493520),
             Instruction(opcode=O.LONG+O.REG+O.ADD, dst=3, src=0, off=0, imm=0),
-            Instruction(opcode=O.DW, dst=3, src=0, off=0, imm=2415919104),
-            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=0),
-
+            HugeInstruction(opcode=O.DW, dst=3, src=0, off=0, imm=2415919104),
         ])
 
     def test_simple_binary(self):
@@ -1133,8 +1125,7 @@ class Tests(TestCase):
             Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=19, imm=0),
             Instruction(opcode=O.ST+O.REG, dst=9, src=0, off=20, imm=3),
             Instruction(opcode=O.W+O.ST, dst=9, src=0, off=28, imm=83886080),
-            Instruction(opcode=O.DW, dst=0, src=0, off=0, imm=0),
-            Instruction(opcode=O.W, dst=0, src=0, off=0, imm=117440512),
+            HugeInstruction(opcode=O.DW, dst=0, src=0, off=0, imm=504403158265495552),
             Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
             Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
             Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),

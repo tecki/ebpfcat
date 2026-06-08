@@ -49,6 +49,13 @@ class Instruction(BaseInstruction):
                     self.off % 0x10000, self.imm % 0x100000000)
 
 
+class HugeInstruction(Instruction):
+    opcode_size = 2
+
+    def assemble(self):
+        return pack("<BB2xIB3xI", Opcode.DW.value, self.dst,
+                    self.imm & 0xffffffff, Opcode.W.value, self.imm >> 32)
+
 
 class JumpTarget:
     opcode_size = 0
@@ -879,8 +886,8 @@ class Constant(Expression):
             if self.small_constant:
                 self.ebpf.append(Opcode.MOV + Opcode.LONG, dst, 0, 0, value)
             else:
-                self.ebpf.append(Opcode.DW, dst, 0, 0, value & 0xffffffff)
-                self.ebpf.append(Opcode.W, 0, 0, 0, value >> 32)
+                self.ebpf.opcodes.append(
+                    HugeInstruction(Opcode.DW, dst, 0, 0, value))
             yield dst, not (-0x80000000 <= value < 0x100000000)
 
     def switch_endian(self, fmt):
