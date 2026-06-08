@@ -319,6 +319,8 @@ class EL7041(EBPFTerminal):
     invLogicLim1 = ServiceDesc(0x8012, 0x30)
     invLogicLim2 = ServiceDesc(0x8012, 0x31)
 
+    baseFrequency = 128000 / 0x7fff
+
 
 class EL7062(EBPFTerminal):
     compatibility = {(2, 0x1B963052)}
@@ -345,6 +347,8 @@ class EL7062(EBPFTerminal):
 
         max_current = ServiceDesc(0x8011, 0x34)
         operation_mode = ServiceDesc(0x7010, 3)
+
+        baseFrequency = 16384 * 16000 / 0x7fffffff  # guesstimated
 
     channel1 = Channel(0)
     channel2 = Channel(0x100)
@@ -516,6 +520,8 @@ class ELMO(EBPFTerminal):
 
     max_current = ServiceDesc(0x6073, 0)
     operation_mode = ServiceDesc(0x6060, 0)
+
+    baseFrequency = 1  # guessed
 
 
 class AerotechBase(EBPFTerminal):
