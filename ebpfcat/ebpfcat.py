@@ -583,8 +583,8 @@ class FastEtherCat(SimpleEtherCat):
             try:
                 yield
             finally:
-                for v in self.sync_groups.values():
-                    v.cancel()
+                await gather(*[v.cancel_and_wait()
+                               for v in self.sync_groups.values()])
 
 
 class ParallelEtherCat(FastEtherCat):
@@ -671,8 +671,8 @@ class ParallelEtherCat(FastEtherCat):
         finally:
             self.transport.close()
             self.transport = None
-            for v in self.sync_groups.values():
-                v.cancel()
+            await gather(*[v.cancel_and_wait()
+                           for v in self.sync_groups.values()])
             for entry in os.scandir(lockdir):
                 with open(entry.path, 'r') as fin:
                     pid = int(fin.read())
@@ -971,4 +971,13 @@ class FastSyncGroup(SyncGroupBase, XDP):
     def start(self):
         self.allocate()
         self.running = True
-        return ensure_future(self.run())
+        self.task = ensure_future(self.run())
+        return self.task
+
+    async def cancel_and_wait(self):
+        if not self.task.done():
+            self.task.cancel()
+        try:
+            await self.task
+        except CancelledError:
+            pass
