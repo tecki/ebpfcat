@@ -71,9 +71,10 @@ class Tests(TestCase):
         e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         e.r5 = 7
         e.r6 = e.r3
-        self.assertOpcodesEqual(e,
-            [Instruction(0xb7, 5, 0, 0, 7),
-             Instruction(0xbf, 6, 3, 0, 0)])
+        self.assertOpcodesEqual(e, [
+             Instruction(0xb7, 5, 0, 0, 7),
+             Instruction(0xbf, 6, 3, 0, 0),
+        ])
 
     def test_word(self):
         e = EBPF()
@@ -82,11 +83,12 @@ class Tests(TestCase):
         e.w4 = e.w1
         e.w2 += 3
         e.w5 += e.w6
-        self.assertOpcodesEqual(e,
-            [Instruction(O.MOV+O.LONG, 3, 0, 0, 7),
+        self.assertOpcodesEqual(e, [
+             Instruction(O.MOV+O.LONG, 3, 0, 0, 7),
              Instruction(0xbc, 4, 1, 0, 0),
              Instruction(opcode=4, dst=2, src=0, off=0, imm=3),
-             Instruction(opcode=0xc, dst=5, src=6, off=0, imm=0)])
+             Instruction(opcode=0xc, dst=5, src=6, off=0, imm=0),
+        ])
 
     def test_augassign(self):
         e = EBPF()
@@ -114,8 +116,8 @@ class Tests(TestCase):
         e.sr4 >>= 3
         e.sr4 >>= e.r7
 
-        self.assertOpcodesEqual(e,
-            [Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
+        self.assertOpcodesEqual(e, [
+             Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=15, dst=3, src=6, off=0, imm=0),
              Instruction(opcode=7, dst=4, src=0, off=0, imm=-3),
              Instruction(opcode=0x1f, dst=4, src=7, off=0, imm=0),
@@ -136,7 +138,8 @@ class Tests(TestCase):
              Instruction(opcode=0xa7, dst=4, src=0, off=0, imm=3),
              Instruction(opcode=0xaf, dst=4, src=7, off=0, imm=0),
              Instruction(opcode=0xc7, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0xcf, dst=4, src=7, off=0, imm=0)])
+             Instruction(opcode=0xcf, dst=4, src=7, off=0, imm=0),
+        ])
 
     def test_memory(self):
         e = EBPF()
@@ -155,8 +158,8 @@ class Tests(TestCase):
         e.r5 = e.mQ[e.r3 - 7]
         e.r5 = e.mb[e.r3] >> 2
         e.r5 = e.mB[e.r3] >> 2
-        self.assertOpcodesEqual(e,
-            [Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
+        self.assertOpcodesEqual(e, [
+             Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
              Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
              Instruction(opcode=98, dst=8, src=0, off=7, imm=5),
              Instruction(opcode=122, dst=3, src=0, off=-7, imm=2),
@@ -451,7 +454,8 @@ class Tests(TestCase):
             Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
             Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
             Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
-            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0)])
+            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0),
+        ])
 
     def test_bits_and_or(self):
         class Local(EBPF):
@@ -495,7 +499,8 @@ class Tests(TestCase):
             Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-4, imm=5),
             Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=3),
             Instruction(opcode=O.W+O.LD, dst=3, src=10, off=-12, imm=0),
-            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=7)])
+            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=7),
+        ])
 
     def test_sign_extend(self):
         class Local(EBPF):
@@ -648,8 +653,8 @@ class Tests(TestCase):
         e.r0 = 1
         t1.target()
         t2.target()
-        self.assertOpcodesEqual(e,
-            [Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
+        self.assertOpcodesEqual(e, [
+             Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
              Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
              Instruction(opcode=0x25, dst=5, src=0, off=4, imm=3),
              Instruction(opcode=0x2d, dst=1, src=2, off=3, imm=0),
@@ -678,7 +683,8 @@ class Tests(TestCase):
              Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
              Instruction(opcode=0x45, dst=5, src=0, off=2, imm=3),
              Instruction(opcode=0x4d, dst=1, src=2, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1)])
+             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+        ])
 
     def test_with(self):
         e = EBPF()
@@ -737,7 +743,8 @@ class Tests(TestCase):
             Instruction(opcode=183, dst=0, src=0, off=0, imm=3),
             Instruction(opcode=5, dst=0, src=0, off=2, imm=0),
             Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=183, dst=1, src=0, off=0, imm=4)])
+            Instruction(opcode=183, dst=1, src=0, off=0, imm=4),
+        ])
 
     def test_with_and(self):
         e = EBPF()
@@ -756,7 +763,8 @@ class Tests(TestCase):
             Instruction(opcode=O.JGE, dst=1, src=0, off=2, imm=2),
             Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=5),
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7)])
+            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
+        ])
 
     def test_with_or(self):
         e = EBPF()
@@ -779,7 +787,8 @@ class Tests(TestCase):
             Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=4),
             Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=3)])
+            Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=3),
+        ])
 
     def test_comp_binary(self):
         e = EBPF()
@@ -803,7 +812,8 @@ class Tests(TestCase):
             Instruction(opcode=191, dst=4, src=2, off=0, imm=0),
             Instruction(opcode=15, dst=4, src=5, off=0, imm=0),
             Instruction(opcode=173, dst=0, src=4, off=1, imm=0),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=8)])
+            Instruction(opcode=183, dst=0, src=0, off=0, imm=8),
+        ])
 
     def test_huge(self):
         e = EBPF()
@@ -859,7 +869,8 @@ class Tests(TestCase):
             Instruction(opcode=188, dst=0, src=1, off=0, imm=0),
             Instruction(opcode=12, dst=0, src=2, off=0, imm=0),
             Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=95, dst=0, src=2, off=0, imm=0)])
+            Instruction(opcode=95, dst=0, src=2, off=0, imm=0),
+        ])
 
     def test_mixed_binary(self):
         e = EBPF()
@@ -873,7 +884,8 @@ class Tests(TestCase):
             Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
             Instruction(opcode=O.LONG+O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
             Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
-            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0)])
+            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
+        ])
 
     def test_mixed_compare(self):
         e = EBPF()
@@ -886,7 +898,8 @@ class Tests(TestCase):
             Instruction(opcode=O.JSLE+O.REG, dst=1, src=2, off=0, imm=0),
             Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=1, off=0, imm=0),
             Instruction(opcode=O.ADD+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
-            Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=3)])
+            Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=3),
+        ])
 
 
     def test_reverse_binary(self):
@@ -921,7 +934,8 @@ class Tests(TestCase):
         self.assertOpcodesEqual(e, [
             Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
             Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
-            Instruction(opcode=O.NEG+O.LONG, dst=7, src=0, off=0, imm=0)])
+            Instruction(opcode=O.NEG+O.LONG, dst=7, src=0, off=0, imm=0),
+        ])
 
     def test_absolute(self):
         e = EBPF()
@@ -984,7 +998,8 @@ class Tests(TestCase):
         e.call(FuncId.ktime_get_ns)
         self.assertOpcodesEqual(e, [
             Instruction(opcode=183, dst=8, src=0, off=0, imm=23),
-            Instruction(opcode=133, dst=0, src=0, off=0, imm=5)])
+            Instruction(opcode=133, dst=0, src=0, off=0, imm=5),
+        ])
         e.r7 = e.r0
         e.r5 = e.r8
         with self.assertRaises(AssembleError):
@@ -1095,7 +1110,8 @@ class Tests(TestCase):
             Instruction(opcode=O.REG+O.JLE, dst=0, src=2, off=2, imm=0),
             Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77)])
+            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77),
+        ])
 
     def test_endian(self):
         class P(XDP):
