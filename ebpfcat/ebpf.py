@@ -1299,8 +1299,7 @@ class PseudoFd(Expression):
     @contextmanager
     def calculate(self, dst, long, force=False):
         with self.ebpf.get_free_register(dst) as dst:
-            self.ebpf.append(Opcode.DW, dst, 1, 0, self.fd)
-            self.ebpf.append(Opcode.W, 0, 0, 0, 0)
+            self.ebpf.opcodes.append(HugeInstruction(Opcode.DW, dst, 1, 0, self.fd))
             yield dst, long
 
 

@@ -825,8 +825,7 @@ class Tests(TestCase):
 
         self.assertOpcodesEqual(e, [
             HugeInstruction(opcode=O.DW, dst=3, src=0, off=0, imm=78187493520),
-            Instruction(opcode=24, dst=4, src=1, off=0, imm=7),
-            Instruction(opcode=0, dst=0, src=0, off=0, imm=0),
+            HugeInstruction(opcode=O.DW, dst=4, src=1, off=0, imm=7),
             Instruction(opcode=O.JNE, dst=3, src=0, off=4, imm=0),
             Instruction(opcode=O.REG+O.LONG+O.MOV, dst=3, src=4, off=0, imm=0),
             HugeInstruction(opcode=O.DW, dst=0, src=0, off=0, imm=78187493520),
