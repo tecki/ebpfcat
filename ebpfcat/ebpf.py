@@ -25,7 +25,6 @@ __all__ = ["EBPF", "LocalVar", "Member", "Structure", "prandom", "ktime"]
 
 import os
 from abc import ABC, abstractmethod
-from collections import namedtuple
 from collections.abc import Sequence
 from contextlib import contextmanager, ExitStack
 from operator import index
@@ -33,28 +32,8 @@ from struct import pack, pack_into, unpack, unpack_from, calcsize
 from enum import Enum
 
 from . import bpf
+from .instruction import HugeInstruction, Instruction, Opcode, OpcodeFlags
 from .util import sub
-
-BaseInstruction = namedtuple("BaseInstruction",
-                             ["opcode", "dst", "src", "off", "imm"])
-
-class Instruction(BaseInstruction):
-    opcode_size = 1
-
-    def set_position(self, position):
-        pass
-
-    def assemble(self):
-        return pack("<BBHI", self.opcode.value, self.dst | self.src << 4,
-                    self.off % 0x10000, self.imm % 0x100000000)
-
-
-class HugeInstruction(Instruction):
-    opcode_size = 2
-
-    def assemble(self):
-        return pack("<BB2xIB3xI", Opcode.DW.value, self.dst,
-                    self.imm & 0xffffffff, Opcode.W.value, self.imm >> 32)
 
 
 class JumpTarget:
@@ -224,85 +203,6 @@ class FuncId(Enum):
     per_cpu_ptr = 153
     this_cpu_ptr = 154
     redirect_peer = 155
-
-class Opcode(Enum):
-    ADD = 4
-    SUB = 0x14
-    MUL = 0x24
-    DIV = 0x34
-    OR = 0x44
-    AND = 0x54
-    LSH = 0x64
-    RSH = 0x74
-    NEG = 0x84
-    MOD = 0x94
-    XOR = 0xa4
-    MOV = 0xb4
-    ARSH = 0xc4
-
-    JMP = 5
-    JEQ = 0x15
-    JGT = 0x25
-    JGE = 0x35
-    JSET = 0x45
-    JNE = 0x55
-    JSGT = 0x65
-    JSGE = 0x75
-    JLT = 0xa5
-    JLE = 0xb5
-    JSLT = 0xc5
-    JSLE = 0xd5
-    SHORT = 1
-
-    CALL = 0x85
-    EXIT = 0x95
-
-    REG = 8
-    LONG = 3
-
-    W = 0
-    H = 8
-    B = 0x10
-    DW = 0x18
-
-    LD = 0x61
-    ST = 0x62
-    STX = 0x63
-    XADD = 0xc3
-    LE = 0xd4
-    BE = 0xdc
-
-    def __mul__(self, value):
-        if value:
-            return OpcodeFlags({self})
-        else:
-            return OpcodeFlags(set())
-
-    def __add__(self, value):
-        return OpcodeFlags({self}) + value
-
-    def __repr__(self):
-        return 'O.' + self.name
-
-class OpcodeFlags:
-    def __init__(self, opcodes):
-        self.opcodes = opcodes
-
-    @property
-    def value(self):
-        return sum(op.value for op in self.opcodes)
-
-    def __add__(self, value):
-        if isinstance(value, Opcode):
-            return OpcodeFlags(self.opcodes | {value})
-        else:
-            return OpcodeFlags(self.opcodes | value.opcodes)
-
-    def __repr__(self):
-        return "+".join(repr(op) for op in self.opcodes)
-
-    def __eq__(self, value):
-        return self.value == value.value
 
 
 class AssembleError(Exception):
