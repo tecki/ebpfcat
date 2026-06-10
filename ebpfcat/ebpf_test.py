@@ -21,39 +21,18 @@ from unittest import TestCase, main
 from . import ebpf
 from .arraymap import ArrayMap, PerCPUArrayMap
 from .ebpf import (
-    AssembleError, EBPF, FuncId, HugeInstruction, Member, Opcode, OpcodeFlags,
-    Opcode as O, LocalVar, Structure, SubProgram, ktime)
+    AssembleError, EBPF, FuncId, LocalVar, Member, Opcode, Structure,
+    SubProgram, ktime)
 from .simulated import ProcessEBPF, SimulatedEBPF
 from .hashmap import HashMap, Dict
 from .xdp import XDP, PacketVar
 from .bpf import ProgType
 
 
-opcodes = list((v.value, v) for v in Opcode)
-opcodes.sort(reverse=True)
-
-
-def Instruction(opcode, dst, src, off, imm):
-    if isinstance(opcode, (Opcode, OpcodeFlags)):
-        return ebpf.Instruction(opcode, dst, src, off, imm)
-    bigger = [(k, v) for k, v in opcodes if opcode >= k]
-    for bk, bv in bigger:
-        parts = {bv}
-        lo = opcode - bk
-        for k, v in opcodes[:-1]:
-            if lo >= k:
-                lo -= k
-                parts.add(v)
-        if lo == 0:
-            break
-    else:
-        raise RuntimeError
-    return ebpf.Instruction(OpcodeFlags(parts), dst, src, off, imm)
-
 class Tests(TestCase):
     def assertOpcodesEqual(self, program, expected):
         program.assemble()
-        self.assertEqual(program.opcodes, expected)
+        self.assertEqual([str(op) for op in program.opcodes], expected)
 
     def test_assemble(self):
         e = EBPF()
@@ -72,8 +51,8 @@ class Tests(TestCase):
         e.r5 = 7
         e.r6 = e.r3
         self.assertOpcodesEqual(e, [
-             Instruction(0xb7, 5, 0, 0, 7),
-             Instruction(0xbf, 6, 3, 0, 0),
+            "r5 = 7",
+            "r6 = r3",
         ])
 
     def test_word(self):
@@ -84,10 +63,10 @@ class Tests(TestCase):
         e.w2 += 3
         e.w5 += e.w6
         self.assertOpcodesEqual(e, [
-             Instruction(O.MOV+O.LONG, 3, 0, 0, 7),
-             Instruction(0xbc, 4, 1, 0, 0),
-             Instruction(opcode=4, dst=2, src=0, off=0, imm=3),
-             Instruction(opcode=0xc, dst=5, src=6, off=0, imm=0),
+            "r3 = 7",
+            "w4 = w1",
+            "w2 += 3",
+            "w5 += w6",
         ])
 
     def test_augassign(self):
@@ -117,28 +96,28 @@ class Tests(TestCase):
         e.sr4 >>= e.r7
 
         self.assertOpcodesEqual(e, [
-             Instruction(opcode=7, dst=5, src=0, off=0, imm=7),
-             Instruction(opcode=15, dst=3, src=6, off=0, imm=0),
-             Instruction(opcode=7, dst=4, src=0, off=0, imm=-3),
-             Instruction(opcode=0x1f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x27, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x2f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x37, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x3f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x47, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x4f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x57, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x5f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x67, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x6f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x77, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x7f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0x97, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0x9f, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0xa7, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0xaf, dst=4, src=7, off=0, imm=0),
-             Instruction(opcode=0xc7, dst=4, src=0, off=0, imm=3),
-             Instruction(opcode=0xcf, dst=4, src=7, off=0, imm=0),
+            "r5 += 7",
+            "r3 += r6",
+            "r4 += -3",
+            "r4 -= r7",
+            "r4 *= 3",
+            "r4 *= r7",
+            "r4 /= 3",
+            "r4 /= r7",
+            "r4 |= 3",
+            "r4 |= r7",
+            "r4 &= 3",
+            "r4 &= r7",
+            "r4 <<= 3",
+            "r4 <<= r7",
+            "r4 >>= 3",
+            "r4 >>= r7",
+            "r4 %= 3",
+            "r4 %= r7",
+            "r4 ^= 3",
+            "r4 ^= r7",
+            "r4 s>>= 3",
+            "r4 s>>= r7",
         ])
 
     def test_memory(self):
@@ -159,24 +138,24 @@ class Tests(TestCase):
         e.r5 = e.mb[e.r3] >> 2
         e.r5 = e.mB[e.r3] >> 2
         self.assertOpcodesEqual(e, [
-             Instruction(opcode=114, dst=5, src=0, off=0, imm=7),
-             Instruction(opcode=106, dst=3, src=0, off=2, imm=3),
-             Instruction(opcode=98, dst=8, src=0, off=7, imm=5),
-             Instruction(opcode=122, dst=3, src=0, off=-7, imm=2),
-             Instruction(opcode=115, dst=5, src=1, off=0, imm=0),
-             Instruction(opcode=107, dst=3, src=2, off=2, imm=0),
-             Instruction(opcode=99, dst=8, src=3, off=7, imm=0),
-             Instruction(opcode=123, dst=3, src=4, off=-7, imm=0),
-             Instruction(opcode=113, dst=2, src=5, off=0, imm=0),
-             Instruction(opcode=105, dst=3, src=3, off=2, imm=0),
-             Instruction(opcode=97, dst=4, src=8, off=7, imm=0),
-             Instruction(opcode=121, dst=5, src=3, off=-7, imm=0),
-             Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
-             Instruction(opcode=O.LSH+O.LONG, dst=5, src=0, off=0, imm=56),
-             Instruction(opcode=O.ARSH+O.LONG, dst=5, src=0, off=0, imm=56),
-             Instruction(opcode=O.LONG+O.ARSH, dst=5, src=0, off=0, imm=2),
-             Instruction(opcode=O.B+O.LD, dst=5, src=3, off=0, imm=0),
-             Instruction(opcode=O.LONG+O.RSH, dst=5, src=0, off=0, imm=2),
+            "*(u8 *)(r5 +0) = 7",
+            "*(u16 *)(r3 +2) = 3",
+            "*(u32 *)(r8 +7) = 5",
+            "*(u64 *)(r3 -7) = 2",
+            "*(u8 *)(r5 +0) = r1",
+            "*(u16 *)(r3 +2) = r2",
+            "*(u32 *)(r8 +7) = r3",
+            "*(u64 *)(r3 -7) = r4",
+            "r2 = *(u8 *)(r5 +0)",
+            "r3 = *(u16 *)(r3 +2)",
+            "r4 = *(u32 *)(r8 +7)",
+            "r5 = *(u64 *)(r3 -7)",
+            "r5 = *(u8 *)(r3 +0)",
+            "r5 <<= 56",
+            "r5 s>>= 56",
+            "r5 s>>= 2",
+            "r5 = *(u8 *)(r3 +0)",
+            "r5 >>= 2",
             ])
 
     def test_double_add(self):
@@ -188,24 +167,24 @@ class Tests(TestCase):
         e.mI[(e.r1 + 3) - 7] = 3
         e.mI[7 - (e.r1 + 3)] = 3
         e.mI[(e.r1 + 3) - e.r2] = 5
-        self.maxDiff = None
+
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.W+O.ST, dst=1, src=0, off=10, imm=3),
-            Instruction(opcode=O.W+O.ST, dst=1, src=0, off=10, imm=3),
-            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=O.W+O.ST, dst=0, src=0, off=0, imm=5),
-            Instruction(opcode=O.W+O.ST, dst=1, src=0, off=-4, imm=3),
-            Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=7),
-            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=3, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=3, src=0, off=0, imm=3),
-            Instruction(opcode=O.SUB+O.REG+O.LONG, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=O.W+O.ST, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.SUB+O.REG+O.LONG, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=O.W+O.ST, dst=0, src=0, off=0, imm=5),
+            "*(u32 *)(r1 +10) = 3",
+            "*(u32 *)(r1 +10) = 3",
+            "r0 = r1",
+            "r0 += 3",
+            "r0 += r2",
+            "*(u32 *)(r0 +0) = 5",
+            "*(u32 *)(r1 -4) = 3",
+            "r0 = 7",
+            "r3 = r1",
+            "r3 += 3",
+            "r0 -= r3",
+            "*(u32 *)(r0 +0) = 3",
+            "r0 = r1",
+            "r0 += 3",
+            "r0 -= r2",
+            "*(u32 *)(r0 +0) = 5",
         ])
 
     def test_fixed(self):
@@ -250,101 +229,101 @@ class Tests(TestCase):
 
 
         self.assertOpcodesEqual(e, [
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.ADD+O.LONG, dst=1, src=0, off=0, imm=3),
-           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=4, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=3, src=0, off=0, imm=100000),
-           Instruction(opcode=O.ADD+O.LONG, dst=3, src=0, off=0, imm=350000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.ADD+O.LONG, dst=5, src=0, off=0, imm=300000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.ADD+O.LONG, dst=1, src=3, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=4, src=5, off=0, imm=0),
-           Instruction(opcode=O.REG+O.ADD+O.LONG, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=200000),
-           Instruction(opcode=O.REG+O.SUB+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.DIV, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=340000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=7, src=4, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=7, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.SUB+O.LONG, dst=3, src=7, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.LONG+O.MOV, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MOD, dst=5, src=0, off=0, imm=400000),
-           Instruction(opcode=O.LONG+O.DIV, dst=5, src=0, off=0, imm=100000),
+            "r1 = r2",
+            "r1 += 3",
+            "r1 *= 100000",
+            "r3 = r4",
+            "r3 *= 100000",
+            "r3 += 350000",
+            "r5 = r6",
+            "r5 += 300000",
+            "r1 = r2",
+            "r1 *= 100000",
+            "r1 += r3",
+            "r1 /= 100000",
+            "r4 = r5",
+            "r4 += r6",
+            "r1 = 200000",
+            "r1 -= r2",
+            "r1 /= 100000",
+            "r3 = 340000",
+            "r7 = r4",
+            "r7 *= 100000",
+            "r3 -= r7",
+            "r3 /= 100000",
+            "r5 = r6",
+            "r5 %= 400000",
+            "r5 /= 100000",
 
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=3),
-           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=4, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=3, src=0, off=0, imm=350000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=5, src=0, off=0, imm=3),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.REG+O.LONG+O.MUL, dst=1, src=3, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.REG+O.MOV+O.LONG, dst=4, src=5, off=0, imm=0),
-           Instruction(opcode=O.REG+O.LONG+O.MUL, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=4, src=0, off=0, imm=100000),
+            "r1 = r2",
+            "r1 *= 3",
+            "r1 *= 100000",
+            "r3 = r4",
+            "r3 *= 350000",
+            "r5 = r6",
+            "r5 *= 3",
+            "r1 = r2",
+            "r1 *= r3",
+            "r1 /= 100000",
+            "r4 = r5",
+            "r4 *= r6",
+            "r4 /= 100000",
 
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=3),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=3, src=4, off=0, imm=0),
-           HugeInstruction(opcode=O.DW, dst=7, src=0, off=0, imm=10000000000),
-           Instruction(opcode=O.MUL+O.REG+O.LONG, dst=3, src=7, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=350000),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=5, src=0, off=0, imm=3),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
-           HugeInstruction(opcode=O.DW, dst=7, src=0, off=0, imm=10000000000),
-           Instruction(opcode=O.REG+O.LONG+O.MUL, dst=1, src=7, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=4, src=5, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=4, src=0, off=0, imm=100000),
-           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=4, src=6, off=0, imm=0),
+            "r1 = r2",
+            "r1 *= 100000",
+            "r1 /= 3",
+            "r3 = r4",
+            "r7 = 0x2540be400",
+            "r3 *= r7",
+            "r3 /= 350000",
+            "r5 = r6",
+            "r5 /= 3",
+            "r1 = r2",
+            "r7 = 0x2540be400",
+            "r1 *= r7",
+            "r1 /= r3",
+            "r1 /= 100000",
+            "r4 = r5",
+            "r4 *= 100000",
+            "r4 /= r6",
 
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=1, src=0, off=0, imm=3),
-           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=3, src=4, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=3, src=0, off=0, imm=100000),
-           Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=350000),
-           Instruction(opcode=O.MUL+O.LONG, dst=3, src=0, off=0, imm=100000),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG, dst=5, src=0, off=0, imm=300000),
-           Instruction(opcode=O.MUL+O.LONG, dst=5, src=0, off=0, imm=100000),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=1, src=3, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.REG+O.MOV, dst=4, src=5, off=0, imm=0),
-           Instruction(opcode=O.DIV+O.LONG+O.REG, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=4, src=0, off=0, imm=100000),
+            "r1 = r2",
+            "r1 /= 3",
+            "r1 *= 100000",
+            "r3 = r4",
+            "r3 *= 100000",
+            "r3 /= 350000",
+            "r3 *= 100000",
+            "r5 = r6",
+            "r5 /= 300000",
+            "r5 *= 100000",
+            "r1 = r2",
+            "r1 *= 100000",
+            "r1 /= r3",
+            "r4 = r5",
+            "r4 /= r6",
+            "r4 *= 100000",
 
-           Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=300000),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MOV, dst=3, src=0, off=0, imm=350000),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=3, src=4, off=0, imm=0),
-           HugeInstruction(opcode=O.DW, dst=5, src=0, off=0, imm=30000000000),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
-           HugeInstruction(opcode=O.DW, dst=4, src=0, off=0, imm=45000000000),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MOV, dst=1, src=0, off=0, imm=3),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=1, src=2, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=1, src=0, off=0, imm=100000),
-           Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=3),
-           Instruction(opcode=O.REG+O.LONG+O.DIV, dst=3, src=4, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=3, src=0, off=0, imm=100000),
-           Instruction(opcode=O.LONG+O.MOV, dst=5, src=0, off=0, imm=300000),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=5, src=6, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=5, src=0, off=0, imm=100000),
-           Instruction(opcode=O.LONG+O.MOV, dst=4, src=0, off=0, imm=450000),
-           Instruction(opcode=O.DIV+O.REG+O.LONG, dst=4, src=6, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MUL, dst=4, src=0, off=0, imm=100000),
+            "r1 = 300000",
+            "r1 /= r2",
+            "r3 = 350000",
+            "r3 /= r4",
+            "r5 = 0x6fc23ac00",
+            "r5 /= r6",
+            "r4 = 0xa7a358200",
+            "r4 /= r6",
+            "r1 = 3",
+            "r1 /= r2",
+            "r1 *= 100000",
+            "r3 = 3",
+            "r3 /= r4",
+            "r3 *= 100000",
+            "r5 = 300000",
+            "r5 /= r6",
+            "r5 *= 100000",
+            "r4 = 450000",
+            "r4 /= r6",
+            "r4 *= 100000",
         ])
 
     def test_local(self):
@@ -363,15 +342,15 @@ class Tests(TestCase):
         e.b = e.x1
 
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.B+O.ST, dst=10, src=0, off=-1, imm=5),
-            Instruction(opcode=O.W+O.LD, dst=0, src=10, off=-8, imm=0),
-            Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
-            Instruction(opcode=O.DW+O.STX, dst=10, src=1, off=-16, imm=0),
-            Instruction(opcode=O.DW+O.ST, dst=10, src=0, off=-24, imm=700000),
-            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=O.DIV, dst=0, src=0, off=0, imm=100000),
-            Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
+            "*(u8 *)(r10 -1) = 5",
+            "r0 = *(u32 *)(r10 -8)",
+            "w0 s>>= 3",
+            "*(u16 *)(r10 -4) = r0",
+            "*(u64 *)(r10 -16) = r1",
+            "*(u64 *)(r10 -24) = 700000",
+            "r0 = r1",
+            "w0 /= 100000",
+            "*(u16 *)(r10 -4) = r0",
         ])
 
     def test_short_comparison(self):
@@ -388,15 +367,15 @@ class Tests(TestCase):
             pass
 
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.JSGE+O.SHORT, dst=3, src=0, off=0, imm=100),
+            "if w3 s>= 0x64 goto pc+0",
 
-            Instruction(opcode=O.LONG+O.LSH, dst=3, src=0, off=0, imm=32),
-            Instruction(opcode=O.LONG+O.ARSH, dst=3, src=0, off=0, imm=32),
-            Instruction(opcode=O.JSLE+O.REG, dst=3, src=4, off=0, imm=0),
+            "r3 <<= 32",
+            "r3 s>>= 32",
+            "if r3 s<= r4 goto pc+0",
 
-            Instruction(opcode=O.JNE+O.REG, dst=3, src=4, off=0, imm=0),
+            "if r3 != r4 goto pc+0",
 
-            Instruction(opcode=O.SHORT+O.JSLE, dst=3, src=0, off=0, imm=100),
+            "if w3 s<= 0x64 goto pc+0",
             ])
 
     def test_local_bits(self):
@@ -420,41 +399,41 @@ class Tests(TestCase):
         e.a = e.b
 
         self.assertOpcodesEqual(e, [
-           Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=32),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
-            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.AND+O.LONG, dst=0, src=0, off=0, imm=32),
-            Instruction(opcode=O.RSH+O.LONG, dst=0, src=0, off=0, imm=5),
-            Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=120),
-            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-2, imm=0),
-            Instruction(opcode=O.AND, dst=2, src=0, off=0, imm=-121),
-            Instruction(opcode=O.REG+O.OR, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-2, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.JSET, dst=0, src=0, off=4, imm=32),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-2, imm=0),
-            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-121),
-            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=24),
-            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-2, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-2, imm=0),
-            Instruction(opcode=O.JSET, dst=0, src=0, off=1, imm=120),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=3, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
-            Instruction(opcode=O.STX+O.B, dst=10, src=0, off=-1, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-2, imm=0),
-            Instruction(opcode=O.JSET, dst=2, src=0, off=3, imm=120),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.AND, dst=0, src=0, off=0, imm=-33),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.OR, dst=0, src=0, off=0, imm=32),
-            Instruction(opcode=O.B+O.STX, dst=10, src=0, off=-1, imm=0),
+            "r0 = *(u8 *)(r10 -1)",
+            "if r0 & 0x20 goto pc+1",
+            "goto pc+3",
+            "r0 = *(u8 *)(r10 -1)",
+            "w0 |= 32",
+            "*(u8 *)(r10 -1) = r0",
+            "r0 = *(u8 *)(r10 -1)",
+            "r0 &= 32",
+            "r0 >>= 5",
+            "w0 <<= 3",
+            "w0 &= 120",
+            "r2 = *(u8 *)(r10 -2)",
+            "w2 &= -121",
+            "w0 |= w2",
+            "*(u8 *)(r10 -2) = r0",
+            "r0 = *(u8 *)(r10 -1)",
+            "if r0 & 0x20 goto pc+4",
+            "r0 = *(u8 *)(r10 -2)",
+            "w0 &= -121",
+            "w0 |= 24",
+            "*(u8 *)(r10 -2) = r0",
+            "r0 = *(u8 *)(r10 -2)",
+            "if r0 & 0x78 goto pc+1",
+            "goto pc+3",
+            "r0 = *(u8 *)(r10 -1)",
+            "w0 &= -33",
+            "*(u8 *)(r10 -1) = r0",
+            "r2 = *(u8 *)(r10 -2)",
+            "if r2 & 0x78 goto pc+3",
+            "r0 = *(u8 *)(r10 -1)",
+            "w0 &= -33",
+            "goto pc+2",
+            "r0 = *(u8 *)(r10 -1)",
+            "w0 |= 32",
+            "*(u8 *)(r10 -1) = r0",
         ])
 
     def test_bits_and_or(self):
@@ -468,14 +447,14 @@ class Tests(TestCase):
                 e.stmp = 0
 
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-1, imm=0),
-            Instruction(opcode=O.JSET, dst=2, src=0, off=1, imm=32),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.JSGT, dst=0, src=0, off=3, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=2, src=10, off=-1, imm=0),
-            Instruction(opcode=O.JSET, dst=2, src=0, off=2, imm=32),
-            Instruction(opcode=O.JSGE, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=0),
+            "r2 = *(u8 *)(r10 -1)",
+            "if r2 & 0x20 goto pc+1",
+            "goto pc+1",
+            "if r0 s> 0x0 goto pc+3",
+            "r2 = *(u8 *)(r10 -1)",
+            "if r2 & 0x20 goto pc+2",
+            "if r0 s>= 0x0 goto pc+1",
+            "r0 = 0",
             ])
 
     def test_local_subprog(self):
@@ -496,10 +475,10 @@ class Tests(TestCase):
         e.r3 = s1.b
         s2.b = 7
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-4, imm=5),
-            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=3),
-            Instruction(opcode=O.W+O.LD, dst=3, src=10, off=-12, imm=0),
-            Instruction(opcode=O.W+O.ST, dst=10, src=0, off=-12, imm=7),
+            "*(u32 *)(r10 -4) = 5",
+            "*(u32 *)(r10 -12) = 3",
+            "r3 = *(u32 *)(r10 -12)",
+            "*(u32 *)(r10 -12) = 7",
         ])
 
     def test_sign_extend(self):
@@ -514,18 +493,18 @@ class Tests(TestCase):
         e.d = e.b + e.c
 
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.LD+O.B, dst=0, src=10, off=-1, imm=0),
-            Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=24),
-            Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=24),
-            Instruction(opcode=O.W+O.LD, dst=2, src=10, off=-8, imm=0),
-            Instruction(opcode=O.REG+O.ADD, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=O.REG+O.STX, dst=10, src=0, off=-4, imm=0),
-            Instruction(opcode=O.REG+O.LD, dst=0, src=10, off=-4, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=2, src=10, off=-8, imm=0),
-            Instruction(opcode=O.LSH+O.LONG, dst=2, src=0, off=0, imm=32),
-            Instruction(opcode=O.ARSH+O.LONG, dst=2, src=0, off=0, imm=32),
-            Instruction(opcode=O.REG+O.ADD+O.LONG, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=O.STX+O.DW, dst=10, src=0, off=-16, imm=0),
+            "r0 = *(u8 *)(r10 -1)",
+            "w0 <<= 24",
+            "w0 s>>= 24",
+            "r2 = *(u32 *)(r10 -8)",
+            "w0 += w2",
+            "*(u16 *)(r10 -4) = r0",
+            "r0 = *(u16 *)(r10 -4)",
+            "r2 = *(u32 *)(r10 -8)",
+            "r2 <<= 32",
+            "r2 s>>= 32",
+            "r0 += r2",
+            "*(u64 *)(r10 -16) = r0",
         ])
 
     def test_lock_add(self):
@@ -550,27 +529,27 @@ class Tests(TestCase):
         e.d += e.r1
 
         self.assertOpcodesEqual(e, [
-           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
-           Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0),
-           Instruction(opcode=O.XADD+O.W, dst=1, src=1, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=-3),
-           Instruction(opcode=O.XADD+O.W, dst=10, src=0, off=-4, imm=0),
-           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
-           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-16, imm=0),
-           Instruction(opcode=O.XADD+O.DW, dst=1, src=1, off=0, imm=0),
-           Instruction(opcode=O.LD+O.REG, dst=0, src=10, off=-18, imm=0),
-           Instruction(opcode=O.LSH, dst=0, src=0, off=0, imm=16),
-           Instruction(opcode=O.ARSH, dst=0, src=0, off=0, imm=16),
-           Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=3),
-           Instruction(opcode=O.STX+O.REG, dst=10, src=0, off=-18, imm=0),
-           Instruction(opcode=O.B+O.LD, dst=0, src=1, off=0, imm=0),
-           Instruction(opcode=O.ADD+O.REG, dst=0, src=1, off=0, imm=0),
-           Instruction(opcode=O.STX+O.B, dst=1, src=0, off=0, imm=0),
-           Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=-500000),
-           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
-           Instruction(opcode=O.REG+O.LONG+O.MOV, dst=0, src=1, off=0, imm=0),
-           Instruction(opcode=O.MUL+O.LONG, dst=0, src=0, off=0, imm=100000),
-           Instruction(opcode=O.XADD+O.DW, dst=10, src=0, off=-32, imm=0),
+            "r0 = 3",
+            "lock *(u32 *)(r10 -4) += r0",
+            "lock *(u32 *)(r1 +0) += r1",
+            "r0 = -3",
+            "lock *(u32 *)(r10 -4) += r0",
+            "r0 = 3",
+            "lock *(u64 *)(r10 -16) += r0",
+            "lock *(u64 *)(r1 +0) += r1",
+            "r0 = *(u16 *)(r10 -18)",
+            "w0 <<= 16",
+            "w0 s>>= 16",
+            "w0 += 3",
+            "*(u16 *)(r10 -18) = r0",
+            "r0 = *(u8 *)(r1 +0)",
+            "w0 += w1",
+            "*(u8 *)(r1 +0) = r0",
+            "r0 = -500000",
+            "lock *(u64 *)(r10 -32) += r0",
+            "r0 = r1",
+            "r0 *= 100000",
+            "lock *(u64 *)(r10 -32) += r0",
         ])
 
     def test_array(self):
@@ -583,18 +562,17 @@ class Tests(TestCase):
         e.ar[e.r1] = 7
         e.r2 = e.ar[e.r1]
 
-        self.maxDiff = None
-        self.assertEqual(e.opcodes, [
-            Instruction(opcode=O.ST+O.B, dst=10, src=0, off=-4, imm=3),
-            Instruction(opcode=O.LD+O.B, dst=1, src=10, off=-2, imm=0),
-            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=10, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.ADD, dst=0, src=0, off=0, imm=-5),
-            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=O.ST+O.B, dst=0, src=0, off=0, imm=7),
-            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=2, src=10, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=-5),
-            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=2, src=1, off=0, imm=0),
-            Instruction(opcode=O.LD+O.B, dst=2, src=2, off=0, imm=0),
+        self.assertOpcodesEqual(e, [
+            "*(u8 *)(r10 -4) = 3",
+            "r1 = *(u8 *)(r10 -2)",
+            "r0 = r10",
+            "r0 += -5",
+            "r0 += r1",
+            "*(u8 *)(r0 +0) = 7",
+            "r2 = r10",
+            "r2 += -5",
+            "r2 += r1",
+            "r2 = *(u8 *)(r2 +0)",
         ])
 
     def test_jump(self):
@@ -654,36 +632,36 @@ class Tests(TestCase):
         t1.target()
         t2.target()
         self.assertOpcodesEqual(e, [
-             Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
-             Instruction(opcode=0x25, dst=5, src=0, off=4, imm=3),
-             Instruction(opcode=0x2d, dst=1, src=2, off=3, imm=0),
-             Instruction(opcode=0x35, dst=7, src=0, off=2, imm=2),
-             Instruction(opcode=0x3d, dst=4, src=3, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
-             Instruction(opcode=0xa5, dst=5, src=0, off=4, imm=3),
-             Instruction(opcode=0xad, dst=1, src=2, off=3, imm=0),
-             Instruction(opcode=0xb5, dst=7, src=0, off=2, imm=2),
-             Instruction(opcode=0xbd, dst=4, src=3, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
-             Instruction(opcode=0x65, dst=5, src=0, off=4, imm=3),
-             Instruction(opcode=0x6d, dst=1, src=2, off=3, imm=0),
-             Instruction(opcode=0x75, dst=7, src=0, off=2, imm=2),
-             Instruction(opcode=0x7d, dst=4, src=3, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
-             Instruction(opcode=0xc5, dst=5, src=0, off=4, imm=3),
-             Instruction(opcode=0xcd, dst=1, src=2, off=3, imm=0),
-             Instruction(opcode=0xd5, dst=7, src=0, off=2, imm=2),
-             Instruction(opcode=0xdd, dst=4, src=3, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
-             Instruction(opcode=0x15, dst=5, src=0, off=4, imm=3),
-             Instruction(opcode=0x1d, dst=1, src=2, off=3, imm=0),
-             Instruction(opcode=0x55, dst=7, src=0, off=2, imm=2),
-             Instruction(opcode=0x5d, dst=4, src=3, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
-             Instruction(opcode=0x45, dst=5, src=0, off=2, imm=3),
-             Instruction(opcode=0x4d, dst=1, src=2, off=1, imm=0),
-             Instruction(opcode=0xb7, dst=0, src=0, off=0, imm=1),
+            "goto pc+1",
+            "r0 = 1",
+            "if r5 > 0x3 goto pc+4",
+            "if r1 > r2 goto pc+3",
+            "if r7 >= 0x2 goto pc+2",
+            "if r4 >= r3 goto pc+1",
+            "r0 = 1",
+            "if r5 < 0x3 goto pc+4",
+            "if r1 < r2 goto pc+3",
+            "if r7 <= 0x2 goto pc+2",
+            "if r4 <= r3 goto pc+1",
+            "r0 = 1",
+            "if r5 s> 0x3 goto pc+4",
+            "if r1 s> r2 goto pc+3",
+            "if r7 s>= 0x2 goto pc+2",
+            "if r4 s>= r3 goto pc+1",
+            "r0 = 1",
+            "if r5 s< 0x3 goto pc+4",
+            "if r1 s< r2 goto pc+3",
+            "if r7 s<= 0x2 goto pc+2",
+            "if r4 s<= r3 goto pc+1",
+            "r0 = 1",
+            "if r5 == 0x3 goto pc+4",
+            "if r1 == r2 goto pc+3",
+            "if r7 != 0x2 goto pc+2",
+            "if r4 != r3 goto pc+1",
+            "r0 = 1",
+            "if r5 & 0x3 goto pc+2",
+            "if r1 & r2 goto pc+1",
+            "r0 = 1",
         ])
 
     def test_with(self):
@@ -708,22 +686,22 @@ class Tests(TestCase):
         with e.x4 > e.x2:
             pass
         self.assertOpcodesEqual(e, [
-             Instruction(opcode=0xb5, dst=2, src=0, off=2, imm=3),
-             Instruction(opcode=0xb7, dst=2, src=0, off=0, imm=5),
-             Instruction(opcode=0x5, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=6, src=0, off=0, imm=7),
-             Instruction(opcode=O.JEQ, dst=2, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=2),
-             Instruction(opcode=O.JLE, dst=4, src=0, off=2, imm=3),
-             Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=7),
-             Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-             Instruction(opcode=O.MOV+O.LONG, dst=7, src=0, off=0, imm=8),
-             Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=300000),
-             Instruction(opcode=O.JSGE, dst=4, src=0, off=0, imm=300000),
-             Instruction(opcode=O.REG+O.MOV+O.LONG, dst=9, src=4, off=0, imm=0),
-             Instruction(opcode=O.MUL+O.LONG, dst=9, src=0, off=0, imm=100000),
-             Instruction(opcode=O.JLE, dst=9, src=0, off=0, imm=350000),
-             Instruction(opcode=O.REG+O.JSLE, dst=4, src=2, off=0, imm=0),
+            "if r2 <= 0x3 goto pc+2",
+            "r2 = 5",
+            "goto pc+1",
+            "r6 = 7",
+            "if r2 == 0x0 goto pc+1",
+            "r3 = 2",
+            "if r4 <= 0x3 goto pc+2",
+            "r5 = 7",
+            "goto pc+1",
+            "r7 = 8",
+            "if r4 s<= 0x493e0 goto pc+0",
+            "if r4 s>= 0x493e0 goto pc+0",
+            "r9 = r4",
+            "r9 *= 100000",
+            "if r9 <= 0x55730 goto pc+0",
+            "if r4 s<= r2 goto pc+0",
         ])
 
     def test_with_inversion(self):
@@ -736,14 +714,14 @@ class Tests(TestCase):
         with Else:
             e.r0 = 3
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=69, dst=1, src=0, off=1, imm=1),
-            Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=69, dst=1, src=0, off=2, imm=7),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=5, dst=0, src=0, off=2, imm=0),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=183, dst=1, src=0, off=0, imm=4),
+            "if r1 & 0x1 goto pc+1",
+            "goto pc+1",
+            "r0 = 2",
+            "if r1 & 0x7 goto pc+2",
+            "r0 = 3",
+            "goto pc+2",
+            "r0 = 2",
+            "r1 = 4",
         ])
 
     def test_with_and(self):
@@ -756,14 +734,14 @@ class Tests(TestCase):
         with Else:
             e.r3 = 7
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.JLE, dst=2, src=0, off=2, imm=3),
-            Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
-            Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
-            Instruction(opcode=O.JLE, dst=2, src=0, off=3, imm=2),
-            Instruction(opcode=O.JGE, dst=1, src=0, off=2, imm=2),
-            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=5),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
+            "if r2 <= 0x3 goto pc+2",
+            "if r3 <= 0x2 goto pc+1",
+            "r1 = 5",
+            "if r2 <= 0x2 goto pc+3",
+            "if r1 >= 0x2 goto pc+2",
+            "r2 = 5",
+            "goto pc+1",
+            "r3 = 7",
         ])
 
     def test_with_or(self):
@@ -778,16 +756,16 @@ class Tests(TestCase):
             e.r3 = 7
             e.r4 = 3
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=3),
-            Instruction(opcode=O.JLE, dst=3, src=0, off=1, imm=2),
-            Instruction(opcode=O.MOV+O.LONG, dst=1, src=0, off=0, imm=5),
-            Instruction(opcode=O.JGT, dst=2, src=0, off=1, imm=2),
-            Instruction(opcode=O.JLE, dst=1, src=0, off=3, imm=2),
-            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=5),
-            Instruction(opcode=O.MOV+O.LONG, dst=5, src=0, off=0, imm=4),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=2, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=3),
+            "if r2 > 0x3 goto pc+1",
+            "if r3 <= 0x2 goto pc+1",
+            "r1 = 5",
+            "if r2 > 0x2 goto pc+1",
+            "if r1 <= 0x2 goto pc+3",
+            "r2 = 5",
+            "r5 = 4",
+            "goto pc+2",
+            "r3 = 7",
+            "r4 = 3",
         ])
 
     def test_comp_binary(self):
@@ -803,16 +781,16 @@ class Tests(TestCase):
         tgt.target()
 
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=181, dst=0, src=0, off=2, imm=3),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=5),
-            Instruction(opcode=5, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=7),
-            Instruction(opcode=191, dst=4, src=2, off=0, imm=0),
-            Instruction(opcode=15, dst=4, src=5, off=0, imm=0),
-            Instruction(opcode=173, dst=0, src=4, off=1, imm=0),
-            Instruction(opcode=183, dst=0, src=0, off=0, imm=8),
+            "r0 = r1",
+            "r0 += r3",
+            "if r0 <= 0x3 goto pc+2",
+            "r0 = 5",
+            "goto pc+1",
+            "r0 = 7",
+            "r4 = r2",
+            "r4 += r5",
+            "if r0 < r4 goto pc+1",
+            "r0 = 8",
         ])
 
     def test_huge(self):
@@ -824,13 +802,13 @@ class Tests(TestCase):
         e.r3 = 0x90000000
 
         self.assertOpcodesEqual(e, [
-            HugeInstruction(opcode=O.DW, dst=3, src=0, off=0, imm=78187493520),
-            HugeInstruction(opcode=O.DW, dst=4, src=1, off=0, imm=7),
-            Instruction(opcode=O.JNE, dst=3, src=0, off=4, imm=0),
-            Instruction(opcode=O.REG+O.LONG+O.MOV, dst=3, src=4, off=0, imm=0),
-            HugeInstruction(opcode=O.DW, dst=0, src=0, off=0, imm=78187493520),
-            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=3, src=0, off=0, imm=0),
-            HugeInstruction(opcode=O.DW, dst=3, src=0, off=0, imm=2415919104),
+            "r3 = 0x1234567890",
+            "r4 = FD#7",
+            "if r3 != 0x0 goto pc+4",
+            "r3 = r4",
+            "r0 = 0x1234567890",
+            "r3 += r0",
+            "r3 = 0x90000000",
         ])
 
     def test_simple_binary(self):
@@ -846,29 +824,29 @@ class Tests(TestCase):
         e.w0 = e.w1 + e.w2
         e.r0 = e.r1 & e.r2  # attention, special case
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=47, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=7, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=199, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=207, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=188, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=12, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=95, dst=0, src=2, off=0, imm=0),
+            "r0 = r1",
+            "r0 *= r2",
+            "r0 += r3",
+            "r0 = r1",
+            "r0 *= r2",
+            "r0 += 3",
+            "r0 = r1",
+            "r0 *= 2",
+            "r0 += 3",
+            "r0 = r1",
+            "r0 *= 2",
+            "r0 += 3",
+            "r0 = r1",
+            "r0 *= 2",
+            "r0 += 3",
+            "r0 = r1",
+            "r0 s>>= 2",
+            "r0 = r1",
+            "r0 s>>= r2",
+            "w0 = w1",
+            "w0 += w2",
+            "r0 = r1",
+            "r0 &= r2",
         ])
 
     def test_mixed_binary(self):
@@ -878,12 +856,12 @@ class Tests(TestCase):
         e.r1 = e.w2 + e.w3
         e.w1 = e.w2 + e.w3
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=1, src=2, off=0, imm=0),
-            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.REG, dst=1, src=2, off=0, imm=0),
-            Instruction(opcode=O.REG+O.ADD, dst=1, src=3, off=0, imm=0),
+            "r1 = r2",
+            "w1 += w3",
+            "w1 = w2",
+            "r1 += r3",
+            "w1 = w2",
+            "w1 += w3",
         ])
 
     def test_mixed_compare(self):
@@ -894,10 +872,10 @@ class Tests(TestCase):
         with (e.r1 + e.sr2) > 3:
             pass
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.JSLE+O.REG, dst=1, src=2, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
-            Instruction(opcode=O.JSLE, dst=4, src=0, off=0, imm=3),
+            "if r1 s<= r2 goto pc+0",
+            "r4 = r1",
+            "r4 += r2",
+            "if r4 s<= 0x3 goto pc+0",
         ])
 
 
@@ -910,20 +888,20 @@ class Tests(TestCase):
         e.r3 = 7 >> e.r2
         e.r3 = -7 >> e.r2
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.REG+O.LONG+O.MOV, dst=4, src=2, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=4, src=0, off=0, imm=2),
-            Instruction(opcode=O.REG+O.LONG+O.DIV, dst=3, src=4, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.LSH+O.REG+O.LONG, dst=3, src=2, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=4, src=2, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=4, src=0, off=0, imm=3),
-            Instruction(opcode=O.REG+O.MOD+O.LONG, dst=3, src=4, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=7),
-            Instruction(opcode=O.REG+O.RSH+O.LONG, dst=3, src=2, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=-7),
-            Instruction(opcode=O.REG+O.LONG+O.ARSH, dst=3, src=2, off=0, imm=0)
+            "r3 = 7",
+            "r4 = r2",
+            "r4 += 2",
+            "r3 /= r4",
+            "r3 = 7",
+            "r3 <<= r2",
+            "r3 = 7",
+            "r4 = r2",
+            "r4 += 3",
+            "r3 %= r4",
+            "r3 = 7",
+            "r3 >>= r2",
+            "r3 = -7",
+            "r3 s>>= r2",
             ])
 
     def test_negation(self):
@@ -931,9 +909,9 @@ class Tests(TestCase):
         e.r7 = -e.r1
         e.r7 = -e.r7
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
-            Instruction(opcode=O.NEG+O.LONG, dst=7, src=0, off=0, imm=0),
+            "r7 = r1",
+            "r7 = -r7",
+            "r7 = -r7",
         ])
 
     def test_absolute(self):
@@ -942,18 +920,18 @@ class Tests(TestCase):
         with abs(e.r7) > 3:
             e.x3 = abs(e.x1)
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=7, src=1, off=0, imm=0),
-            Instruction(opcode=O.JSGE, dst=7, src=0, off=1, imm=0),
-            Instruction(opcode=O.LONG+O.NEG, dst=7, src=0, off=0, imm=0),
+            "r7 = r1",
+            "if r7 s>= 0x0 goto pc+1",
+            "r7 = -r7",
 
-            Instruction(opcode=O.LONG+O.REG+O.MOV, dst=0, src=7, off=0, imm=0),
-            Instruction(opcode=O.JSGE, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.LONG+O.NEG, dst=0, src=0, off=0, imm=0),
-            Instruction(opcode=O.JLE, dst=0, src=0, off=3, imm=3),
+            "r0 = r7",
+            "if r0 s>= 0x0 goto pc+1",
+            "r0 = -r0",
+            "if r0 <= 0x3 goto pc+3",
 
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=1, off=0, imm=0),
-            Instruction(opcode=O.JSGE, dst=3, src=0, off=1, imm=0),
-            Instruction(opcode=O.NEG+O.LONG, dst=3, src=0, off=0, imm=0),
+            "r3 = r1",
+            "if r3 s>= 0x0 goto pc+1",
+            "r3 = -r3",
         ])
 
     def test_jump_data(self):
@@ -996,8 +974,8 @@ class Tests(TestCase):
         e.r8 = 23
         e.call(FuncId.ktime_get_ns)
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=183, dst=8, src=0, off=0, imm=23),
-            Instruction(opcode=133, dst=0, src=0, off=0, imm=5),
+            "r8 = 23",
+            "call #5",
         ])
         e.r7 = e.r0
         e.r5 = e.r8
@@ -1016,37 +994,37 @@ class Tests(TestCase):
         e.r5 = (e.r1 * e.r3) + e.mI[e.r10 + e.r0]
         e.r5 = e.r3 + e.r5
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=191, dst=3, src=1, off=0, imm=0),
-            Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
-            Instruction(opcode=39, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=31, dst=3, src=0, off=0, imm=0),
-            Instruction(opcode=191, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=O.MUL, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=107, dst=10, src=0, off=-10, imm=0),
-            Instruction(opcode=191, dst=0, src=10, off=0, imm=0),
-            Instruction(opcode=15, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=191, dst=2, src=3, off=0, imm=0),
-            Instruction(opcode=O.MUL, dst=2, src=0, off=0, imm=2),
-            Instruction(opcode=107, dst=0, src=2, off=0, imm=0),
+            "r3 = r1",
+            "r0 = r10",
+            "r0 *= 2",
+            "r3 -= r0",
+            "r0 = r3",
+            "w0 *= 2",
+            "*(u16 *)(r10 -10) = r0",
+            "r0 = r10",
+            "r0 += r3",
+            "r2 = r3",
+            "w2 *= 2",
+            "*(u16 *)(r0 +0) = r2",
 
-            Instruction(opcode=191, dst=5, src=10, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.REG+O.LONG, dst=5, src=3, off=0, imm=0),
-            Instruction(opcode=105, dst=5, src=5, off=0, imm=0),
+            "r5 = r10",
+            "r5 += r3",
+            "r5 = *(u16 *)(r5 +0)",
 
-            Instruction(opcode=191, dst=0, src=1, off=0, imm=0),
-            Instruction(opcode=47, dst=0, src=3, off=0, imm=0),
-            Instruction(opcode=191, dst=2, src=10, off=0, imm=0),
-            Instruction(opcode=47, dst=2, src=5, off=0, imm=0),
-            Instruction(opcode=31, dst=0, src=2, off=0, imm=0),
-            Instruction(opcode=191, dst=5, src=1, off=0, imm=0),
-            Instruction(opcode=47, dst=5, src=3, off=0, imm=0),
-            Instruction(opcode=191, dst=2, src=10, off=0, imm=0),
-            Instruction(opcode=15, dst=2, src=0, off=0, imm=0),
-            Instruction(opcode=97, dst=2, src=2, off=0, imm=0),
-            Instruction(opcode=15, dst=5, src=2, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.MOV+O.REG, dst=2, src=3, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.ADD+O.REG, dst=2, src=5, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.MOV+O.REG, dst=5, src=2, off=0, imm=0)
+            "r0 = r1",
+            "r0 *= r3",
+            "r2 = r10",
+            "r2 *= r5",
+            "r0 -= r2",
+            "r5 = r1",
+            "r5 *= r3",
+            "r2 = r10",
+            "r2 += r0",
+            "r2 = *(u32 *)(r2 +0)",
+            "r5 += r2",
+            "r2 = r3",
+            "r2 += r5",
+            "r5 = r2",
             ])
         with self.assertRaises(AssembleError):
             e.r8 = e.r2
@@ -1067,18 +1045,18 @@ class Tests(TestCase):
             e.r3 = e.xtmp
             e.xtmp = e.r3 * 3.5
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.MOV+O.LONG, dst=0, src=0, off=0, imm=7),
-            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=3),
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=3, src=2, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=4, src=0, off=0, imm=5),
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=7, src=4, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=2),
-            Instruction(opcode=O.MOV+O.LONG+O.REG, dst=3, src=2, off=0, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=2, src=0, off=0, imm=300000),
-            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=3, src=2, off=0, imm=0),
-            Instruction(opcode=O.DIV+O.LONG, dst=3, src=0, off=0, imm=100000),
-            Instruction(opcode=O.MOV+O.REG+O.LONG, dst=2, src=3, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.MUL, dst=2, src=0, off=0, imm=350000),
+            "r0 = 7",
+            "r2 = 3",
+            "r3 = r2",
+            "r4 = 5",
+            "r7 = r4",
+            "r2 = 2",
+            "r3 = r2",
+            "r2 = 300000",
+            "r3 = r2",
+            "r3 /= 100000",
+            "r2 = r3",
+            "r2 *= 350000",
             ])
 
     def test_ktime(self):
@@ -1086,13 +1064,13 @@ class Tests(TestCase):
         e.r0 = 3
         e.r3 = ktime(e)
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=6, src=0, off=0, imm=0),
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=7, src=1, off=0, imm=0),
-            Instruction(opcode=O.CALL, dst=0, src=0, off=0, imm=5),
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=3, src=0, off=0, imm=0),
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=0, src=6, off=0, imm=0),
-            Instruction(opcode=O.REG+O.MOV+O.LONG, dst=1, src=7, off=0, imm=0)
+            "r0 = 3",
+            "r6 = r0",
+            "r7 = r1",
+            "call #5",
+            "r3 = r0",
+            "r0 = r6",
+            "r1 = r7",
             ])
 
     def test_xdp(self):
@@ -1102,14 +1080,14 @@ class Tests(TestCase):
         with p.Else:
             e.r3 = 77
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.LD+O.W, dst=9, src=1, off=0, imm=0),
-            Instruction(opcode=O.LD+O.W, dst=0, src=1, off=4, imm=0),
-            Instruction(opcode=O.LD+O.W, dst=2, src=1, off=0, imm=0),
-            Instruction(opcode=O.ADD+O.LONG, dst=2, src=0, off=0, imm=100),
-            Instruction(opcode=O.REG+O.JLE, dst=0, src=2, off=2, imm=0),
-            Instruction(opcode=O.REG+O.LD, dst=3, src=9, off=22, imm=0),
-            Instruction(opcode=O.JMP, dst=0, src=0, off=1, imm=0),
-            Instruction(opcode=O.MOV+O.LONG, dst=3, src=0, off=0, imm=77),
+            "r9 = *(u32 *)(r1 +0)",
+            "r0 = *(u32 *)(r1 +4)",
+            "r2 = *(u32 *)(r1 +0)",
+            "r2 += 100",
+            "if r0 <= r2 goto pc+2",
+            "r3 = *(u16 *)(r9 +22)",
+            "goto pc+1",
+            "r3 = 77",
         ])
 
     def test_endian(self):
@@ -1133,31 +1111,31 @@ class Tests(TestCase):
 
         e = P(license="GPL")
         self.assertOpcodesEqual(e, [
-            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
-            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=19, imm=0),
-            Instruction(opcode=O.ST+O.REG, dst=9, src=0, off=20, imm=3),
-            Instruction(opcode=O.W+O.ST, dst=9, src=0, off=28, imm=83886080),
-            HugeInstruction(opcode=O.DW, dst=0, src=0, off=0, imm=504403158265495552),
-            Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
-            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
-            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
-            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=3),
-            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
-            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=20, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=0, src=9, off=28, imm=0),
-            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=32),
-            Instruction(opcode=O.ADD, dst=0, src=0, off=0, imm=5),
-            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=32),
-            Instruction(opcode=O.W+O.STX, dst=9, src=0, off=28, imm=0),
-            Instruction(opcode=O.LD+O.REG, dst=0, src=9, off=20, imm=0),
-            Instruction(opcode=O.LE, dst=0, src=0, off=0, imm=16),
-            Instruction(opcode=O.BE, dst=0, src=0, off=0, imm=64),
-            Instruction(opcode=O.DW+O.STX, dst=9, src=0, off=36, imm=0),
-            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
+            "r9 = *(u32 *)(r1 +0)",
+            "r0 = *(u32 *)(r1 +4)",
+            "r2 = *(u32 *)(r1 +0)",
+            "r2 += 100",
+            "if r0 <= r2 goto pc+19",
+            "*(u16 *)(r9 +20) = 3",
+            "*(u32 *)(r9 +28) = 83886080",
+            "r0 = 0x700000000000000",
+            "*(u64 *)(r9 +36) = r0",
+            "r0 = *(u16 *)(r9 +20)",
+            "r0 = bswap16 r0",
+            "w0 += 3",
+            "r0 = bswap16 r0",
+            "*(u16 *)(r9 +20) = r0",
+            "r0 = *(u32 *)(r9 +28)",
+            "r0 = bswap32 r0",
+            "w0 += 5",
+            "r0 = bswap32 r0",
+            "*(u32 *)(r9 +28) = r0",
+            "r0 = *(u16 *)(r9 +20)",
+            "r0 = bswap16 r0",
+            "r0 = bswap64 r0",
+            "*(u64 *)(r9 +36) = r0",
+            "r0 = 2",
+            "exit",
         ])
 
 
@@ -1172,15 +1150,15 @@ class Tests(TestCase):
 
         p = P(license="GPL")
         self.assertOpcodesEqual(p, [
-            Instruction(opcode=O.W+O.LD, dst=9, src=1, off=0, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=0, src=1, off=4, imm=0),
-            Instruction(opcode=O.W+O.LD, dst=2, src=1, off=0, imm=0),
-            Instruction(opcode=O.LONG+O.ADD, dst=2, src=0, off=0, imm=100),
-            Instruction(opcode=O.JLE+O.REG, dst=0, src=2, off=2, imm=0),
-            Instruction(opcode=O.REG+O.LD, dst=0, src=9, off=22, imm=0),
-            Instruction(opcode=O.REG+O.STX, dst=9, src=0, off=20, imm=0),
-            Instruction(opcode=O.LONG+O.MOV, dst=0, src=0, off=0, imm=2),
-            Instruction(opcode=O.EXIT, dst=0, src=0, off=0, imm=0),
+            "r9 = *(u32 *)(r1 +0)",
+            "r0 = *(u32 *)(r1 +4)",
+            "r2 = *(u32 *)(r1 +0)",
+            "r2 += 100",
+            "if r0 <= r2 goto pc+2",
+            "r0 = *(u16 *)(r9 +22)",
+            "*(u16 *)(r9 +20) = r0",
+            "r0 = 2",
+            "exit",
         ])
 
 
