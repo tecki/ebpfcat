@@ -572,7 +572,7 @@ class FastEtherCat(SimpleEtherCat):
         self.ebpf = EtherXDP()
         self.ebpf.programs = self.programs = \
             create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
-        await self.ebpf.attach(self.addr[0])
+        self.ebpf.attach(self.addr[0])
 
     @asynccontextmanager
     async def run(self):
@@ -657,7 +657,7 @@ class ParallelEtherCat(FastEtherCat):
                 else:
                     logger.error('an old programs file was still at %s',
                                  programs)
-                await self.ebpf.attach(self.addr[0])
+                self.ebpf.attach(self.addr[0])
                 self.ebpf.close()
                 obj_pin(programs, self.programs)
                 await self.clear_fmmus()
@@ -687,7 +687,7 @@ class ParallelEtherCat(FastEtherCat):
                 logger.info('other EPBFCat users still alive, keep locks')
             else:
                 logger.info('we are last EPBFCat user, remove locks')
-                await self.ebpf.detach(self.addr[0])
+                self.ebpf.detach(self.addr[0])
                 os.remove(programs)
                 self.mbx_lock_file.remove()
 

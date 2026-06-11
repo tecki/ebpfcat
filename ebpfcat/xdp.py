@@ -23,16 +23,16 @@
 
 __all__ = ["XDPExitCode", "XDPFlags", "PacketVar",  "XDP"]
 
-from asyncio import DatagramProtocol, Future, get_event_loop
-from enum import Enum
-from contextlib import asynccontextmanager, contextmanager
 import os
-from socket import AF_NETLINK, NETLINK_ROUTE, if_nametoindex
-import socket
+from asyncio import DatagramProtocol, Future, get_event_loop
+from contextlib import asynccontextmanager, contextmanager
+from enum import Enum
+from socket import (
+    AF_NETLINK, NETLINK_ROUTE, SOCK_DGRAM, if_nametoindex, socket)
 from struct import pack, unpack_from
 
-from .ebpf import EBPF, MemoryDesc
 from .bpf import ProgType
+from .ebpf import EBPF, MemoryDesc
 from .util import sub
 
 
@@ -47,75 +47,6 @@ class XDPExitCode(Enum):
 class XDPFlags(Enum):
     SKB_MODE = 2
     DRV_MODE = 4  # XDP done by the network driver
-
-
-class XDRFD(DatagramProtocol):
-    """just implement enough of the NETLINK protocol to attach programs"""
-
-    def __init__(self, ifindex, fd, future, flags):
-        self.ifindex = ifindex
-        self.fd = fd
-        self.seq = None
-        self.flags = flags
-        self.future = future
-
-    def connection_made(self, transport):
-        sock = transport.get_extra_info("socket")
-        sock.setsockopt(270, 11, 1)
-        self.transport = transport
-        # this was adopted from xdp1_user.c
-        p = pack("IHHIIBxHiIiHHHHiHHI",
-                # NLmsghdr
-                52,  # length of if struct
-                19,  # RTM_SETLINK
-                5,  # REQ | ACK
-                1,  # sequence number
-                0,  # pid
-                # IFI
-                0,  # AF_UNSPEC
-                0,  # type
-                self.ifindex,
-                0,  #flags
-                0,  #change
-                # NLA
-                20,  # length of field
-                0x802B,  # NLA_F_NESTED | IFLA_XDP
-                # NLA_XDP
-                8,  # length of field
-                1,  # IFLA_XDP_FD
-                self.fd,
-                8,
-                3,  # IFLA_XDP_FLAGS,
-                self.flags.value)
-        transport.sendto(p, (0, 0))
-
-    def datagram_received(self, data, addr):
-        try:
-            pos = 0
-            while (pos < len(data)):
-                ln, type, flags, seq, pid = unpack_from("IHHII", data, pos)
-                if type == 3:  # DONE
-                    self.future.set_result(0)
-                    return
-                elif type == 2:  # ERROR
-                    errno, *args = unpack_from("iIHHII", data, pos + 16)
-                    if errno != 0:
-                        self.future.set_exception(
-                            OSError(errno, os.strerror(-errno)))
-                        return
-                if flags & 2 == 0:  # not a multipart message
-                    self.future.set_result(0)
-                    return
-                pos += ln
-            self.future.set_exception(
-                RuntimeError("Netlink response not understood"))
-        except Exception as e:
-            self.future.set_exception(e)
-            raise
-
-    def error_received(self, exception):
-        if not self.future.done():
-            self.future.set_exception(exception)
 
 
 class PacketArray:
@@ -241,17 +172,63 @@ class XDP(EBPF):
                 sub(XDP, self).program()
             self.exit(self.defaultExitCode)
 
-    async def _netlink(self, ifindex, fd, flags):
-        future = Future()
-        transport, proto = await get_event_loop().create_datagram_endpoint(
-                lambda: XDRFD(ifindex, fd, future, flags),
-                family=AF_NETLINK, proto=NETLINK_ROUTE)
-        try:
-            await future
-        finally:
-            transport.close()
+    def _netlink(self, ifindex, fd, flags):
+        """use netlink to attach or detach programs
 
-    async def attach(self, network, flags=XDPFlags.SKB_MODE):
+        This uses a blocking API for talking to the kernel, which seems weird
+        given we are in an asyncio system. But we are just talking to the
+        kernel, so there is no risk of waiting. This used to be properly
+        async, but is not anymore. Look in the git history to find the async
+        version.
+        """
+        sock = socket(family=AF_NETLINK, type=SOCK_DGRAM, proto=NETLINK_ROUTE)
+        sock.setsockopt(270, 11, 1)
+        # this was adopted from xdp1_user.c
+        p = pack("IHHIIBxHiIiHHHHiHHI",
+                # NLmsghdr
+                52,  # length of if struct
+                19,  # RTM_SETLINK
+                5,  # REQ | ACK
+                1,  # sequence number
+                0,  # pid
+                # IFI
+                0,  # AF_UNSPEC
+                0,  # type
+                ifindex,
+                0,  #flags
+                0,  #change
+                # NLA
+                20,  # length of field
+                0x802B,  # NLA_F_NESTED | IFLA_XDP
+                # NLA_XDP
+                8,  # length of field
+                1,  # IFLA_XDP_FD
+                fd,
+                8,
+                3,  # IFLA_XDP_FLAGS,
+                flags.value)
+        sock.sendto(p, (0, 0))
+
+        try:
+            while True:
+                data = sock.recv(1000)
+                pos = 0
+                while (pos < len(data)):
+                    ln, type, flags, seq, pid = unpack_from("IHHII", data, pos)
+                    if type == 3:  # DONE
+                        return 0
+                    elif type == 2:  # ERROR
+                        errno, *args = unpack_from("iIHHII", data, pos + 16)
+                        if errno != 0:
+                            raise OSError(errno, os.strerror(-errno))
+                    if flags & 2 == 0:  # not a multipart message
+                        return 0
+                    pos += ln
+                raise RuntimeError("Netlink response not understood")
+        finally:
+            sock.close()
+
+    def attach(self, network, flags=XDPFlags.SKB_MODE):
         """attach this program to a ``network``
 
         :param network: the name of the network interface,
@@ -259,19 +236,19 @@ class XDP(EBPF):
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
         self.load(log_level=self.ebpf_log_level)
-        await self._netlink(ifindex, self.file_descriptor, flags)
+        self._netlink(ifindex, self.file_descriptor, flags)
 
-    async def detach(self, network, flags=XDPFlags.SKB_MODE):
+    def detach(self, network, flags=XDPFlags.SKB_MODE):
         """detach this program from a ``network``
 
         :param network: the name of the network interface,
            like ``"eth0"``
         :param flags: one of the :class:`XDPFlags` """
         ifindex = if_nametoindex(network)
-        await self._netlink(ifindex, -1, flags)
+        self._netlink(ifindex, -1, flags)
 
-    @asynccontextmanager
-    async def run(self, network, flags=XDPFlags.SKB_MODE):
+    @contextmanager
+    def run(self, network, flags=XDPFlags.SKB_MODE):
         """attach this program to a ``network`` during context
 
         attach this program to the ``network`` while the context
@@ -283,10 +260,10 @@ class XDP(EBPF):
         ifindex = if_nametoindex(network)
         self.load(log_level=self.ebpf_log_level)
         try:
-            await self._netlink(ifindex, self.file_descriptor, flags)
+            self._netlink(ifindex, self.file_descriptor, flags)
         finally:
             self.close()
         try:
             yield
         finally:
-            await self._netlink(ifindex, -1, flags)
+            self._netlink(ifindex, -1, flags)

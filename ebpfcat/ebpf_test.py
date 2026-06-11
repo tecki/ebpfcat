@@ -1256,10 +1256,8 @@ class KernelTests(TestCase):
             minimumPacketSize = 100
 
         e = Local()
-        async def run():
-            async with e.run('lo'):
-                pass
-        asyncio.run(run())
+        with e.run('lo'):
+            pass
 
     def test_percpumap(self):
         class Global(EBPF):
