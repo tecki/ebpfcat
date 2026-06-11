@@ -322,6 +322,28 @@ class EL7041(EBPFTerminal):
     baseFrequency = 128000 / 0x7fff
 
 
+class EL7041_1000(EBPFTerminal):
+    compatibility = {(2, 0x1B813052)}
+
+    velocity = ProcessDesc(0x7010, 0x21, "h")
+    control = ProcessDesc(0x7010, 1, 'H')
+    enable = ProcessDesc(0x7010, 1)
+    reset = ProcessDesc(0x7010, 2)
+    reduced_current = ProcessDesc(0x7010, 3)
+    status = ProcessDesc(0x6010, 1, "H")
+    enabled = ProcessDesc(0x6010, 2)
+    error = ProcessDesc(0x6010, 4)
+    high_switch = ProcessDesc(0x6010, 0xc)
+    low_switch = ProcessDesc(0x6010, 0xd)
+    stepcounter = ProcessDesc(0x6000, 0x11, 'i')
+
+    max_current = ServiceDesc(0x8010, 1)
+    max_voltage = ServiceDesc(0x8010, 3)
+    motor_emf = ServiceDesc(0x8010, 5)
+    invLogicLim1 = ServiceDesc(0x8012, 0x30)
+    invLogicLim2 = ServiceDesc(0x8012, 0x31)
+
+
 class EL7062(EBPFTerminal):
     compatibility = {(2, 0x1B963052)}
 
