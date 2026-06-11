@@ -39,27 +39,26 @@ Instead it generates eBPF code that we can later load into the kernel::
         self.count += 1
         self.exit(XDPExitCode.PASS)  # pass packet on to network stack
 
-Now we can attach this program to a network interface. We use :mod:`asyncio`
-for synchronization::
+Now we can attach this program to a network interface::
 
-   async def main():
+   def main():
        c = Count()
-       await c.attach("eth0")
+       c.attach("eth0")
 
 Once attached, our little program will be executed each time a packet
 arrives on the interface. We can read the result in a loop::
 
     for i in range(10):
-        await sleep(0.1)
+        sleep(0.1)
         print("packets arrived so far:", c.count)
 
 With :meth:`xdp.XDP.attach` the program is attached indefinitely on the
 interface, even beyond the end of the program. Use :meth:`xdp.XDP.detach` to
-detach it, or you may use the async contextmanager :meth:`xdp.XDP.run` to
+detach it, or you may use the contextmanager :meth:`xdp.XDP.run` to
 detach automatically, as in::
 
-   async with c.run("eth0"):
-        await sleep(1)
+    with c.run("eth0"):
+        sleep(1)
         print("packets arrived so far:", c.count)
 
 Note that here we access the member variable ``count`` from user space.
