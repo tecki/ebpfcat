@@ -17,6 +17,7 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 from unittest import TestCase, main
+import tempfile
 
 from . import ebpf
 from .arraymap import ArrayMap, PerCPUArrayMap
@@ -1258,6 +1259,27 @@ class KernelTests(TestCase):
         e = Local()
         with e.run('lo'):
             pass
+
+    def test_pinning(self):
+        class Local(EBPF):
+            userspace = ArrayMap()
+            a = userspace.globalVar('i')
+
+        e = Local(ProgType.XDP, 'GPL')
+        e.a += 7
+        e.exit()
+
+        e.load()
+        with tempfile.TemporaryDirectory(dir='/sys/fs/bpf/') as pindir:
+            e.pin_maps(pindir)
+            e.test_run(1000, 1000, 100, 100, 1)
+            self.assertEqual(e.a, 7)
+            e.test_run(1000, 1000, 100, 100, 1)
+            self.assertEqual(e.a, 14)
+            e.close()
+
+            e = Local(ProgType.XDP, 'GPL', load_maps=pindir)
+            self.assertEqual(e.a, 14)
 
     def test_percpumap(self):
         class Global(EBPF):
