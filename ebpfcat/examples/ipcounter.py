@@ -1,9 +1,10 @@
 """example program to count IPv4 and IPv6 packets"""
 
 from argparse import ArgumentParser
-from asyncio import get_event_loop, sleep
 from ebpfcat.arraymap import ArrayMap
 from ebpfcat.xdp import PacketVar, XDP, XDPExitCode, XDPFlags
+import os
+from time import sleep
 
 class IPCount(XDP):
     license = "GPL"
@@ -23,13 +24,13 @@ class IPCount(XDP):
         self.exit(XDPExitCode.PASS)
 
 
-async def show(counter):
+def show(counter):
     for i in range(10):
-        await sleep(0.1)
+        sleep(0.1)
         print(f"IPv4 {counter.ipv4count} IPv6 {counter.ipv6count}")
 
 
-async def main():
+def main():
     parser = ArgumentParser(
         prog="ipcount",
         description="Count IPv4 and IPv6 packets")
@@ -50,20 +51,22 @@ async def main():
         c = IPCount(load_maps="/sys/fs/bpf/ipcount/")
 
     if args.attach and args.detach:
-        async with c.run(args.interface, XDPFlags.SKB_MODE):
+        with c.run(args.interface, XDPFlags.SKB_MODE):
             if args.show:
-                await show(c)
+                show(c)
     elif args.attach:
-        await c.attach(args.interface, XDPFlags.SKB_MODE)
+        c.attach(args.interface, XDPFlags.SKB_MODE)
+        os.makedirs("/sys/fs/bpf/ipcount/", exist_ok=True)
         c.pin_maps("/sys/fs/bpf/ipcount/")
         if args.show:
-            await show(c)
+            show(c)
     else:
         if args.show:
-            await show(c)
+            show(c)
         if args.detach:
-            await c.detach(args.interface, XDPFlags.DRV_MODE)
+            c.detach(args.interface, XDPFlags.DRV_MODE)
+            os.remove("/sys/fs/bpf/ipcount/userspace")
 
 
 if __name__ == "__main__":
-    get_event_loop().run_until_complete(main())
+    main()

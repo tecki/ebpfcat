@@ -1,6 +1,6 @@
-from asyncio import get_event_loop, sleep
 from ebpfcat.arraymap import PerCPUArrayMap
 from ebpfcat.xdp import XDP, XDPExitCode, XDPFlags
+from time import sleep
 
 class Count(XDP):
     license = "GPL"
@@ -13,12 +13,12 @@ class Count(XDP):
         self.exit(XDPExitCode.PASS)
 
 
-async def main():
+def main():
     c = Count()
 
-    async with c.run("eth1"): #, XDPFlags.DRV_MODE):
+    with c.run("eth1"): #, XDPFlags.DRV_MODE):
         for i in range(10):
-            await sleep(0.1)
+            sleep(0.1)
             c.userspace.read()
             print("packets arrived so far:", sum(c.count))
 
