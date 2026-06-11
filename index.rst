@@ -102,7 +102,9 @@ Troubleshooting
 
 Should a device get stuck, or should it be needed to be configured differently,
 it may be safely shut down. Note that upon restarting it, the sync group the
-device belongs to also needs to be restarted.
+device belongs to also needs to be restarted. Restarting a sync group means
+that all terminals go into a safe state, e.g. all valves of a vacuum system
+usually close.
 
 Should a device really not work anymore, it may be advisable to shut down its
 sync group and remove the device from the list of the sync group's members.
