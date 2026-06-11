@@ -60,7 +60,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
         if instance is None:
             return self
         if instance.ebpf.loaded:
-            return self.unpack(instance, instance.ebpf.__dict__[self.map.name])
+            return self.unpack(instance, instance.ebpf.__dict__[self.map.name][0])
         else:
             return super().__get__(instance, owner)
 
@@ -73,7 +73,7 @@ class ArrayGlobalVarDesc(MemoryDesc):
             if not isinstance(value, tuple):
                 value = value,
             b = pack(fmt, *value)
-            instance.ebpf.__dict__[self.map.name][addr:addr + len(b)] = b
+            instance.ebpf.__dict__[self.map.name][0][addr:addr + len(b)] = b
         else:
             super().__set__(instance, value)
 
@@ -146,7 +146,7 @@ class ArrayMap(Map):
     def create_map(self, ebpf, fd):
         if fd is None:
             fd = create_map(MapType.ARRAY, 4, self.size, 1, MapFlags.MMAPABLE)
-        setattr(ebpf, self.name, mmap(fd, self.size))
+        setattr(ebpf, self.name, (mmap(fd, self.size), fd))
         return fd
 
     def init(self, ebpf, fd):

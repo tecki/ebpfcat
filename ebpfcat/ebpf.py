@@ -1398,7 +1398,7 @@ class EBPF(EBPFBase):
         """
         for k, v in self.__class__.__dict__.items():
             if isinstance(v, Map):
-                bpf.obj_pin(path + k, getattr(self, v.name).fd)
+                bpf.obj_pin(path + k, getattr(self, v.name)[1])
 
     def program(self):
         """overwrite this method with your program while subclassing"""

@@ -33,7 +33,7 @@ class SimulatedEBPF(EBPFBase):
             for k, v in cls.__dict__.items():
                 if k not in unique and isinstance(v, Map):
                     size = v.collect(self)
-                    setattr(self, k, self.get_array(size))
+                    setattr(self, k, (self.get_array(size), None))
                     unique.add(k)
 
 
