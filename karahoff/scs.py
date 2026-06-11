@@ -79,6 +79,8 @@ class SCS_XRD_TRF(EtherCATDevice):
 
 
     def update_properties(self):
+        if self.m2.lastposition is None:
+            return
         current = 2 * arcsin(sin(self.m2.actualPosition / 2) * SIN)
         self.actualPosition = current + OFFSET
         target = -arctan(tan(current / 2) / sqrt(TAN**2 - tan(current / 2)**2))
