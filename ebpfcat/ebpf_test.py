@@ -1248,6 +1248,19 @@ class KernelTests(TestCase):
         print(e.opcodes)
         print(e.load(log_level=1)[1])
 
+    def test_attach(self):
+        import asyncio
+
+        class Local(XDP):
+            license = 'GPL'
+            minimumPacketSize = 100
+
+        e = Local()
+        async def run():
+            async with e.run('lo'):
+                pass
+        asyncio.run(run())
+
     def test_percpumap(self):
         class Global(EBPF):
             cpumap = PerCPUArrayMap()
