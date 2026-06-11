@@ -1,9 +1,9 @@
 project = 'KaraHoff'
-copyright = '2025, SCS, European XFEL GmbH'
+copyright = '2026, SCS, European XFEL GmbH'
 author = 'Martin Teichmann'
 
-version = '1.1'
-release = '1.1.0'
+version = '1.2'
+release = '1.2.0'
 
 extensions = [
     'sphinx.ext.autodoc',
