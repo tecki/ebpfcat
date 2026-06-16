@@ -956,13 +956,20 @@ class FastSyncGroup(SyncGroupBase, XDP):
             self.asm_packet = self.packet.sterile(self.packet_index,
                                                   self.ec.ethertype)
             # prime the pump: two packets to get things going
-            self.ec.roundtrip_packet(self.asm_packet,
-                                     self.packet_index).cancel()
+            try:
+                await wait_for(self.ec.roundtrip_packet(
+                    self.asm_packet, self.packet_index), timeout=0.1)
+                raise EtherCatError(f'ebpf not installed? {self.name}')
+            except TimeoutError:
+                pass  # all fine!
 
-            await sleep(0)
-            self.ec.roundtrip_packet(self.asm_packet,
-                                     self.packet_index).cancel()
-            await sleep(0)
+            try:
+                await wait_for(self.ec.roundtrip_packet(
+                    self.asm_packet, self.packet_index), timeout=0.1)
+                raise EtherCatError(f'ebpf not installed (2nd) ? {self.name}')
+            except TimeoutError:
+                pass  # all fine!
+
             await super().run()
 
     def update_devices(self, data):
