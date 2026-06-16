@@ -775,8 +775,12 @@ class Terminal:
             except EtherCatError:
                 logger.debug('failed clearing error, was there '
                              f'no error in terminal "{self.name}"?')
-        await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
-                                state.value)
+        try:
+            await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
+                                    state.value)
+        except Exception as e:
+            e.add_note(f'in terminal {self.name}')
+            raise
         newstate = None
         while state != newstate:
             newstate, error, status = await self.get_state()
