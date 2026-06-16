@@ -67,6 +67,7 @@ async def info():
 
     parser.add_argument("interface")
     parser.add_argument("-t", "--terminal", type=int)
+    parser.add_argument("-sn", "--serial-number", type=int)
     parser.add_argument("-i", "--ids", action="store_true")
     parser.add_argument("-n", "--names", action="store_true")
     parser.add_argument("-s", "--sdo", action="store_true")
@@ -85,7 +86,16 @@ async def info():
 
     ec = ParallelEtherCat(args.interface)
     async with ec.run():
-        if args.terminal is None:
+        if args.serial_number is not None:
+            addr_by_serial = await ec.scan_serial_numbers()
+            addr = addr_by_serial[args.serial_number]
+            print(f'terminal {addr}')
+            term = Terminal(ec)
+            await term.gentle_initialize(absolute=addr[0])
+        elif args.terminal is not None:
+            term = Terminal(ec)
+            await term.gentle_initialize(-args.terminal)
+        else:
             terminals = range(await ec.count())
             terms = [Terminal(ec) for t in terminals]
             for t in terms:
@@ -96,9 +106,9 @@ async def info():
             else:
                 await asyncio.gather(*(t.gentle_initialize(-i)
                                        for i, t in zip(terminals, terms)))
-        else:
-            term = Terminal(ec)
-            await term.gentle_initialize(-args.terminal)
+            term = None
+
+        if term is not None:
             if args.reset:
                 await term.reset()
             terms = [term]
