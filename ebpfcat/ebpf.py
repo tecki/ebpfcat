@@ -1510,8 +1510,7 @@ class EBPF(EBPFBase):
     @contextmanager
     def save_registers(self, registers):
         oldowners = self.owners.copy()
-        registers = set(registers)
-        self.owners |= registers
+        self.owners |= set(registers)
         save = []
         with ExitStack() as exitStack:
             for i in registers:
@@ -1523,7 +1522,7 @@ class EBPF(EBPFBase):
             yield
             for tmp, i in save:
                 self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, i, tmp, 0, 0)
-            self.owners -= registers
+            self.owners = oldowners
 
     @contextmanager
     def get_stack(self, size):

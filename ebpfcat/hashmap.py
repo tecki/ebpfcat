@@ -225,6 +225,7 @@ class TheDict(MutableMapping):
                     self.value.get_address(3, True, True):
                 ebpf.r4 = flags.value
                 ebpf.call(FuncId.map_update_elem)
+        ebpf.owners.add(0)
 
     @contextmanager
     def lookup(self):
