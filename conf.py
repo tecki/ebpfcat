@@ -14,7 +14,7 @@ copyright = '2026, European XFEL GmbH'
 author = 'Martin Teichmann'
 
 release = "1.3"
-version = "1.3.0"
+version = "1.3.1"
 language = "en"
 exclude_patterns = ['_build']
 pygments_style = 'sphinx'

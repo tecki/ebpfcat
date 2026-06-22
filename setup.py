@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name="ebpfcat",
-      version="1.3.0",
+      version="1.3.1",
       author="Martin Teichmann",
       author_email="martin.teichmann@xfel.eu",
       description="A Karabo Beckhoff driver",
