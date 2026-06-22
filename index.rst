@@ -20,3 +20,5 @@ Further reading
 This project has been presented at `ICALEPCS 2025
 <https://epics.anl.gov/icalepcs-2025/pdf/THBR004.pdf>`_, please
 :download:`cite <ebpfcat.bib>` this paper if you make use of EBPFCat.
+
+There was also a talk at `FOSDEM 2026 <https://fosdem.org/2026/schedule/event/MPZZMC-ebpfcat/>`_.
