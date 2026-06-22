@@ -676,6 +676,8 @@ class Tests(TestCase):
             e.r3 = 2
         with e.r4 > 3 as Else:
             e.r5 = 7
+        with Else, e.r4 < 3 as Else:
+            e.r5 = 8
         with Else:
             e.r7 = 8
         with e.x4 > 3:
@@ -695,7 +697,10 @@ class Tests(TestCase):
             "r3 = 2",
             "if r4 <= 0x3 goto pc+2",
             "r5 = 7",
-            "goto pc+1",
+            "goto pc+4",
+            'if r4 >= 0x3 goto pc+2',
+            'r5 = 8',
+            'goto pc+1',
             "r7 = 8",
             "if r4 s<= 0x493e0 goto pc+0",
             "if r4 s>= 0x493e0 goto pc+0",

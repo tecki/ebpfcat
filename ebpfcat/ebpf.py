@@ -226,32 +226,31 @@ def comparison(uposop, unegop, sposop, snegop):
     return ret
 
 
-class Elser:
-    def __init__(self, comp):
-        self.comp = comp
-
-    def __enter__(self):
-        return self.comp.Else()
-
-    def __exit__(self, exc_type, exc, tb):
-        self.comp.ElseExit()
-
-
 class Comparison(ABC):
     """Base class for all logical operations"""
 
     def __init__(self, ebpf):
         self.ebpf = ebpf
+        self.else_target = None
 
     def __enter__(self):
         self.compare(True)
-        return Elser(self)
+
+        @contextmanager
+        def Elser():
+            self.Else()
+            yield
+            self.ElseExit()
+        return Elser()
 
     def __exit__(self, exc_type, exc, tb):
         self.target()
+        self.comparison_end = len(self.ebpf.opcodes)
 
     def ElseExit(self):
+        self.else_target = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(self.jump_target)
+        self.ebpf.opcodes.extend(self.saved_targets)
         self.ebpf.owners, self.owners = \
                 self.ebpf.owners & self.owners, self.ebpf.owners
 
@@ -272,6 +271,8 @@ class Comparison(ABC):
         raise NotImplementedError
 
     def Else(self):
+        self.saved_targets = self.ebpf.opcodes[self.comparison_end:]
+        self.ebpf.opcodes = self.ebpf.opcodes[:self.comparison_end]
         self.jump_target = JumpTarget()
         self.ebpf.opcodes.insert(self.else_origin,
                                  Instruction(Opcode.JMP, 0, 0,
@@ -729,7 +730,7 @@ class AndExpression(Binary):
 
 class AndComparison(SimpleComparison):
     # there is a special comparison with & instruction
-    # it is the only one which has not inversion
+    # it is the only one which has no inversion
     def __init__(self, ebpf, left, right):
         super().__init__(ebpf, left, right, Opcode.JSET)
         self.opcode = (Opcode.JSET, None, Opcode.JSET, None)
