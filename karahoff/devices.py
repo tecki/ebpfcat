@@ -742,57 +742,66 @@ class MotorDevice(Device):
     proportional = DeviceVar('q')
     lasttime = DeviceVar('Q')
     use_steps = DeviceVar('B')
+
     velocity_diff = LocalVar('q')
+    velocity_raw = LocalVar('q')
+    delta = LocalVar('q')
+    now = LocalVar('Q')
 
     def calculate_speed(self):
-        self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
+        self.velocity_raw = (self.proportional * self.delta) >> 16
 
     def program(self):
-        with self.ebpf.tmp:
-            self.ebpf.tmp = ktime(self.ebpf)
-            self.velocity_diff = (self.max_acceleration
-                                  * (self.ebpf.tmp - self.lasttime)) >> 32
-            with self.velocity_diff > 0 as Else:
-                self.lasttime = self.ebpf.tmp
+        self.now = ktime(self.ebpf)
+        self.velocity_diff = (self.max_acceleration
+                                  * (self.now - self.lasttime)) >> 32
+        with self.velocity_diff > 0 as Else:
+            self.lasttime = self.now
 
         self.control_word = self.set_control_word
-        with self.ebpf.stmp:
-            if self.stepcounter is None:
-                self.ebpf.stmp = self.target - self.encoder
-            else:
-                with self.use_steps == 0 as Else:
-                    self.ebpf.stmp = self.target - self.encoder
-                with Else:
-                    self.ebpf.stmp = self.target - self.stepcounter
-            with abs(self.ebpf.stmp) > self.deadband as Else:
-                self.reduced_current = self.full_current
-                self.deadband_exceeded = 1
+
+        if self.stepcounter is None:
+            self.delta = self.target - self.encoder
+        else:
+            with self.use_steps == 0 as Else:
+                self.delta = self.target - self.encoder
             with Else:
-                self.reduced_current = self.low_current
-            self.calculate_speed()
-            with self.ebpf.stmp > self.max_velocity:
-                self.ebpf.stmp = self.max_velocity
-            with self.ebpf.stmp + self.max_velocity < 0:
-                self.ebpf.stmp = -self.max_velocity
-            if not self.isLimitless:
-                with (((self.low_switch != self.invertLimits)
-                       & (self.ebpf.stmp < 0))
-                      | ((self.high_switch != self.invertLimits)
-                       & (self.ebpf.stmp > 0))):
-                    self.ebpf.stmp = 0
-                    self.target = self.encoder
-            if self.encoder_ready is not None:
-                with (self.encoder_ready == 0) & (self.use_steps == 0):
-                    self.ebpf.stmp = 0
-            self.velocity = self.ebpf.stmp
-            with self.ebpf.stmp > self.last_velocity + self.velocity_diff as Else:
-                self.velocity = self.last_velocity + self.velocity_diff
-            with Else, self.last_velocity > self.ebpf.stmp + self.velocity_diff:
-                self.velocity = self.last_velocity - self.velocity_diff
-            with self.enabled as Else:
-                self.last_velocity = self.velocity
-            with Else:
-                self.last_velocity = 0
+                self.delta = self.target - self.stepcounter
+        with abs(self.ebpf.stmp) > self.deadband as Else:
+            self.reduced_current = self.full_current
+            self.deadband_exceeded = 1
+        with Else:
+            self.reduced_current = self.low_current
+            self.delta = 0
+
+        self.calculate_speed()
+
+        with self.velocity_raw > self.max_velocity:
+            self.velocity_raw = self.max_velocity
+        with self.velocity_raw + self.max_velocity < 0:
+            self.velocity_raw = -self.max_velocity
+        if not self.isLimitless:
+            with (((self.low_switch != self.invertLimits)
+                   & (self.velocity_raw < 0))
+                  | ((self.high_switch != self.invertLimits)
+                     & (self.velocity_raw > 0))):
+                self.velocity_raw = 0
+                self.target = self.encoder
+        if self.encoder_ready is not None:
+            with (self.encoder_ready == 0) & (self.use_steps == 0):
+                self.velocity_raw = 0
+
+        self.velocity = self.velocity_raw
+
+        with self.velocity_raw > self.last_velocity + self.velocity_diff \
+                as Else:
+            self.velocity = self.last_velocity + self.velocity_diff
+        with Else, self.last_velocity > self.velocity_raw + self.velocity_diff:
+            self.velocity = self.last_velocity - self.velocity_diff
+        with self.enabled as Else:
+            self.last_velocity = self.velocity
+        with Else:
+            self.last_velocity = 0
 
 
 class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
