@@ -223,6 +223,11 @@ class EK1101(EBPFTerminal):
     compatibility = {(2, 72166482)}
 
 
+class EPP1322(EBPFTerminal):
+    # EtherCAT to EtherCAT P, 3 ports
+    compatibility = {(2, 0x647618a9)}
+
+
 class EK1814(EBPFTerminal):
     channel1 = ProcessDesc(0x6000, 1)
     channel2 = ProcessDesc(0x6010, 1)
