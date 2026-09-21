@@ -397,7 +397,7 @@ class EL7332(EBPFTerminal):
 
 
 class EPP2308(EBPFTerminal):
-    compatibilty = {(2, 0x64765649)}
+    compatibility = {(2, 0x64765649)}
 
     input1 = ProcessDesc(0x6000, 1)
     input2 = ProcessDesc(0x6010, 1)
