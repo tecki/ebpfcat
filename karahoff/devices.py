@@ -234,8 +234,8 @@ class OptionalMixin(EtherCATDevice):
                         self.foreignError = False
                     else:
                         self.foreignError = 'foreign fuse is not on'
-        except:
-            self.foreignError = 'monitoring foreign fuse failed'
+        except Exception as e:
+            self.foreignError = f'monitoring foreign fuse failed {e}'
 
     def join(self, syncGroup):
         super().join(syncGroup)
@@ -391,6 +391,9 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
         accessMode=AccessMode.INITONLY, defaultValue=8, unitSymbol=Unit.VOLT,
         description="Above this voltage, "
         "the gauge is considered to have an error")
+    semiRawValue = Double(
+        accessMode=AccessMode.READONLY, unitSymbol=Unit.VOLT)
+    raw = Int32(accessMode=AccessMode.READONLY)
 
     old_value = -1
     old_time = monotonic()
@@ -410,6 +413,8 @@ class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
                     > 10 / (newtime - self.old_time):
                 self.value = 10 ** (semiRaw * self.factor + self.offset) \
                     * unit.mbar * now()
+                self.semiRawValue = semiRaw
+                self.raw = self.device.value
                 self.old_value = self.device.value
                 self.old_time = newtime
             return State.ON
@@ -841,6 +846,8 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     isCCWLimit = Bool(
         displayedName='At Negative Limit?',
         accessMode=AccessMode.READONLY)
+    isSWLimitLow = Bool(accessMode=AccessMode.READONLY)
+    isSWLimitHigh = Bool(accessMode=AccessMode.READONLY)
     maxAcceleration = Float(defaultValue=10)
 
     targetVelocity = Float(
