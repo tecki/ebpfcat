@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 test:
     image: python:3.12-slim
     script:
@@ -14,3 +15,18 @@ docs:
         - apt-get install -y openssh-client
         - pip3 install . --user
         - sphinx-build -b html -d _build/doctrees . public
+
+karahoff:
+  image: sphinxdoc/sphinx
+  before_script: []
+  pages:
+    script:
+      - pip3 install pint
+      - pip3 install numpy
+      - pip3 install karabo
+      - pip3 install . --user
+      - sphinx-build -b html . public
+    pages: True
+    artifacts:
+      paths:
+        - public

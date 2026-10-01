@@ -1,0 +1,2434 @@
+"""
+A collection of simple devices
+------------------------------
+
+.. autoclass:: PressureGauge()
+    :members:
+
+.. autoclass:: Valve()
+    :members:
+
+.. autoclass:: MonitoredOutput()
+    :members:
+
+.. autoclass:: Motor()
+    :members:
+
+.. autoclass:: RotationMotor()
+    :members:
+
+.. autoclass:: Shutter()
+    :members:
+"""
+import struct
+from ast import literal_eval
+from asyncio import Event, Lock, sleep
+from math import copysign, sqrt
+from struct import pack, unpack
+from time import monotonic, time
+
+from ebpfcat.devices import AnalogInput as AnalogInputDevice
+from ebpfcat.devices import DigitalInput as DigitalInputDevice
+from ebpfcat.devices import DigitalOutput as DigitalOutputDevice
+from ebpfcat.ebpf import AsLong, LocalVar, ktime
+from ebpfcat.ebpfcat import Device, DeviceVar, Struct, TerminalVar
+from ebpfcat.safety import SafetyDevice
+from ebpfcat.serial import Serial
+from karabo.middlelayer import (
+    AccessMode, Assignment, Bool, Configurable, Double, Float, Int8, Int16,
+    Int32, Int64, MetricPrefix, Node, OutputChannel, Overwrite, QuantityValue,
+    Slot, State, String, TimeMixin, Timestamp, UInt8, UInt16, UInt64, Unit,
+    VectorFloat, background, get_timestamp, getDevice, isSet, unit,
+    waitUntilNew)
+from numpy import array, polyfit, roll, sign
+from numpy.fft import fft
+from numpy.linalg import LinAlgError
+
+from .interlock import Interlock, InterlockSlot
+from .master import EtherCATDevice, TerminalUnknownError
+
+
+def now():
+    return QuantityValue(1, timestamp=get_timestamp())
+
+
+class GenericInput(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    value = Double(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        self.value = self.device.value
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogInputDevice(self.the_channel)
+        self.state = State.ON
+
+
+class AnalogInput(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
+    prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
+    calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    offset = Double(accessMode=AccessMode.INITONLY, defaultValue=0)
+
+
+    value = Double(accessMode=AccessMode.READONLY)
+    lastvalue = None
+
+    async def onInitialization(self):
+        if self.unit:
+            self.__class__.value = Overwrite(
+                unitSymbol=getattr(Unit, self.unit.value),
+                metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
+            await self.publishInjectedParameters()
+
+    def update_properties(self):
+        if self.device.value != self.lastvalue:
+            self.value = (self.device.value * self.the_channel.factor \
+                    + self.the_channel.offset) / self.calibration.value \
+                    + self.offset.value
+            self.lastvalue = self.device.value
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogInputDevice(self.the_channel.value)
+        self.state = State.ON
+
+
+class AnalogStatisticsDevice(Device):
+    value = TerminalVar()
+
+    maxValue = DeviceVar('i')
+    minValue = DeviceVar('i')
+    currentValue = DeviceVar('i')
+    sumValue = DeviceVar('q')
+    sumSquared = DeviceVar('q')
+    counter = DeviceVar('i')
+    trigger = DeviceVar('i')
+    lastSum = DeviceVar('q')
+    lastSquared = DeviceVar('q')
+    lastCounter = DeviceVar('i')
+
+    def program(self):
+        self.currentValue = self.value
+        with self.value > self.maxValue:
+            self.maxValue = self.value
+        with self.value < self.minValue:
+            self.minValue = self.value
+        with self.trigger != 0:
+            self.lastSum = self.sumValue
+            self.lastSquared = self.sumSquared
+            self.lastCounter = self.counter
+            self.sumValue = 0
+            self.sumSquared = 0
+            self.counter = 0
+            self.trigger = 0
+        self.sumValue += self.value
+        self.sumSquared += self.value * self.value
+        self.counter += 1
+
+
+class AnalogStatistics(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    factor = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    offset = Double(accessMode=AccessMode.INITONLY, defaultValue=0)
+
+    mean = Double(accessMode=AccessMode.READONLY)
+    minimum = Double(accessMode=AccessMode.READONLY)
+    maximum = Double(accessMode=AccessMode.READONLY)
+    deviation = Double(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        if self.device.lastCounter == 0:
+            self.device.trigger = 1
+            return
+
+        factor = self.the_channel.factor * self.factor * now()
+        offset = self.the_channel.offset * self.factor + self.offset
+
+        self.mean = (self.device.lastSum
+                     / self.device.lastCounter) * factor + offset
+        self.minimum = self.device.minValue * factor + offset
+        self.maximum = self.device.maxValue * factor + offset
+        self.device.minValue = self.device.currentValue
+        self.device.maxValue = self.device.currentValue
+        variance = self.device.lastSquared / self.device.lastCounter \
+                 - (self.device.lastSum / self.device.lastCounter) ** 2
+        if variance > 0:
+            self.deviation = sqrt(variance) * factor
+        self.device.trigger = 1
+
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogStatisticsDevice()
+        self.device.value = self.the_channel.value
+        self.state = State.ON
+
+
+class FusedOutput(Device):
+    data = TerminalVar()
+    error = TerminalVar()
+    value = DeviceVar('B')  # 0 regular off, 1 regular on, 2 error off
+
+    def program(self):
+        with (self.error != 0) | (self.value == 2) as Else:
+            self.data = 0
+            self.value = 2
+        with Else:
+            self.data = self.value
+
+    def update(self):
+        if self.error or self.value == 2:
+            self.data = False
+            self.value = 2
+        else:
+            self.data = self.value
+
+
+def optionalFusedOutput(channel):
+    if isinstance(channel, Struct):
+        ret = FusedOutput()
+        ret.data = channel.value
+        ret.error = channel.overcurrent
+        return ret
+    else:
+        return DigitalOutputDevice(channel)
+
+
+class OptionalMixin(EtherCATDevice):
+    switchChannel = String(
+        displayedName='Power output channels',
+        accessMode=AccessMode.INITONLY,
+        description="""List here the digital output channels (comma separated)
+        that need to be on for this device to function. Leave empty if there
+        are none""")
+
+    def get_devices(self):
+        ret = super().get_devices()
+        return ret + tuple(self.switchDevices)
+
+    foreignError = False
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if self.foreignError:
+            return State.ERROR, self.foreignError
+        return ret
+
+    async def monitorForeign(self, device):
+        try:
+            dev = await getDevice(device)
+            async with dev:
+                await dev.on()
+                while True:
+                    await waitUntilNew(dev.state)
+                    if dev.state == State.ON:
+                        self.foreignError = False
+                    else:
+                        self.foreignError = 'foreign fuse is not on'
+        except Exception as e:
+            self.foreignError = f'monitoring foreign fuse failed {e}'
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        switchDevices = []
+        if self.switchChannel:
+            for c in self.switchChannel.split(','):
+                try:
+                    switchDevices.append(
+                            optionalFusedOutput(self.find_channel(c)))
+                except TerminalUnknownError:
+                    background(self.monitorForeign(c))
+        self.switchDevices = tuple(switchDevices)
+
+
+class OptionalSwitchMixin(Interlock, OptionalMixin):
+    startupValue = Bool(
+        displayedName="Start Powered?",
+        description="Should the power be automatically switched on?",
+        accessMode=AccessMode.INITONLY, defaultValue=False)
+
+    def update_properties(self):
+        ret = super().update_properties()
+        for d in self.switchDevices:
+            if d.value == 2:
+                return State.ERROR, 'fuse reported error'
+        return ret
+
+    def initialize(self):
+        super().initialize()
+        for d in self.switchDevices:
+            d.value = self.startupValue.value
+
+    @Slot()
+    async def on(self):
+        for d in self.switchDevices:
+            d.value = 1
+        await self.state_change.wait()
+
+    @InterlockSlot()
+    def off(self):
+        for d in self.switchDevices:
+            d.value = 0
+
+
+class OptionalKeepOnMixin(OptionalMixin):
+    def update_properties(self):
+        ret = super().update_properties()
+        for d in self.switchDevices:
+            if d.value == 2:
+                return State.ERROR, "fuse failed"
+            d.value = 1
+        return ret
+
+    @Slot()
+    async def reset(self):
+        for d in self.switchDevices:
+            d.value = 1
+        await self.state_change.wait()
+
+
+class DigitalOutput(OptionalSwitchMixin):
+    switchChannel = Overwrite(
+        assignment=Assignment.MANDATORY, displayedName='Channel',
+        description='The digital output channel to be switched')
+    pulseDuration = Double(
+        displayedName='Pulse Duration', defaultValue=1,
+        unitSymbol=Unit.SECOND, minExc=0)
+    pulseStart = None
+
+    def get_devices(self):
+        return self.switchDevices
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if ret is not None:
+            return ret
+        if self.pulseStart is not None:
+            if monotonic() - self.pulseStart \
+                    < self.pulseDuration / unit.second:
+                for d in self.switchDevices:
+                    d.value = 1
+                return State.RUNNING
+            else:
+                for d in self.switchDevices:
+                    d.value = 0
+                self.pulseStart = None
+        if all(d.value for d in self.switchDevices):
+            return State.ON
+        if any(d.value for d in self.switchDevices):
+            return State.CHANGING
+        return State.OFF
+
+    on = Overwrite(allowedStates={State.OFF, State.RUNNING})
+
+    @InterlockSlot(allowedStates={State.ON, State.RUNNING})
+    def off(self):
+        for d in self.switchDevices:
+            d.value = 0
+
+    @Slot(allowedStates={State.OFF})
+    async def pulse(self):
+        self.pulseStart = monotonic()
+        self.state = State.RUNNING
+
+
+class DigitalInput(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    value = Bool(accessMode=AccessMode.READONLY)
+
+    def update_properties(self):
+        value = bool(self.device.value)
+
+        if value != self.value:
+            self.value = value
+        return State.ON if value else State.OFF
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = DigitalInputDevice(self.find_channel(self.channel))
+
+
+class PressureGauge(OptionalSwitchMixin, EtherCATDevice):
+    """An analog input that converts to a pressure
+
+    This device takes an analog input and converts it into a pressure reading
+    according to the formula
+
+    .. math::
+
+        P = 10^{\\textbf{factor} U / \\textrm V + \\textbf{offset}}
+        \\textrm{mbar}
+
+    where *P* is the pressure and *U* the voltage, **factor** and **offset**
+    are user-defined parameters.
+    """
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+
+    value = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.BAR,
+                   metricPrefixSymbol=MetricPrefix.MILLI,
+                   relativeError=0.01, allowedStates={State.ON})
+    factor = Double(
+        accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY,
+        description="the raw voltage is multiplied by this factor")
+    offset = Double(
+        accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY,
+        description="the offset added to the raw value times factor")
+    minimum = Double(
+        accessMode=AccessMode.INITONLY, defaultValue=1, unitSymbol=Unit.VOLT,
+        description="Below this voltage, the gauge is considered to be off")
+    maximum = Double(
+        accessMode=AccessMode.INITONLY, defaultValue=8, unitSymbol=Unit.VOLT,
+        description="Above this voltage, "
+        "the gauge is considered to have an error")
+    semiRawValue = Double(
+        accessMode=AccessMode.READONLY, unitSymbol=Unit.VOLT)
+    raw = Int32(accessMode=AccessMode.READONLY)
+
+    old_value = -1
+    old_time = monotonic()
+
+    def update_properties(self):
+        if (ret := super().update_properties()) is not None:
+            return ret
+        semiRaw = self.device.value * self.the_channel.factor \
+                + self.the_channel.offset
+        if semiRaw < self.minimum.value:
+            return State.OFF
+        elif semiRaw > self.maximum.value:
+            return State.ERROR, 'gauge reported error'
+        else:
+            newtime = monotonic()
+            if abs(self.old_value - self.device.value) \
+                    > 10 / (newtime - self.old_time):
+                self.value = 10 ** (semiRaw * self.factor + self.offset) \
+                    * unit.mbar * now()
+                self.semiRawValue = semiRaw
+                self.raw = self.device.value
+                self.old_value = self.device.value
+                self.old_time = newtime
+            return State.ON
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_channel = self.find_channel(self.channel)
+        self.device = AnalogInputDevice(self.the_channel.value)
+
+
+class AnalogOutputDevice(Device):
+    value = TerminalVar()
+    set_value = DeviceVar('i', write=True)
+
+    def update(self):
+        try:
+            self.value = self.set_value
+        except struct.error:
+            pass
+
+    def program(self):
+        self.value = self.set_value
+
+
+class AnalogOutput(OptionalMixin, EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
+    prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
+    calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    upperLimit = Double(accessMode=AccessMode.INITONLY, defaultValue=0x7fff)
+    lowerLimit = Double(accessMode=AccessMode.INITONLY, defaultValue=0)
+
+
+    async def onInitialization(self):
+        kwargs = dict(minInc=self.lowerLimit.value,
+                      maxInc=self.upperLimit.value)
+        if self.unit:
+            kwargs.update(
+                unitSymbol=getattr(Unit, self.unit.value),
+                metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
+        self.__class__.value = Overwrite(**kwargs)
+        await self.publishInjectedParameters()
+
+    @Double()
+    async def value(self, value):
+        if not isSet(value) or \
+                not (self.lowerLimit <= value.value <= self.upperLimit):
+            return
+        self.device.set_value = \
+                int((value/ (self.outputFactor / self.calibration)).value)
+        self.value = value
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if ret is None:
+            return State.ON
+        else:
+            return ret
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = AnalogOutputDevice()
+        channel = self.find_channel(self.channel)
+        if isinstance(channel, Struct):
+            self.device.value = channel.value
+            self.outputFactor = channel.factor
+        else:
+            self.device.value = channel
+            self.outputFactor = 1
+
+
+class MonitoredOutputDevice(Device):
+    outputTerm = TerminalVar()
+    inputTerm = TerminalVar()
+
+    ramping = DeviceVar('i')
+    value = DeviceVar('q')
+    target = DeviceVar('q')
+    rampSpeed = DeviceVar('q')
+    lastValue = DeviceVar('i')
+    lastTime = DeviceVar('Q')
+
+    def update(self):
+        now = monotonic()
+        diff = int(self.rampSpeed * (now - self.lastTime / 1e6) / 1e6)
+        try:
+            if self.rampSpeed == 0 or abs(self.target - self.lastValue) < diff:
+                self.lastValue = self.outputTerm = self.target
+                self.lastTime = int(now * 1e6)
+                self.ramping = 0
+            else:
+                self.ramping = self.target - self.lastValue
+                self.lastValue = self.outputTerm = \
+                        self.lastValue + int(copysign(diff, self.ramping))
+                if diff != 0:
+                    self.lastTime = int(now * 1e6)
+        except struct.error:
+            pass
+        self.value = self.inputTerm
+
+    def program(self):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = (self.rampSpeed
+                             * ((ktime(self.ebpf) - self.lastTime) // 1000)
+                             // 1000000000000)
+            with (self.rampSpeed == 0) | \
+                    (abs(self.target - self.lastValue) < self.ebpf.tmp) \
+                    as Else:
+                self.lastValue = self.outputTerm = self.target
+                self.lastTime = ktime(self.ebpf)
+                self.ramping = 0
+            with Else, self.rampSpeed != 0:
+                self.ramping = self.target - self.lastValue
+                with self.ramping > 0 as Else:
+                    self.lastValue += self.ebpf.tmp
+                with Else:
+                    self.lastValue -= self.ebpf.tmp
+                self.outputTerm = self.lastValue
+                with self.ebpf.tmp != 0:
+                    self.lastTime = ktime(self.ebpf)
+        self.value = self.inputTerm
+
+
+class MonitoredOutput(Interlock, EtherCATDevice):
+    """A combination of an analog output and input
+
+    This device writes to an analog output and reads from another
+    one. One may ramp the voltage slowly.
+    """
+    inputChannel = String(displayedName='Input Channel',
+                          accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    outputChannel = String(displayedName='Output Channel',
+                           accessMode=AccessMode.INITONLY,
+                           assignment=Assignment.MANDATORY)
+
+    inputCalibration = Float(
+        displayedName='Input Calibration Factor',
+        defaultValue=1, accessMode=AccessMode.INITONLY,
+        description="multiply the input by this factor")
+    outputCalibration = Float(
+        displayedName='Output Calibration Factor',
+        defaultValue=1, accessMode=AccessMode.INITONLY,
+        description="divide the output value by this factor")
+
+    actualOutput = Double(
+        displayedName='Actual Output', accessMode=AccessMode.READONLY)
+
+    upperLimit = Double(
+        displayedName='Upper Limit',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.VOLT, defaultValue=10)
+    lowerLimit = Double(
+        displayedName='Lower Limit',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.VOLT, defaultValue=0)
+
+    async def onInitialization(self):
+        await super().onInitialization()
+        self.__class__.target = Overwrite(minInc=self.lowerLimit.value,
+                                          maxInc=self.upperLimit.value)
+        await self.publishInjectedParameters()
+
+    device = None
+    lastValue = 0
+
+    @Double(
+        unitSymbol=Unit.VOLT, defaultValue=0,
+        description="the target voltage to go to",
+        allowedStates={State.ON, State.RAMPING_UP, State.RAMPING_DOWN})
+    async def target(self, value):
+        if isSet(value) and self.device is not None:
+            if self.lowerLimit <= value <= self.upperLimit:
+                self.device.target = \
+                    int(value / (self.outputFactor / self.outputCalibration))
+                self.target = value
+
+    value = Float(
+        displayedName='Readback Value',
+        unitSymbol=Unit.VOLT, accessMode=AccessMode.READONLY,
+        description="the voltage read back from the input")
+
+    rampSpeed = Double(
+        displayedName='Ramping Speed',
+        unitSymbol=Unit.VOLT_PER_SECOND, defaultValue=0, minInc=0,
+        description="ramp the output voltage by this speed. "
+        "Put 0 for immediate setting")
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = MonitoredOutputDevice()
+        self.device.lastTime = monotonic()
+        inputChannel = self.find_channel(self.inputChannel)
+        self.device.inputTerm = inputChannel.value
+        self.inputFactor = inputChannel.factor * unit.volt
+        outputChannel = self.find_channel(self.outputChannel)
+        self.device.outputTerm = outputChannel.value
+        self.outputFactor = outputChannel.factor * unit.volt
+        self.device.rampSpeed = \
+            int(self.rampSpeed / (self.outputFactor / self.outputCalibration)
+                * unit.second * 1e6)
+
+    def update_properties(self):
+        if self.lastValue != self.device.value:
+            self.lastValue = self.device.value
+            self.value = self.device.value * self.inputFactor \
+                         / self.inputCalibration * now()
+        output = (self.device.outputTerm
+                  * (self.outputFactor / self.outputCalibration)).value
+        self.device.rampSpeed = \
+            int(self.rampSpeed / (self.outputFactor / self.outputCalibration)
+                * unit.second * 1e6)
+        if output != self.actualOutput:
+            self.actualOutput = output
+        ret = super().update_properties()
+        if ret is not None:
+            return ret
+        if self.state == State.OFF:
+            return State.OFF
+        elif self.device.ramping == 0:
+            return State.ON
+        elif self.device.ramping > 0:
+            return State.RAMPING_UP
+        else:
+            return State.RAMPING_DOWN
+
+    @InterlockSlot()
+    def off(self):
+        self.device.target = 0
+        self.target = 0
+        self.state = State.OFF
+
+    @Slot(allowedStates={State.OFF})
+    async def on(self):
+        self.state = State.ON
+
+
+class MonitoredCurrent(MonitoredOutput):
+    target = Overwrite(unitSymbol=Unit.AMPERE)
+    value = Overwrite(unitSymbol=Unit.AMPERE)
+    upperLimit = Overwrite(unitSymbol=Unit.AMPERE)
+    lowerLimit = Overwrite(unitSymbol=Unit.AMPERE)
+    rampSpeed = Overwrite(unitSymbol=Unit.AMPERE_PER_SECOND)
+    inputCalibration = Overwrite(unitSymbol=Unit.OHM)
+    outputCalibration = Overwrite(unitSymbol=Unit.OHM)
+
+
+class CounterDevice(Device):
+    counter = DeviceVar()
+    maxtime = DeviceVar(size='Q')
+    lasttime = DeviceVar(size='Q')
+    error = DeviceVar()
+
+    def program(self):
+        self.counter += 1
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            with self.ebpf.tmp - self.lasttime > self.maxtime:
+                self.maxtime = self.ebpf.tmp - self.lasttime
+            self.lasttime = self.ebpf.tmp
+
+    def update(self):
+        self.counter += 1
+        tmp = int(monotonic() * 1e6)
+        if tmp - self.lasttime > self.maxtime:
+            self.maxtime = tmp - self.lasttime
+        self.lasttime = tmp
+
+        import time
+        if self.error:
+            time.sleep(self.error / 1000)
+            self.error = 0
+
+
+class Counter(EtherCATDevice):
+    counter = UInt64(accessMode=AccessMode.READONLY, defaultValue=0)
+    frequency = Float(accessMode=AccessMode.READONLY)
+    maxtime = Int32(accessMode=AccessMode.READONLY)
+    errorSleep = Float(defaultValue=0, unitSymbol=Unit.SECOND,
+                       metricPrefixSymbol=MetricPrefix.MILLI)
+
+    def update_properties(self):
+        self.value = self.device.current_value
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.state = State.ON
+        self.device = CounterDevice()
+        self.lasttime = monotonic()
+
+    def update_properties(self):
+        lc = self.counter
+        t1 = monotonic()
+        self.counter = self.device.counter
+        self.frequency = (self.counter - lc) / (t1 - self.lasttime)
+        self.lasttime = t1
+
+        if self.device.maxtime < 1000000000:
+            self.maxtime = self.device.maxtime
+        self.device.maxtime = 0
+
+    @Slot()
+    async def error(self):
+        self.device.error = int(self.errorSleep.value)
+
+
+class MotorDevice(Device):
+    velocity = TerminalVar()
+    encoder = TerminalVar()
+    low_switch = TerminalVar()
+    high_switch = TerminalVar()
+    enabled = TerminalVar()
+    control_word = TerminalVar()
+    reduced_current = TerminalVar()
+    stepcounter = TerminalVar()
+
+    encoder_ready = TerminalVar()
+
+    set_control_word = DeviceVar('H')
+    deadband_exceeded = DeviceVar('b')
+    max_velocity = DeviceVar('q')
+    last_velocity = DeviceVar('q')
+    max_acceleration = DeviceVar('Q')
+    deadband = DeviceVar('q')
+    target = DeviceVar('q')
+    proportional = DeviceVar('q')
+    lasttime = DeviceVar('Q')
+    use_steps = DeviceVar('B')
+    velocity_diff = LocalVar('q')
+
+    def calculate_speed(self):
+        self.ebpf.stmp = (self.proportional * self.ebpf.stmp) >> 16
+
+    def program(self):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf)
+            self.velocity_diff = (self.max_acceleration
+                                  * (self.ebpf.tmp - self.lasttime)) >> 32
+            with self.velocity_diff > 0 as Else:
+                self.lasttime = self.ebpf.tmp
+
+        self.control_word = self.set_control_word
+        with self.ebpf.stmp:
+            if self.stepcounter is None:
+                self.ebpf.stmp = self.target - self.encoder
+            else:
+                with self.use_steps == 0 as Else:
+                    self.ebpf.stmp = self.target - self.encoder
+                with Else:
+                    self.ebpf.stmp = self.target - self.stepcounter
+            with abs(self.ebpf.stmp) > self.deadband as Else:
+                if self.reduced_current is not None:
+                    self.reduced_current = False
+                self.deadband_exceeded = 1
+            if self.reduced_current is not None:
+                with Else:
+                    self.reduced_current = True
+            self.calculate_speed()
+            with self.ebpf.stmp > self.max_velocity:
+                self.ebpf.stmp = self.max_velocity
+            with self.ebpf.stmp + self.max_velocity < 0:
+                self.ebpf.stmp = -self.max_velocity
+            if not self.isLimitless:
+                with (((self.low_switch != 0) & (self.ebpf.stmp < 0))
+                      | ((self.high_switch != 0) & (self.ebpf.stmp > 0))):
+                    self.ebpf.stmp = 0
+                    self.target = self.encoder
+            if self.encoder_ready is not None:
+                with (self.encoder_ready == 0) & (self.use_steps == 0):
+                    self.ebpf.stmp = 0
+            self.velocity = self.ebpf.stmp
+            with self.ebpf.stmp > self.last_velocity + self.velocity_diff as Else:
+                self.velocity = self.last_velocity + self.velocity_diff
+            with Else, self.last_velocity > self.ebpf.stmp + self.velocity_diff:
+                self.velocity = self.last_velocity - self.velocity_diff
+            with self.enabled as Else:
+                self.last_velocity = self.velocity
+            with Else:
+                self.last_velocity = 0
+
+
+class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
+    """A stepper motor with encoder device
+    """
+
+    motor = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    encoder = String(accessMode=AccessMode.INITONLY,
+                     assignment=Assignment.MANDATORY)
+    proportional = Float(
+        displayedName='Proportionality Constant',
+        defaultValue=1, accessMode=AccessMode.INITONLY)
+    encodeStep = Float(
+        displayedName='Encoder Stepsize',
+        accessMode=AccessMode.INITONLY, defaultValue=5e-5,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    motorStep = Float(
+        displayedName='Motor Stepsize', minExc=0,
+        accessMode=AccessMode.INITONLY, defaultValue=5e-5,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    motorStepMeasured = Float(
+        displayedName='Motor Stepsize as Measured',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    offset = Float(
+        accessMode=AccessMode.INITONLY, defaultValue=0,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    deadband = Float(
+        defaultValue=1e-3,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    actualPosition = Float(
+        displayedName='Actual Position',
+        accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    rawPosition = Int64(accessMode=AccessMode.READONLY)
+    actualVelocity = Float(
+        displayedName='Actual Velocity',
+        unitSymbol=Unit.METER_PER_SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI,
+        accessMode=AccessMode.READONLY)
+
+    motor_term = encoder_term = None
+
+    isLimitless = Bool(
+        displayedName='Is Limitless?', description='Ignore the limit switches',
+        defaultValue=False, accessMode=AccessMode.INITONLY)
+    isCWLimit = Bool(
+        displayedName='At Positive Limit?',
+        accessMode=AccessMode.READONLY)
+    isCCWLimit = Bool(
+        displayedName='At Negative Limit?',
+        accessMode=AccessMode.READONLY)
+    isSWLimitLow = Bool(accessMode=AccessMode.READONLY)
+    isSWLimitHigh = Bool(accessMode=AccessMode.READONLY)
+    maxAcceleration = Float(defaultValue=10)
+
+    targetVelocity = Float(
+        displayedName='Target Velocity', defaultValue=1,
+        unitSymbol=Unit.METER_PER_SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI)
+    targetPosition = Float(
+        displayedName='Target Position',
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    stepSize = Float(
+        displayedName='Step Size', defaultValue=1, minExc=0,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+
+    @Float()
+    async def stepLength(self, value):
+        """Legacy version of stepSize"""
+        if isSet(value):
+            self.stepLength = self.stepSize = value.value
+
+    Device = MotorDevice
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = self.Device()
+        self.motor_term = self.find_channel(self.motor)
+        if hasattr(self.motor_term, 'operation_mode'):
+            self.isServo = True
+            self.FAULT_RESET = 0x80
+            self.SHUTDOWN = 6
+            self.SWITCH_OFF = 7
+            self.ENABLE = 0xf
+        else:
+            self.isServo = False
+            self.FAULT_RESET = 2
+            self.ENABLE = 1
+            self.SWITCH_OFF = self.SHUTDOWN = 0
+        self.encoder_term = self.find_channel(self.encoder)
+        self.device.velocity = self.motor_term.velocity
+        self.device.isLimitless = self.isLimitless.value
+        self.device.low_switch = self.motor_term.low_switch
+        self.device.high_switch = self.motor_term.high_switch
+        if isinstance(self.encoder_term, Struct):
+            self.device.encoder = self.encoder_term.position
+            self.device.encoder_ready = self.encoder_term.ready
+            self.terminals = dict(M=self.motor_term, E=self.encoder_term)
+        else:
+            self.device.encoder = self.encoder_term
+            self.terminals = dict(M=self.motor_term, E=None)
+        if hasattr(self.motor_term, 'stepcounter'):
+            self.device.stepcounter = self.motor_term.stepcounter
+        self.device.control_word = self.motor_term.control
+        self.device.enabled = self.motor_term.enabled
+        if hasattr(self.motor_term, 'reduced_current'):
+            self.device.reduced_current = self.motor_term.reduced_current
+
+        self.counts = []
+        self.encoders = []
+
+    @Slot(displayedName='Move',
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
+    async def move(self):
+        self.do_move()
+        # just in case await twice, to guarantee the device goes to the right
+        # state. Not sure whether that's actually necessay, didn't test
+        await self.state_change.wait()
+        await self.state_change.wait()
+
+    def do_move(self):
+        self.device.use_steps = 0
+        self.device.target = int((self.targetPosition - self.offset)
+                                 // self.encodeStep)
+        self.device.set_control_word = self.ENABLE
+
+    @Slot(displayedName='Stop',
+          allowedStates={State.ON, State.MOVING, State.RUNNING,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
+    async def stop(self):
+        self.device.target = self.device.encoder
+        self.device.use_steps = 0
+
+    @Slot(displayedName='On',
+          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
+    async def on(self):
+        self.targetPosition = self.actualPosition
+        await self.move()
+
+    @InterlockSlot(displayedName='Off',
+                   allowedStates={State.ON, State.MOVING, State.ENGAGED,
+                                  State.MOVING_FORWARD, State.MOVING_BACK,
+                                  State.RUNNING})
+    def off(self):
+        self.do_off()
+
+    def do_off(self):
+        self.device.set_control_word = self.SWITCH_OFF
+        self.device.use_steps = 0
+
+    @Slot(displayedName='Step Up',
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_FORWARD})
+    async def stepUp(self):
+        self.targetPosition = self.actualPosition + self.stepSize
+        await self.move()
+
+    @Slot(displayedName='Step Down',
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_BACK})
+    async def stepDown(self):
+        self.targetPosition = self.actualPosition - self.stepSize
+        await self.move()
+
+    @Slot(displayedName='Step Up (open loop)',
+          allowedStates={State.OFF, State.ON, State.ERROR})
+    async def stepUpOpenLoop(self):
+        self.device.use_steps = 1
+        self.device.target = \
+            self.device.stepcounter + int(self.stepSize / self.motorStep)
+        await self.state_change.wait()
+        self.device.set_control_word = self.ENABLE
+
+    @Slot(displayedName='Step Down (open loop)',
+          allowedStates={State.OFF, State.ON, State.ERROR})
+    async def stepDownOpenLoop(self):
+        self.device.use_steps = 1
+        self.device.target = \
+            self.device.stepcounter - int(self.stepSize / self.motorStep)
+        await self.state_change.wait()
+        self.device.set_control_word = self.ENABLE
+
+    @Slot()
+    async def reset(self):
+        await super().reset()
+        self.device.set_control_word = self.FAULT_RESET
+        await sleep(0.2)
+        self.device.set_control_word = self.SHUTDOWN
+
+    keepDisabled = False
+
+    @Slot()
+    async def disable(self):
+        self.device.set_control_word = 0
+        self.keepDisabled = True
+
+    lastvelocity = lastposition = None
+    baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
+
+    def calculate_position(self):
+        return self.device.encoder * self.encodeStep + self.offset
+
+    def update_properties(self):
+        self.device.max_acceleration = \
+            int((self.maxAcceleration / self.motorStep / 1e9 * 2**32).value)
+        if self.lastposition is None \
+                or abs(self.device.encoder - self.lastposition) > 3:
+            self.actualPosition = self.calculate_position() * now()
+            self.rawPosition = self.device.encoder
+            if not isSet(self.targetPosition):
+                self.targetPosition = self.actualPosition
+            self.lastposition = self.device.encoder
+        if self.lastvelocity is None \
+                or abs(self.device.velocity - self.lastvelocity) > 3:
+            self.actualVelocity = self.device.velocity * self.motorStep \
+                    * self.baseFrequency * now()
+            self.lastvelocity = self.device.velocity
+        if self.proportional > 0:
+            ccwLimit = self.device.low_switch
+            cwLimit = self.device.high_switch
+        else:
+            cwLimit = self.device.low_switch
+            ccwLimit = self.device.high_switch
+        if ccwLimit != self.isCCWLimit:
+            self.isCCWLimit = ccwLimit
+        if cwLimit != self.isCWLimit:
+            self.isCWLimit = cwLimit
+
+        self.device.deadband_exceeded = 0
+        self.device.max_velocity = \
+            min(0x7fff, int(self.targetVelocity / self.motorStep
+                            / self.baseFrequency))
+        if self.device.use_steps == 0:
+            self.device.proportional = int(self.proportional * self.encodeStep
+                                           / self.motorStep * (1 << 16))
+        else:
+            self.device.proportional = int(abs(self.proportional * (1 << 16)))
+        self.device.deadband = int(self.deadband // self.encodeStep)
+
+        if self.state == State.MOVING:
+            self.counts.append(self.device.stepcounter)
+            self.encoders.append(self.device.encoder)
+            if len(self.counts) >= 100:
+                try:
+                    slope, _ = polyfit(self.counts, self.encoders, 1)
+                except LinAlgError:
+                    pass
+                else:
+                    self.motorStepMeasured = slope * self.encodeStep * now()
+                    self.counts = []
+                    self.encoders = []
+
+        if (ret := super().update_properties()) is not None:
+            return ret
+        elif self.terminals["E"] is not None and not self.device.encoder_ready:
+            return State.ERROR, f'encoder reported error'
+        if abs(self.device.encoder - self.lastposition) > 3:
+            self.actualPosition = (self.device.encoder * self.encodeStep
+                                   + self.offset) * now()
+            self.rawPosition = self.device.encoder
+            if not isSet(self.targetPosition):
+                self.targetPosition = self.actualPosition
+            self.lastposition = self.device.encoder
+        if self.motor_term.error.get(self.device):
+            return State.ERROR, 'motor reported error'
+        elif self.isServo \
+                and not self.motor_term.ready_switch_on.get(self.device):
+            if self.motor_term.switch_on_disabled.get(self.device):
+                if not self.keepDisabled:
+                    self.device.set_control_word = self.SHUTDOWN
+                return State.DISABLED
+            else:
+                return State.STARTING
+        elif not self.motor_term.enabled.get(self.device):
+            if self.isServo \
+                    and not self.motor_term.switched_on.get(self.device):
+                self.device.set_control_word = self.SWITCH_OFF
+                return State.SWITCHING_ON
+            else:
+                return State.OFF
+        elif self.device.use_steps != 0:
+            if not self.device.deadband_exceeded:
+                self.device.set_control_word = self.SWITCH_OFF
+                self.device.use_steps = 0
+            return State.RUNNING
+        elif self.device.deadband_exceeded and self.device.velocity != 0:
+            return State.MOVING
+        elif not self.isLimitless:
+            if ccwLimit:
+                return State.MOVING_FORWARD
+            elif cwLimit:
+                return State.MOVING_BACK
+        return State.ON
+
+
+class RotationDevice(MotorDevice):
+    def calculate_speed(self):
+        if self.goAround:
+            # we need to add a huge number to avoid signed modulo
+            self.ebpf.stmp = (
+                self.ebpf.stmp
+                + (self.modulo + 2 * (0x80000000 // self.modulo + 1)
+                   * self.modulo)) % (2 * self.modulo) - self.modulo
+        super().calculate_speed()
+
+
+class RotationMotor(Motor):
+    """A stepper motor with degrees as unit"""
+    Device = RotationDevice
+
+    encodeStep = Overwrite(unitSymbol=Unit.DEGREE,
+                           metricPrefixSymbol=MetricPrefix.NONE)
+    motorStep = Overwrite(unitSymbol=Unit.DEGREE,
+                          metricPrefixSymbol=MetricPrefix.NONE)
+    motorStepMeasured = Overwrite(unitSymbol=Unit.DEGREE,
+                                  metricPrefixSymbol=MetricPrefix.NONE)
+    offset = Overwrite(unitSymbol=Unit.DEGREE,
+                       metricPrefixSymbol=MetricPrefix.NONE)
+    deadband = Overwrite(unitSymbol=Unit.DEGREE,
+                         metricPrefixSymbol=MetricPrefix.NONE)
+    actualPosition = Overwrite(unitSymbol=Unit.DEGREE,
+                               metricPrefixSymbol=MetricPrefix.NONE)
+    actualVelocity = Overwrite(unitSymbol=Unit.HERTZ,
+                               metricPrefixSymbol=MetricPrefix.MILLI)
+    targetVelocity = Overwrite(unitSymbol=Unit.HERTZ,
+                               metricPrefixSymbol=MetricPrefix.MILLI)
+    targetPosition = Overwrite(unitSymbol=Unit.DEGREE,
+                               metricPrefixSymbol=MetricPrefix.NONE)
+    stepSize = Overwrite(unitSymbol=Unit.DEGREE,
+                         metricPrefixSymbol=MetricPrefix.NONE)
+    turn = Int8(defaultValue=0)
+    goAround = Bool(
+        displayedName='Go Around', defaultValue=True,
+        description='If True, when going full circle, we are again at the '
+        'same position as before, we do not need to keep track about the '
+        'revolutions we do. For motors which cannot go full circle, set to '
+        'true as we do not want to take track of revolutions in this case.',
+        accessMode=AccessMode.INITONLY)
+    modulo = Float(
+        description="""Restart counting at this position""",
+        unitSymbol=Unit.DEGREE, defaultValue=360,
+        accessMode=AccessMode.INITONLY)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device.modulo = int(abs(self.modulo // (2 * self.encodeStep)))
+        self.device.goAround = self.goAround.value
+
+    def calculate_position(self):
+        ret = super().calculate_position()
+        if not self.goAround:
+            ret += self.turn * self.modulo
+        return ret
+
+    def update_properties(self):
+        if self.lastposition is None:
+            return super().update_properties()
+        if self.device.encoder - self.lastposition > self.device.modulo:
+            self.turn -= 1
+            self.device.target += 2 * self.device.modulo
+        elif self.device.encoder - self.lastposition < -self.device.modulo:
+            self.turn += 1
+            self.device.target -= 2 * self.device.modulo
+        return super().update_properties()
+
+
+class FollowerDevice(MotorDevice):
+    follow_offset = DeviceVar('q')
+    doFollow = DeviceVar('B')
+
+    def calculate_speed(self):
+        super().calculate_speed()
+        with (self.doFollow != 0) & (self.leader.device.enabled != 0):
+            self.ebpf.stmp += \
+                (int(self.motors_factor * self.follow_factor * (1 << 16)) \
+                * self.leader.device.velocity) >> 16
+
+    def program(self):
+        with self.doFollow != 0:
+            self.target = AsLong((self.leader.device.encoder
+                           * int(self.encoders_factor * self.follow_factor
+                                 * (1 << 16))) >> 16) + self.follow_offset
+            with abs(self.target - self.encoder) > self.follow_lag:
+                self.set_control_word = self.SWITCH_OFF
+                self.doFollow = 0
+                self.leader.device.set_control_word = self.leader.SWITCH_OFF
+        super().program()
+
+
+class MotorFollower(Motor):
+    """A stepper motor that may follow another motor"""
+    Device = FollowerDevice
+
+    leader = String(assignment=Assignment.MANDATORY)
+    factor = Float(accessMode=AccessMode.INITONLY, defaultValue=1)
+    maxLag = Float(
+        displayedName='Maximum Lag',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0.1)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        leader = self.getLocalDevice(self.leader)
+        self.device.leader = leader
+        self.device.SWITCH_OFF = self.SWITCH_OFF
+        self.device.follow_factor = self.factor.value
+        self.device.motors_factor = (leader.motorStep / self.motorStep).value
+        self.device.encoders_factor = (leader.encodeStep
+                                       / self.encodeStep).value
+        self.device.follow_lag = int(self.maxLag // self.encodeStep)
+
+    @Slot(displayedName='Move',
+          allowedStates={State.OFF, State.ON, State.MOVING, State.ENGAGED,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
+    async def move(self):
+        self.device.doFollow = 0
+        await super().move()
+
+    @Slot(displayedName='Engage', allowedStates={State.ON})
+    async def couple(self):
+        """start following the leader at this positon"""
+        leader = self.getLocalDevice(self.leader)
+        if leader.state != State.ON:
+            self.status = 'cannot couple if leader is not ON'
+            return
+        self.device.follow_offset = int(
+            self.device.encoder
+            - self.device.leader.device.encoder * self.device.encoders_factor
+            * self.factor)
+        self.device.doFollow = 1
+        self.device.set_control_word = self.ENABLE
+        await self.state_change.wait()
+        await self.state_change.wait()
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if ret in (State.MOVING, State.ON) and self.device.doFollow:
+            return State.ENGAGED
+        return ret
+
+
+class RotationFollower(MotorFollower, RotationMotor):
+    maxLag = Overwrite(unitSymbol=Unit.DEGREE,
+                       metricPrefixSymbol=MetricPrefix.NONE)
+
+
+class FixedFollowerDevice(MotorDevice):
+    def calculate_speed(self):
+        super().calculate_speed()
+        self.ebpf.stmp += \
+            (int(self.motors_factor * self.follow_factor * (1 << 16)) \
+            * self.leader.device.velocity) >> 16
+
+    def program(self):
+        self.set_control_word = self.leader.device.control_word
+        self.target = AsLong((self.leader.device.encoder
+                       * int(self.encoders_factor * self.follow_factor
+                             * (1 << 16))) >> 16) + self.follow_offset
+        with abs(self.target - self.encoder) > self.follow_lag:
+            self.set_control_word = self.SWITCH_OFF
+            self.leader.device.set_control_word = self.leader.SWITCH_OFF
+        super().program()
+
+
+class FixedMotorFollower(Motor):
+    """A stepper motor that always follows another motor"""
+    Device = FixedFollowerDevice
+
+    leader = String(assignment=Assignment.MANDATORY)
+    factor = Float(accessMode=AccessMode.INITONLY, defaultValue=1)
+    follow_offset = Float(
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0)
+    maxLag = Float(
+        displayedName='Maximum Lag',
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=0.1)
+    follow_lag = Float(
+        displayedName='Lag',
+        accessMode=AccessMode.READONLY, unitSymbol=Unit.METER,
+        metricPrefixSymbol=MetricPrefix.MILLI)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        leader = self.getLocalDevice(self.leader)
+        self.device.leader = leader
+        self.device.SWITCH_OFF = self.SWITCH_OFF
+        self.device.follow_factor = self.factor.value
+        self.device.motors_factor = (leader.motorStep / self.motorStep).value
+        self.device.encoders_factor = (leader.encodeStep
+                                       / self.encodeStep).value
+        self.device.follow_lag = int(self.maxLag // self.encodeStep)
+        self.device.follow_offset = \
+            int((self.follow_offset - self.offset + leader.offset)
+                // self.encodeStep)
+        self.device.set_control_word = self.ENABLE
+
+    def update_properties(self):
+        self.follow_lag = (self.device.target - self.device.encoder) * self.encodeStep
+        return super().update_properties()
+
+
+class DisengagementMotor(Motor):
+    disengagementSize = Double(unitSymbol=Unit.METER,
+                               metricPrefixSymbol=MetricPrefix.MILLI,
+                               defaultValue=1)
+
+    laststate = None
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if isinstance(ret, tuple):
+            state = ret[0]
+        else:
+            state = ret
+
+        if state == State.MOVING and self.laststate != State.MOVING:
+            self.disengagementDirection = sign(self.device.target
+                                               - self.device.encoder)
+        elif state != State.MOVING and self.laststate == State.MOVING:
+            self.device.use_steps = 1
+            self.device.target = self.device.stepcounter \
+                - int(self.disengagementDirection
+                      * self.disengagementSize / self.motorStep)
+            self.device.set_control_word = self.ENABLE
+        self.laststate = state
+        return ret
+
+
+class SynchronizeDevice(RotationDevice):
+    trigtime = DeviceVar('Q')
+    trigposition = DeviceVar('i')
+    set_velocity = DeviceVar('h')
+    lastswitch = DeviceVar('B')
+    doSynchronize = DeviceVar('B')
+
+    def calculate_speed(self):
+        super().calculate_speed()
+        with self.doSynchronize != 0:
+            self.ebpf.stmp = self.set_velocity
+
+    def program(self):
+        with (self.high_switch == 0) & (self.lastswitch == 1) \
+                & (self.last_velocity > 0):
+            self.trigtime = ktime(self.ebpf)
+            self.trigposition = self.encoder
+        self.lastswitch = self.high_switch
+        super().program()
+
+
+class SynchronizedMotor(RotationMotor):
+    Device = SynchronizeDevice
+
+    targetPhase = Float(defaultValue=0)
+    lasttrigtime = 0
+    timediff = int((monotonic() - time()) * 1e9)
+
+    offset = Double(defaultValue=0, unitSymbol=Unit.DEGREE)
+
+    integral = Float(unitSymbol=Unit.HERTZ, accessMode=AccessMode.READONLY)
+    triggerPosition = Float(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
+    triggerPhase = Float(accessMode=AccessMode.READONLY)
+
+    proportionalTerm = Float(defaultValue=0)
+    integralTerm = Float(defaultValue=0)
+
+
+    def update_properties(self):
+        ret = super().update_properties()
+        if self.lasttrigtime != self.device.trigtime:
+            self.lasttrigtime = self.device.trigtime
+            self.triggerPosition = (self.device.trigposition
+                                    * self.motorStep) % (360 * unit.degree)
+            trainId = ((self.device.trigtime - self.timediff
+                        - TimeMixin._time_sec * 1e9
+                        - TimeMixin._time_frac * 1e-9)
+                       / (TimeMixin._period * 1e3)) + TimeMixin._tid
+            error = ((trainId + self.targetPhase.value + 1) % 2 - 1)
+            self.triggerPhase = error
+            self.offset = -self.device.trigposition * self.encodeStep * now()
+            if self.device.doSynchronize:
+                self.integral += \
+                    error * self.integralTerm.value * unit.Hz * now()
+                self.device.set_velocity = \
+                    int((self.proportionalTerm.value * error * unit.Hz
+                         + self.integral) / self.baseFrequency)
+        return ret
+
+    @Slot(displayedName='Move',
+          allowedStates={State.OFF, State.ON, State.MOVING,
+                         State.MOVING_FORWARD, State.MOVING_BACK})
+    async def move(self):
+        self.device.doSynchronize = 0
+        await super().move()
+
+    @Slot()
+    async def synchronize(self):
+        self.device.doSynchronize = 1
+        self.device.set_control_word = self.ENABLE
+        self.integral = 45 * unit.degree \
+                / (100 * unit.millisecond * self.motorStep)
+        self.device.set_velocity = int(self.integral / self.baseFrequency)
+
+
+class BronkhorstDevice(Device):
+    setpoint = TerminalVar()
+    current_value = TerminalVar()
+    controller_output = TerminalVar()
+    control_byte = TerminalVar()
+    status_word = TerminalVar()
+
+    set_setpoint = DeviceVar('H')
+
+    def update(self):
+        self.setpoint = self.set_setpoint
+        self.control_byte = 1
+
+
+class Bronkhorst(EtherCATDevice):
+    terminal = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+    setpoint = UInt16()
+    current_value = UInt16(accessMode=AccessMode.READONLY)
+    controller_output = Int16(accessMode=AccessMode.READONLY)
+
+    @Int16()
+    async def setpoint(self, value):
+        if not isSet(value):
+            return
+        self.device.set_setpoint = int(value)
+        self.setpoint = value
+
+    def update_properties(self):
+        self.current_value = self.device.current_value
+        self.controller_output = self.device.controller_output
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_terminal = self.find_channel(self.terminal)
+        self.device = BronkhorstDevice()
+        self.device.owner = self
+        self.device.setpoint = self.the_terminal.setpoint
+        self.device.current_value = self.the_terminal.current_value
+        self.device.controller_output = self.the_terminal.controller_output
+        self.device.control_byte = self.the_terminal.control_byte
+        self.device.status_word = self.the_terminal.status_word
+        #await self.set_mode(None)
+
+    async def set_mode(self, mode):
+        if mode is not None:
+            await self.the_terminal.sdo_write(pack('B', mode), 0x6423, 1)
+        mode, = unpack('B', await self.the_terminal.sdo_read(0x6423, 1))
+        self.state = {
+                0x80: State.RUNNING,
+                0x83: State.CLOSED,
+                0x84: State.OFF,
+                0x88: State.OPENED
+                }.get(mode, State.UNKNOWN)
+
+    @Slot()
+    async def start(self):
+        await self.set_mode(0x80)
+
+    @Slot()
+    async def stop(self):
+        await self.set_mode(0x84)
+
+    @Slot()
+    async def open(self):
+        await self.set_mode(0x88)
+
+    @Slot()
+    async def close(self):
+        await self.set_mode(0x83)
+
+
+class TurboVacDevice(Device):
+    pump_on = TerminalVar()
+    reset = TerminalVar()
+    error_status = TerminalVar()
+    speed_status = TerminalVar()
+    pump_is_on = TerminalVar()
+    speed = TerminalVar()
+    current = TerminalVar()
+
+    set_pump_on = DeviceVar('?')
+
+    def update(self):
+        self.pump_on = self.set_pump_on
+
+
+class TurboVac(EtherCATDevice):
+    pump = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    speed = UInt16(accessMode=AccessMode.READONLY, unitSymbol=Unit.HERTZ)
+    current = Float(accessMode=AccessMode.READONLY,
+                    unitSymbol=Unit.AMPERE)
+    statusbits = UInt16(accessMode=AccessMode.READONLY)
+
+    @Slot()
+    async def start(self):
+        self.device.set_pump_on = True
+
+    @Slot()
+    async def stop(self):
+        self.device.set_pump_on = False
+
+    @Slot()
+    async def reset(self):
+        self.device.set_pump_on = False
+        self.device.reset = True
+        await sleep(0.3)
+        self.device.reset = False
+
+    lastcurrent = None
+    laststatus = None
+
+    def update_properties(self):
+        if self.lastcurrent != self.device.current:
+            self.lastcurrent = self.device.current
+            self.current = self.device.current / 10
+        if self.speed != self.device.speed:
+            self.speed = self.device.speed
+        if self.laststatus != self.device.speed_status:
+            self.statusbits = self.laststatus = self.device.speed_status
+        if self.device.error_status & 7:
+            return State.ERROR, f'error status {self.device.error_status}'
+        elif self.device.speed_status & 0x10:
+            return State.OFF
+        elif self.device.speed_status & 0x40:
+            return State.STARTED
+        elif self.device.speed_status & 0x20:
+            return State.STARTING
+        elif self.device.speed_status & 0x80:
+            return State.STOPPING
+        elif self.device.speed_status & 1:
+            return State.ON
+        else:
+            return State.UNKNOWN, f'unknown state {self.device.speed_status:x}'
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = TurboVacDevice()
+        self.pump_term = self.find_channel(self.pump)
+        self.device.pump_on = self.pump_term.pump_on
+        self.device.error_status = self.pump_term.error_status
+        self.device.speed_status = self.pump_term.speed_status
+        self.device.pump_is_on = self.pump_term.pump_is_on
+        self.device.reset = self.pump_term.reset
+        self.device.speed = self.pump_term.speed
+        self.device.current = self.pump_term.current
+
+
+class InficonDevice(Device):
+    value = TerminalVar()
+    valid = TerminalVar()
+
+    def update(self):
+        pass
+
+
+class Inficon(EtherCATDevice):
+    gauge = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    value = Float(accessMode=AccessMode.READONLY,
+                  unitSymbol=Unit.BAR, metricPrefixSymbol=MetricPrefix.MILLI)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = InficonDevice()
+        self.gauge_term = self.find_channel(self.gauge)
+        self.device.value = self.gauge_term.value
+        self.device.valid = self.gauge_term.valid
+
+    def update_properties(self):
+        self.value = self.device.value * unit.Pa
+        if self.device.valid:
+            return State.ON
+        else:
+            return State.OFF
+
+
+class ValveDevice(Device):
+    coil = TerminalVar()
+    openSwitch = TerminalVar()
+    closeSwitch = TerminalVar()
+
+    error = DeviceVar('?')
+    target = DeviceVar('?')
+    divisor = DeviceVar('d')
+    opentime = DeviceVar('d')
+    delay = DeviceVar('d')
+
+    def update(self):
+        if self.divisor > 0:
+            self.target = (time() - self.delay) % self.divisor < self.opentime
+        inPosition = self.openSwitch != self.closeSwitch
+        isCorrect = ((self.closeSwitch or not self.openSwitch)
+                     if (self.coil == self.safeState)
+                     else (self.openSwitch or not self.closeSwitch))
+        if inPosition and isCorrect:
+            self.lastGood = monotonic()
+            self.coil = self.target
+        elif monotonic() - self.lastGood < self.movingTime:
+            self.coil = self.target
+        else:
+            self.error = True
+            self.coil = self.target = False
+
+    def reset(self):
+        self.error = False
+        self.lastGood = monotonic()
+
+
+class Valve(OptionalKeepOnMixin, Interlock, EtherCATDevice):
+    """A standard valve, one coil and two limit switches"""
+    coil = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY)
+    safeState = Bool(
+        displayedName='Safe State',
+        description="""The 'normal' state to go to when off,
+        True for normally open, False for normally closed""",
+        accessMode=AccessMode.INITONLY, defaultValue=False)
+    movingTime = Float(
+        displayedName='moving time limit',
+        description="""the maximum time the valve may not be at its limit
+        before it is considered an error""",
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
+        defaultValue=3)
+
+    isOpened = Bool(displayedName='Is Open?', accessMode=AccessMode.READONLY)
+    isClosed = Bool(displayedName='Is Closed?', accessMode=AccessMode.READONLY)
+
+    divisor = Int32(defaultValue=1, minExc=0)
+    modulo = Int32(defaultValue=0)
+    delay = Float(defaultValue=0, unitSymbol=Unit.SECOND,
+                  metricPrefixSymbol=MetricPrefix.MILLI)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = ValveDevice()
+        self.device.coil = self.find_channel(self.coil)
+        if self.openSwitch:
+            self.device.openSwitch = self.find_channel(self.openSwitch)
+        if self.closeSwitch:
+            self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        self.device.movingTime = self.movingTime.value
+        self.device.safeState = self.safeState.value
+        self.device.lastGood = monotonic()
+        self.chopping = False
+
+    @InterlockSlot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
+    def open(self):
+        self.chopping = False
+        self.device.target = not self.safeState
+
+    @InterlockSlot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
+    def close(self):
+        self.chopping = False
+        self.device.target = self.safeState
+
+    @Slot(allowedStates={State.OPENED, State.MOVING, State.CLOSED})
+    async def chopper(self):
+        """open and close the valve regularly"""
+        self.chopping = True
+        await self.state_change.wait()
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        await super().reset()
+        self.chopping = False
+        self.device.reset()
+
+    def update_properties(self):
+        if self.chopping:
+            self.device.divisor = self.divisor * TimeMixin._period * 1e-6
+            self.device.delay = TimeMixin._time_sec + TimeMixin._time_frac * 1e-18 \
+                    + self.delay / unit.s + self.modulo * TimeMixin._period * 1e-6
+            self.device.opentime = TimeMixin._period * 1e-6
+        else:
+            self.device.divisor = 0
+        if self.openSwitch and self.device.openSwitch != self.isOpened:
+            self.isOpened = self.device.openSwitch
+        if self.closeSwitch and self.device.closeSwitch != self.isClosed:
+            self.isClosed = self.device.closeSwitch
+        ret = super().update_properties()
+        if isinstance(ret, tuple) and ret[0] == State.INTERLOCKED:
+            self.device.divisor = 0
+            if self.device.error:
+                return State.ERROR
+            else:
+                return ret
+        elif ret is not None:
+            return ret
+        if self.device.error:
+            return State.ERROR
+        elif self.chopping:
+            return State.MOVING
+        elif self.device.coil == self.safeState:
+            if (self.closeSwitch and not self.device.closeSwitch
+                    or self.openSwitch and self.device.openSwitch):
+                return State.CLOSING
+            else:
+                return State.CLOSED
+        else:
+            if (self.openSwitch and not self.device.openSwitch
+                    or self.closeSwitch and self.device.closeSwitch):
+                return State.OPENING
+            else:
+                return State.OPENED
+
+
+class ImpulseValveDevice(Device):
+    coilOpen = TerminalVar()
+    coilClose = TerminalVar()
+    openSwitch = TerminalVar()
+    closeSwitch = TerminalVar()
+
+    target = DeviceVar('B')
+
+    def update(self):
+        self.coilOpen = 0
+        self.coilClose = 0
+        if self.openSwitch != self.closeSwitch and self.target == 0:
+            self.lastGood = monotonic()
+        elif self.target > 1 and monotonic() - self.lastGood > self.movingTime:
+            self.target = 1  # error
+        if self.target == 2:
+            if self.openSwitch:
+                self.target = 0
+            else:
+                self.coilOpen = 1
+        elif self.target == 3:
+            if self.closeSwitch:
+                self.target = 0
+            else:
+                self.coilClose = 1
+
+
+class ImpulseValve(OptionalKeepOnMixin, Interlock, EtherCATDevice):
+    """A standard valve, one coil and two limit switches"""
+    coilOpen = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+    coilClose = String(accessMode=AccessMode.INITONLY,
+                       assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY)
+    movingTime = Float(
+        displayedName='moving time limit',
+        description="""the maximum time the valve may not be at its limit
+        before it is considered an error""",
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND,
+        defaultValue=3)
+
+    isOpened = Bool(displayedName='Is Open?', accessMode=AccessMode.READONLY)
+    isClosed = Bool(displayedName='Is Closed?', accessMode=AccessMode.READONLY)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = ImpulseValveDevice()
+        self.device.coilOpen = self.find_channel(self.coilOpen)
+        self.device.coilClose = self.find_channel(self.coilClose)
+        self.device.openSwitch = self.find_channel(self.openSwitch)
+        self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        self.device.movingTime = self.movingTime.value
+        self.device.lastGood = monotonic()
+
+    @InterlockSlot(allowedStates={State.CLOSED, State.CLOSING, State.MOVING})
+    def open(self):
+        self.device.target = 2
+
+    @InterlockSlot(allowedStates={State.OPENED, State.OPENING, State.MOVING})
+    def close(self):
+        self.device.target = 3
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        await super().reset()
+        self.device.target = 0
+
+    def update_properties(self):
+        if self.device.openSwitch != self.isOpened:
+            self.isOpened = self.device.openSwitch
+        if self.device.closeSwitch != self.isClosed:
+            self.isClosed = self.device.closeSwitch
+        ret = super().update_properties()
+        if self.device.target == 1:
+            return State.ERROR
+        if isinstance(ret, tuple) and ret[0] == State.INTERLOCKED:
+            return ret
+        if self.device.target == 2:
+            return State.OPENING
+        elif self.device.target == 3:
+            return State.CLOSING
+        elif self.device.openSwitch:
+            return State.OPENED
+        elif self.device.closeSwitch:
+            return State.CLOSED
+        return State.ERROR
+
+
+class SlowRoughingValve(Valve):
+    """A valve with a second coil for slow pumping"""
+    slowCoil = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+
+    def get_devices(self):
+        ret = super().get_devices()
+        return ret + (self.slowDevice,)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.slowDevice = optionalFusedOutput(
+            self.find_channel(self.slowCoil))
+
+    @InterlockSlot(allowedStates=
+          {State.CLOSED, State.CLOSING, State.MOVING, State.EMPTYING})
+    def open(self):
+        self.slowDevice.value = False
+        super().open.synchronous(self)
+
+    @InterlockSlot(allowedStates=
+          {State.OPENED, State.OPENING, State.MOVING, State.EMPTYING})
+    def close(self):
+        self.slowDevice.value = False
+        super().close.synchronous(self)
+
+    @Slot(allowedStates=
+          {State.CLOSED, State.CLOSING, State.MOVING, State.EMPTYING})
+    async def slow(self):
+        self.slowDevice.value = True
+        await self.state_change.wait()
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        await super().reset()
+        self.slowDevice.value = False
+        self.device.reset()
+
+    def update_properties(self):
+        if (ret := super().update_properties()) == State.ERROR:
+            return ret
+        if self.slowDevice.value == 1:
+            return State.EMPTYING
+        elif self.slowDevice.value == 2:
+            return State.ERROR
+        else:
+            return ret
+
+
+class ShutterDevice(Device):
+    velocity = TerminalVar()
+    enable = TerminalVar()
+    openSwitch = TerminalVar()
+    closeSwitch = TerminalVar()
+
+    error = DeviceVar('?')
+    target = DeviceVar('?')
+    lastGood = monotonic()
+
+    def update(self):
+        if (self.openSwitch != self.closeSwitch) \
+                and (self.openSwitch if self.target else self.closeSwitch):
+            self.lastGood = monotonic()
+            self.enable = False
+        elif monotonic() - self.lastGood < self.movingTime:
+            self.velocity = -(-1) ** self.target * self.speed
+            self.enable = True
+        else:
+            self.error = True
+            self.enable = False
+
+    def reset(self):
+        self.error = False
+        self.lastGood = monotonic()
+
+
+class Shutter(EtherCATDevice):
+    """A shutter that is operated by a motor
+
+    this device sets a positive or negative speed to a motor in order to open
+    or close a shutter, respectively.
+    """
+    velocity = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    enable = String(accessMode=AccessMode.INITONLY,
+                  assignment=Assignment.MANDATORY)
+    openSwitch = String(accessMode=AccessMode.INITONLY,
+                        assignment=Assignment.MANDATORY)
+    closeSwitch = String(accessMode=AccessMode.INITONLY,
+                         assignment=Assignment.MANDATORY)
+    movingTime = Float(
+        accessMode=AccessMode.INITONLY, unitSymbol=Unit.SECOND, defaultValue=3,
+        description="The maximum time it takes to reach a limit switch")
+    speed = Int16(
+        accessMode=AccessMode.INITONLY, defaultValue=3, minInc=0,
+        description="The speed to set the motor to for opening and closing")
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = ShutterDevice()
+        self.device.velocity = self.find_channel(self.velocity)
+        self.device.openSwitch = self.find_channel(self.openSwitch)
+        self.device.closeSwitch = self.find_channel(self.closeSwitch)
+        self.device.enable = self.find_channel(self.enable)
+        self.device.movingTime = self.movingTime.value
+        self.device.speed = self.speed.value
+
+    @Slot(allowedStates={State.CLOSED, State.CLOSING})
+    async def open(self):
+        self.device.target = True
+
+    @Slot(allowedStates={State.OPENED, State.OPENING})
+    async def close(self):
+        self.device.target = False
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        self.device.reset()
+
+    def update_properties(self):
+        if self.device.error:
+            return State.ERROR
+        elif self.device.openSwitch:
+            return State.OPENED
+        elif self.device.closeSwitch:
+            return State.CLOSED
+        elif self.device.velocity > 0:
+            return State.OPENING
+        elif self.device.velocity < 0:
+            return State.CLOSING
+        else:
+            return State.ERROR
+
+
+class EtherCATSCPIMaster(EtherCATDevice):
+    terminal = String(accessMode=AccessMode.INITONLY,
+                      assignment=Assignment.MANDATORY)
+
+    allowLF = False  # duck-typing an SCPI Master
+
+    def __init__(self, configuration):
+        from scpiDevices.scpi import GenericSCPIMaster
+
+        super().__init__(configuration)
+        self.connectEvent = GenericSCPIMaster.instances.setdefault(
+            self.deviceId.value, Event())
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.channel = self.find_channel(self.terminal)
+        self.device = Serial(self.channel)
+
+        async def initialize():
+            self.reader, self.writer = await self.device.connect()
+            self.lock = Lock()
+            self.connectEvent.set()
+            self.state = State.ON
+
+        self.state = State.INIT
+        background(initialize())
+
+
+class Automation1Device(Device):
+    actualPosition = TerminalVar()
+    actualVelocity = TerminalVar()
+    error = TerminalVar()
+    status = TerminalVar()
+    enabled = TerminalVar()
+    homed = TerminalVar()
+
+    targetPosition_term = TerminalVar()
+    targetVelocity_term = TerminalVar()
+    command_term = TerminalVar()
+
+    targetPosition = DeviceVar('d')
+    targetVelocity = DeviceVar('d')
+    command = DeviceVar('i')
+
+    def update(self):
+        self.targetPosition_term = self.targetPosition
+        self.targetVelocity_term = self.targetVelocity
+        self.command_term = self.command
+
+
+class Automation1(EtherCATDevice):
+    motor = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    actualPosition = Float(
+        displayedName='Actual Position', accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    actualVelocity = Float(
+        displayedName='Actual Velocity', accessMode=AccessMode.READONLY,
+        unitSymbol=Unit.METER_PER_SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI)
+    homed = Bool(
+        displayedName='Homed', accessMode=AccessMode.READONLY)
+    error = Int32(
+        displayedName='Error Code',
+        accessMode=AccessMode.READONLY)
+    targetPosition = Float(
+        displayedName='Target Position',
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    targetVelocity = Float(
+        displayedName='Target Velocity', defaultValue=1, minExc=0,
+        unitSymbol=Unit.METER_PER_SECOND, metricPrefixSymbol=MetricPrefix.MILLI)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = Automation1Device()
+        self.motor_term = self.find_channel(self.motor)
+        self.device.actualPosition = self.motor_term.actualPosition
+        self.device.actualVelocity = self.motor_term.actualVelocity
+        self.device.targetPosition_term = self.motor_term.targetPosition
+        self.device.targetVelocity_term = self.motor_term.targetVelocity
+        self.device.command_term = self.motor_term.command
+        self.device.error = self.motor_term.error
+        self.device.status = self.motor_term.status
+        self.device.enabled = self.motor_term.enabled
+        self.device.homed = self.motor_term.homed
+
+    @Slot(allowedStates={State.OFF})
+    async def on(self):
+        self.device.command = 4
+
+    @Slot(allowedStates={State.ON})
+    async def off(self):
+        self.device.command = 5
+
+    @Slot(allowedStates={State.ERROR})
+    async def reset(self):
+        self.device.command = 2
+
+    @Slot(allowedStates={State.ON})
+    async def home(self):
+        self.device.command = 3
+
+    @Slot(allowedStates={State.ON, State.MOVING})
+    async def move(self):
+        self.device.targetPosition = self.targetPosition.value
+        self.device.targetVelocity = self.targetVelocity.value
+        self.device.command = 1
+
+    @Slot(allowedStates={State.MOVING})
+    async def stop(self):
+        self.device.command = 6
+
+    stepSize = Float(
+        displayedName='Step Size', minExc=0, defaultValue=1,
+        unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+
+    @Slot(allowedStates={State.ON})
+    async def stepUp(self):
+        self.targetPosition = self.actualPosition + self.stepSize
+        await self.move()
+
+    @Slot(allowedStates={State.ON})
+    async def stepDown(self):
+        self.targetPosition = self.actualPosition - self.stepSize
+        await self.move()
+
+    def update_properties(self):
+        self.actualPosition = self.device.actualPosition
+        self.actualVelocity = self.device.actualVelocity
+        self.homed = self.device.homed
+
+        self.state = (State.OFF, State.ON, State.MOVING, State.ERROR) \
+            [self.device.status]
+
+        if self.error != self.device.error:
+            self.error = self.device.error
+            self.status = (
+                "All OK",
+                "Lower Limit",
+                "Upper Limit",
+                "Too slow",
+                "Too fast",
+                "Not homed",
+            )[self.device.error]
+
+
+class TurboPump(EtherCATDevice):
+    rpm80 = String(accessMode=AccessMode.INITONLY,
+                   assignment=Assignment.MANDATORY)
+    speedChannel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+
+    speed = Float(accessMode=AccessMode.READONLY, unitSymbol=Unit.PERCENT)
+
+    oldvalue = -1
+
+    def get_devices(self):
+        return (self.speedDevice, self.rpm80Device)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.the_speedChannel = self.find_channel(self.speedChannel)
+        self.speedDevice = AnalogInputDevice(self.the_speedChannel.value)
+        self.rpm80Device = DigitalInputDevice(self.find_channel(self.rpm80))
+
+    def update_properties(self):
+        if self.speedDevice.value != self.oldvalue:
+            self.oldvalue = self.speedDevice.value
+            self.speed = (self.speedDevice.value * self.the_speedChannel.factor
+                    + self.the_speedChannel.offset) * 10
+        if self.rpm80Device.value:
+            return State.ON
+        else:
+            return State.OFF
+
+
+class Safety(EtherCATDevice):
+    mainTerminal = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    generic_input = Int32(accessMode=AccessMode.READONLY)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.main_terminal = self.find_channel(self.mainTerminal)
+        self.device = SafetyDevice(self.main_terminal)
+
+    acknowledge_flag = 0
+
+    @Slot()
+    async def acknowledge(self):
+        self.acknowledge_flag = self.ACKNOWLEDGE_BIT
+        await sleep(0.2)
+        self.acknowledge_flag = 0
+
+    safe_states = {0: State.OFF, 1: State.ON, 3: State.STOPPED,
+                   6: State.STARTING, 8: State.SWITCHING_ON}
+
+    input_map = ()
+
+    def update_properties(self):
+        state = self.safe_states.get(self.device.safe_logic_state,
+                                     State.UNKNOWN)
+
+        self.generic_input = self.device.generic_input
+        self.device.generic_output = self.RUN_BIT | self.acknowledge_flag
+        for bits, descr in self.input_map:
+            descr.__set__(self, self.device.generic_input & bits != 0)
+        return state
+
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        input_map = []
+        for k, v in cls.__dict__.items():
+            alias = getattr(v, 'alias', None)
+            if alias is not None:
+                input_map.append((literal_eval(alias), v))
+        cls.input_map = cls.input_map + tuple(input_map)
+
+
+class TrainTriggerDevice(Device):
+    output = TerminalVar()
+    phase = DeviceVar("Q")
+    modulo = DeviceVar("Q")
+    dutyCycle = DeviceVar("Q")
+
+    def program(self):
+        self.output = 0
+        with (ktime(self.ebpf) - self.phase) % self.modulo < self.dutyCycle:
+            self.output = 1
+
+
+class TrainTrigger(EtherCATDevice):
+    outputChannel = String(accessMode=AccessMode.INITONLY,
+                           assignment=Assignment.MANDATORY)
+    dutyCycle = Double(unitSymbol=Unit.PERCENT, defaultValue=10)
+    timediff = int((monotonic() - time()) * 1e9)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = TrainTriggerDevice()
+        self.device.output = self.find_channel(self.outputChannel)
+
+    def update_properties(self):
+        self.device.modulo = int(TimeMixin._period * 1000)
+        self.device.phase =  int(self.timediff + TimeMixin._time_sec * 1e9
+                                 + TimeMixin._time_frac * 1e-9)
+        self.device.dutyCycle = int(self.dutyCycle * self.device.modulo)
+
+
+class PatternTriggerDevice(Device):
+    output = TerminalVar()
+
+    MAXPATTERNLEN = 320
+    assert MAXPATTERNLEN % (8 * 4) == 0
+
+    onValue = 1
+    offValue = 0
+    trainbase = DeviceVar("q")
+    trainlength = DeviceVar("Q")
+    patternlength = DeviceVar('H')
+    pattern = DeviceVar(f'{(MAXPATTERNLEN + 7) // 8}B')
+    duration = DeviceVar('Q')
+
+    def program(self):
+        self.output = self.offValue
+        with self.ebpf.tmp:
+            self.ebpf.tmp = ktime(self.ebpf) - self.trainbase
+            with self.ebpf.tmp % self.trainlength < self.duration:
+                self.ebpf.tmp = (self.ebpf.tmp // self.trainlength) \
+                                % self.patternlength
+                with (self.ebpf.tmp < self.MAXPATTERNLEN) \
+                    & ((self.pattern[self.ebpf.tmp >> 3]
+                        >> (self.ebpf.tmp % 8)) & 1 != 0):
+                    self.output = self.onValue
+
+
+class AnalogPatternDevice(PatternTriggerDevice):
+    onValue = DeviceVar('i')
+    offValue = DeviceVar('i')
+
+
+class PatternTrigger(EtherCATDevice):
+    outputChannel = String(accessMode=AccessMode.INITONLY,
+                           assignment=Assignment.MANDATORY)
+    duration = Double(unitSymbol=Unit.SECOND, minInc=0, maxInc=100,
+                      metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=10)
+    delay = Double(unitSymbol=Unit.SECOND,
+                   metricPrefixSymbol=MetricPrefix.MILLI, defaultValue=10)
+
+    @String(defaultValue='AB')
+    async def rawPattern(self, value):
+        if not value:
+            return
+        self.rawPattern = value
+        self.setPattern()
+
+    @String(defaultValue='A')
+    async def triggerKeys(self, value):
+        self.triggerKeys = value
+        self.triggerSet = set(value)
+        self.setPattern()
+
+    triggerSet = ''
+
+    def setPattern(self):
+        mask = sum(2 ** i for i, key in enumerate(self.rawPattern)
+                   if key in self.triggerSet)
+        self.pattern = tuple((mask >> i) & 0xff for i in
+                             range(0, PatternTriggerDevice.MAXPATTERNLEN, 8))
+
+    async def follow(self):
+        with await getDevice(self.master) as device:
+            while True:
+                self.rawPattern = device.rawPattern
+                self.setPattern()
+                await waitUntilNew(device.rawPattern)
+
+    @String(accessMode=AccessMode.INITONLY)
+    async def master(self, value):
+        self.master = value
+        if value:
+            background(self.follow())
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.special_join()
+
+    def special_join(self):
+        self.device = PatternTriggerDevice()
+        self.device.output = self.find_channel(self.outputChannel)
+        self.state = State.ON
+
+    def update_properties(self):
+        timediff = int((monotonic() - time()) * 1e9)
+        self.device.trainlength = int(TimeMixin._period * 1000)
+        self.device.trainbase = int(
+                timediff + self.delay / unit.ns
+                + TimeMixin._time_sec * 1e9 + TimeMixin._time_frac * 1e-9
+                - (TimeMixin._tid % len(self.rawPattern))
+                  * self.device.trainlength)
+        self.device.duration = int(self.duration / unit.ns)
+        self.device.patternlength = len(self.rawPattern)
+        self.device.pattern = self.pattern
+        return super().update_properties()
+
+
+class PatternTriggerVolt(Interlock, PatternTrigger):
+    offValue = Double(defaultValue=0, unitSymbol=Unit.VOLT)
+    onValue = Double(defaultValue=0, unitSymbol=Unit.VOLT)
+    outputCalibration = Float(
+        displayedName='Output Calibration Factor',
+        defaultValue=1, accessMode=AccessMode.INITONLY,
+        description="divide the output value by this factor")
+
+    def special_join(self):
+        self.device = AnalogPatternDevice()
+        outputChannel = self.find_channel(self.outputChannel)
+        self.device.output = outputChannel.value
+        self.outputFactor = outputChannel.factor * unit.volt
+        self.state = State.OFF
+
+    @Slot(allowedStates={State.OFF, State.RUNNING})
+    async def on(self):
+        self.state = State.ON
+
+    @Slot(allowedStates={State.OFF, State.ON})
+    async def run(self):
+        self.state = State.RUNNING
+
+    @InterlockSlot(allowedStates={State.ON, State.RUNNING})
+    def off(self):
+        self.state = State.OFF
+
+    def update_properties(self):
+        ret = super().update_properties()
+
+        if self.state == State.RUNNING:
+            self.device.onValue = int(
+                self.onValue / (self.outputFactor / self.outputCalibration))
+            self.device.offValue = int(
+                self.offValue / (self.outputFactor / self.outputCalibration))
+        elif self.state == State.ON:
+            self.device.offValue = self.device.onValue = int(
+                self.onValue / (self.outputFactor / self.outputCalibration))
+        else:
+            self.device.onValue = self.device.offValue = 0
+
+        if ret is None:
+            if self.state == State.INTERLOCKED:
+                return State.OFF, ''
+            else:
+                return self.state, ''
+        else:
+            return ret
+
+
+class PatternTriggerCurrent(PatternTriggerVolt):
+    onValue = Overwrite(unitSymbol=Unit.AMPERE)
+    offValue = Overwrite(unitSymbol=Unit.AMPERE)
+    outputCalibration = Overwrite(unitSymbol=Unit.OHM)
+
+
+class FrequencyAnalyzerDevice(Device):
+    channel = TerminalVar()
+    interval = DeviceVar('Q')
+    MODULO = 256
+    data = DeviceVar(f'{MODULO}i')
+
+    def program(self):
+        with self.ebpf.tmp:
+            self.ebpf.tmp = (ktime(self.ebpf) // self.interval) % self.MODULO
+            with self.ebpf.tmp < self.MODULO as Else:
+                self.data[self.ebpf.tmp] = self.channel
+
+
+class Trace(Configurable):
+    data = VectorFloat(accessMode=AccessMode.READONLY,
+                       minSize=FrequencyAnalyzerDevice.MODULO,
+                       maxSize=FrequencyAnalyzerDevice.MODULO)
+
+
+class Intermediate(Configurable):
+    data = Node(Trace)
+
+
+class FrequencyAnalyzer(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    interval = Double(defaultValue=10,
+                      unitSymbol=Unit.SECOND,
+                      metricPrefixSymbol=MetricPrefix.MILLI)
+    spectrumAbsolute = OutputChannel(Intermediate)
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = FrequencyAnalyzerDevice()
+        self.device.channel = self.find_channel(self.channel).value
+
+    last_update = 0
+
+    def update_properties(self):
+        self.device.interval = int(self.interval / (1 * unit.ns))
+        now = monotonic() * unit.second
+        if now - self.last_update > self.interval * self.device.MODULO:
+            self.last_update = now
+            self.spectrumAbsolute.schema.data = abs(fft(self.device.data))
+            self.spectrumAbsolute.writeDataNoWait()
+
+
+class FastRead(EtherCATDevice):
+    channel = String(accessMode=AccessMode.INITONLY,
+                          assignment=Assignment.MANDATORY)
+    unit = String(accessMode=AccessMode.INITONLY, defaultValue='')
+    prefix = String(accessMode=AccessMode.INITONLY, defaultValue='NONE')
+    calibration = Double(accessMode=AccessMode.INITONLY, defaultValue=1)
+    value = Double(accessMode=AccessMode.READONLY)
+    trace = OutputChannel(Intermediate)
+
+    task = None
+
+    async def onInitialization(self):
+        if self.unit:
+            self.__class__.value = Overwrite(
+                unitSymbol=getattr(Unit, self.unit.value),
+                metricPrefixSymbol=getattr(MetricPrefix, self.prefix.value))
+            await self.publishInjectedParameters()
+
+    def join(self, syncGroup):
+        super().join(syncGroup)
+        self.device = FrequencyAnalyzerDevice()
+        channel = self.find_channel(self.channel)
+        self.device.channel = channel.value
+        self.factor = getattr(channel, 'factor', 1)
+        self.offset = getattr(channel, 'offset', 0)
+        if self.task is not None and not self.task.done():
+            self.task.cancel()
+
+        self.task = background(self.runner())
+
+    async def runner(self):
+        while True:
+            trainId = time() - TimeMixin._time_sec \
+                    - 1e-18 * TimeMixin._time_frac
+            period = TimeMixin._period * 1e-6
+            await sleep(period - trainId % period)
+            if not isinstance(self.device.interval, int):
+                continue
+            self.device.interval = int(1 / (8 * unit.hertz * unit.ns
+                                            * self.device.MODULO))
+            last = (monotonic()
+                    // (8 * self.device.MODULO)) % self.device.MODULO
+            data = array(self.device.data)
+            self.trace.schema.data.data = \
+                    ((roll(data, -last) * self.factor + self.offset)
+                     / self.calibration).value.astype('f')
+            self.trace.writeDataNoWait()
+            self.value = ((data.mean() * self.factor + self.offset)
+                          / self.calibration).value

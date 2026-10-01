@@ -1,0 +1,85 @@
+var $AbsVelocity as real
+var $RealVelocity as real
+var $RealPosition as real
+
+
+program
+	$PositionLag = 0
+	$InPosition = 0
+	$Enabled = 0
+	$Homed = 0
+	$Error = 0
+	$Status = 0
+	Disable(X)
+	$RealPosition = StatusGetAxisItem(X, AxisStatusItem.PositionFeedback)
+	$ActualPosition = $RealPosition
+	$RealVelocity = StatusGetAxisItem(X, AxisStatusItem.VelocityFeedback)
+	$ActualVelocity = $RealVelocity
+	while ($EmergencyStop != 1)
+		$RealPosition = StatusGetAxisItem(X, AxisStatusItem.PositionFeedback)
+		$ActualPosition = 0.9 * $ActualPosition + 0.1 * $RealPosition
+		$RealVelocity = StatusGetAxisItem(X, AxisStatusItem.VelocityFeedback)
+		$ActualVelocity = 0.9 * $ActualVelocity + 0.1 * $RealVelocity
+		$AbsVelocity = Abs($ActualVelocity)
+		$PositionLag = Abs($TargetPosition-$ActualPosition)
+		if ($Status == 0)
+			if ($Command == 4)
+				Enable(X)
+				$Status = 1
+			end
+		elseif ($Status == 1)
+			if ($Command ==1)
+				if ($TargetPosition < -30.01)
+					$Status = 3
+					$Error = 1
+				elseif ($TargetPosition > 30.01)
+					$Status = 3
+					$Error = 2
+				elseif ($TargetVelocity < 0.001)
+					$Status = 3
+					$Error = 3
+					elseif ($TargetVelocity > 60.1)
+					$Error = 4
+				elseif ($Homed == 0)
+					$Status = 3
+					$Error = 5
+				elseif ($PositionLag < 0.001)
+					$Status = 1
+				else
+					$Status = 2
+					MoveAbsolute(X, $TargetPosition, $TargetVelocity)
+				end
+			elseif ($Command == 3)
+				if ($Homed == 1)
+					$Homed = 1
+				else
+					Home(X)
+					$Homed = 1
+				end
+			elseif ($Command == 5)
+					Disable(X)
+					$Status = 0
+			end
+		elseif ($Status == 2)
+			if ($ActualVelocity < 0.5) && ($PositionLag < 0.001)
+				$Status = 1
+			else
+				$Status = 2
+			end
+			if ($Command == 6)
+				Abort(X)
+				$Status = 1
+			elseif ($Command == 1)
+				Abort(X)
+				MoveAbsolute(X, $TargetPosition, $TargetVelocity)
+			end
+		elseif ($Status == 3)
+			if ($Command == 2)
+				$Status = 1
+			end
+		end // Status
+
+		Dwell(0.001)
+	end
+	Disable(X)
+end
