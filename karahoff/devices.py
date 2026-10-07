@@ -1496,11 +1496,11 @@ class TurboVac(EtherCATDevice):
                     unitSymbol=Unit.AMPERE)
     statusbits = UInt16(accessMode=AccessMode.READONLY)
 
-    @Slot()
+    @Slot(allowedStates={State.OFF, State.ON, State.STOPPING})
     async def start(self):
         self.device.set_pump_on = True
 
-    @Slot()
+    @Slot(allowedStates={State.ON, State.STARTED, State.STARTING})
     async def stop(self):
         self.device.set_pump_on = False
 
