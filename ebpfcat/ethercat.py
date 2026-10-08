@@ -765,7 +765,7 @@ class Terminal:
                 await parse(parse_eeprom(self.eeprom[50]), SyncManager.IN)
                 if 50 in self.eeprom else 0)
 
-    async def set_state(self, state, *, clear_error=False):
+    async def set_state(self, state, *, clear_error=False, check=True):
         """try to set the state"""
         assert isinstance(state, MachineState)
         if clear_error:
@@ -781,6 +781,10 @@ class Terminal:
         except Exception as e:
             e.add_note(f'in terminal {self.name}')
             raise
+
+        if not check:
+            return
+
         newstate = None
         while state != newstate:
             newstate, error, status = await self.get_state()

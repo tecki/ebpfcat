@@ -808,7 +808,7 @@ class SyncGroupBase:
         await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL, clear_error=True)
                        for t, rw in self.terminals.items() if rw])
         future = self.ec.roundtrip_packet(data, self.packet_index)
-        await gather(*[t.set_state(MachineState.OPERATIONAL)
+        await gather(*[t.set_state(MachineState.OPERATIONAL, check=False)
                        for t, rw in self.terminals.items() if rw])
         self.wkc_errors = 1  # write actions are ignored before
 
