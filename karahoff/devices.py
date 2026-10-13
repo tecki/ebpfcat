@@ -895,6 +895,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.device.low_switch = self.motor_term.low_switch
         self.device.high_switch = self.motor_term.high_switch
         self.device.invertLimits = self.invertLimits.value
+        self.baseFrequency = self.motor_term.baseFrequency * unit.Hz
         if isinstance(self.encoder_term, Struct):
             self.device.encoder = self.encoder_term.position
             self.device.encoder_ready = self.encoder_term.ready
@@ -1000,7 +1001,6 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.keepDisabled = True
 
     lastvelocity = lastposition = None
-    baseFrequency = 128000 / 0x7fff * unit.Hz  # base frequency of EL7041
 
     def calculate_position(self):
         return self.device.encoder * self.encodeStep + self.offset
