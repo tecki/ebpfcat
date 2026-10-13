@@ -891,6 +891,9 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             self.SWITCH_OFF = self.SHUTDOWN = 0
         self.encoder_term = self.find_channel(self.encoder)
         self.device.velocity = self.motor_term.velocity
+        assert self.motor_term.velocity.size in 'hi'
+        self.max_velocity = 0x7fffffff \
+                if self.motor_term.velocity.size == 'i' else 0x7fff
         self.device.isLimitless = self.isLimitless.value
         self.device.low_switch = self.motor_term.low_switch
         self.device.high_switch = self.motor_term.high_switch
@@ -1033,8 +1036,8 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
 
         self.device.deadband_exceeded = 0
         self.device.max_velocity = \
-            min(0x7fff, int(self.targetVelocity / self.motorStep
-                            / self.baseFrequency))
+            min(self.max_velocity, int(self.targetVelocity / self.motorStep
+                                       / self.baseFrequency))
         if self.device.use_steps == 0:
             self.device.proportional = int(self.proportional * self.encodeStep
                                            / self.motorStep * (1 << 16))
