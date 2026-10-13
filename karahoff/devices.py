@@ -777,8 +777,10 @@ class MotorDevice(Device):
             with self.ebpf.stmp + self.max_velocity < 0:
                 self.ebpf.stmp = -self.max_velocity
             if not self.isLimitless:
-                with (((self.low_switch != 0) & (self.ebpf.stmp < 0))
-                      | ((self.high_switch != 0) & (self.ebpf.stmp > 0))):
+                with (((self.low_switch != self.invertLimits)
+                       & (self.ebpf.stmp < 0))
+                      | ((self.high_switch != self.invertLimits)
+                       & (self.ebpf.stmp > 0))):
                     self.ebpf.stmp = 0
                     self.target = self.encoder
             if self.encoder_ready is not None:
@@ -814,6 +816,12 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         displayedName='Motor Stepsize', minExc=0,
         accessMode=AccessMode.INITONLY, defaultValue=5e-5,
         unitSymbol=Unit.METER, metricPrefixSymbol=MetricPrefix.MILLI)
+    invertLimits = Bool(accessMode=AccessMode.INITONLY,
+                        displayedName='invert limit switches?',
+                        defaultValue=False)
+    isLimitless = Bool(
+        displayedName='Is Limitless?', description='Ignore the limit switches',
+        defaultValue=False, accessMode=AccessMode.INITONLY)
     motorStepMeasured = Float(
         displayedName='Motor Stepsize as Measured',
         accessMode=AccessMode.READONLY,
@@ -837,9 +845,6 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
 
     motor_term = encoder_term = None
 
-    isLimitless = Bool(
-        displayedName='Is Limitless?', description='Ignore the limit switches',
-        defaultValue=False, accessMode=AccessMode.INITONLY)
     isCWLimit = Bool(
         displayedName='At Positive Limit?',
         accessMode=AccessMode.READONLY)
@@ -889,6 +894,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
         self.device.isLimitless = self.isLimitless.value
         self.device.low_switch = self.motor_term.low_switch
         self.device.high_switch = self.motor_term.high_switch
+        self.device.invertLimits = self.invertLimits.value
         if isinstance(self.encoder_term, Struct):
             self.device.encoder = self.encoder_term.position
             self.device.encoder_ready = self.encoder_term.ready
@@ -1015,11 +1021,11 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                     * self.baseFrequency * now()
             self.lastvelocity = self.device.velocity
         if self.proportional > 0:
-            ccwLimit = self.device.low_switch
-            cwLimit = self.device.high_switch
+            ccwLimit = self.device.low_switch != self.invertLimits
+            cwLimit = self.device.high_switch != self.invertLimits
         else:
-            cwLimit = self.device.low_switch
-            ccwLimit = self.device.high_switch
+            cwLimit = self.device.low_switch != self.invertLimits
+            ccwLimit = self.device.high_switch != self.invertLimits
         if ccwLimit != self.isCCWLimit:
             self.isCCWLimit = ccwLimit
         if cwLimit != self.isCWLimit:
