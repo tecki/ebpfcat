@@ -352,7 +352,7 @@ class EL7041_1000(EBPFTerminal):
 class EL7062(EBPFTerminal):
     compatibility = {(2, 0x1B963052)}
 
-    out_pdos = [0x1600, 0x1601, 0x1680, 0x1681]
+    out_pdos = [0x1600, 0x1601, 0x1604, 0x1680, 0x1681, 0x1684]
     in_pdos = [0x1A00, 0x1A01, 0x1A10, 0x1A80, 0x1A81, 0x1A90]
 
     class Channel(Struct):
@@ -360,6 +360,7 @@ class EL7062(EBPFTerminal):
         enable = ProcessDesc(0x7010, 1, 1)
         reset = ProcessDesc(0x7010, 1, 7)
         control = ProcessDesc(0x7010, 1)
+        reduced_current = ProcessDesc(0x7010, 0xb)
 
         status = ProcessDesc(0x6010, 1)
         ready_switch_on = ProcessDesc(0x6010, 1, 0)

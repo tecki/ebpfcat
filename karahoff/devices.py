@@ -765,12 +765,10 @@ class MotorDevice(Device):
                 with Else:
                     self.ebpf.stmp = self.target - self.stepcounter
             with abs(self.ebpf.stmp) > self.deadband as Else:
-                if self.reduced_current is not None:
-                    self.reduced_current = False
+                self.reduced_current = self.full_current
                 self.deadband_exceeded = 1
-            if self.reduced_current is not None:
-                with Else:
-                    self.reduced_current = True
+            with Else:
+                self.reduced_current = self.low_current
             self.calculate_speed()
             with self.ebpf.stmp > self.max_velocity:
                 self.ebpf.stmp = self.max_velocity
@@ -822,6 +820,9 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     isLimitless = Bool(
         displayedName='Is Limitless?', description='Ignore the limit switches',
         defaultValue=False, accessMode=AccessMode.INITONLY)
+    reducedCurrent = Float(
+        displayedName='Reduced Current', accessMode=AccessMode.INITONLY,
+        defaultValue=50, unitSymbol=Unit.PERCENT, minInc=0, maxInc=100)
     motorStepMeasured = Float(
         displayedName='Motor Stepsize as Measured',
         accessMode=AccessMode.READONLY,
@@ -910,8 +911,13 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             self.device.stepcounter = self.motor_term.stepcounter
         self.device.control_word = self.motor_term.control
         self.device.enabled = self.motor_term.enabled
-        if hasattr(self.motor_term, 'reduced_current'):
-            self.device.reduced_current = self.motor_term.reduced_current
+        self.device.reduced_current = self.motor_term.reduced_current
+        if isinstance(self.motor_term.reduced_current.size, int):
+            self.device.low_current = True
+            self.device.full_current = False
+        else:
+            self.device.low_current = int(self.reducedCurrent * 1000)
+            self.device.full_current = 1000
 
         self.counts = []
         self.encoders = []
