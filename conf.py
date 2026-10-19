@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.viewcode',
