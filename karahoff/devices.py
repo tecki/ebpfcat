@@ -1042,8 +1042,7 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                                            / self.motorStep * (1 << 16))
         else:
             self.device.proportional = int(abs(self.proportional * (1 << 16)))
-        self.device.deadband = int(self.deadband // self.encodeStep)
-
+        self.device.deadband = int(abs(self.deadband // self.encodeStep))
         if self.state == State.MOVING:
             self.counts.append(self.device.stepcounter)
             self.encoders.append(self.device.encoder)
