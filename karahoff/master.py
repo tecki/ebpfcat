@@ -625,7 +625,7 @@ class EtherCATTerminal(Device):
                 except EtherCatError as e:
                     coe.append((k, kk, str(vv), f"Error {e.args[0]}", 0))
                 else:
-                    if isinstance(value, int):
+                    if isinstance(value, int) and -2 ** 64 <= value < 2 ** 64:
                         coe.append((k, kk, str(vv), '', value))
                     else:
                         coe.append((k, kk, str(vv), repr(value), 0))
