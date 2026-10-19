@@ -13,8 +13,8 @@ project = 'EBPFCat'
 copyright = '2026, European XFEL GmbH'
 author = 'Martin Teichmann'
 
-release = "1.4"
-version = "1.4.0"
+release = "2.0"
+version = "2.0.0"
 language = "en"
 exclude_patterns = ['_build']
 pygments_style = 'sphinx'
