@@ -3,7 +3,7 @@ from time import monotonic
 
 from karabo.middlelayer import (
     AccessMode, Bool, Configurable, Device, Float, Node, Slot, State, String,
-    Unit)
+    Unit, background, connectDevice)
 
 from .master import EtherCATDevice
 
@@ -74,17 +74,27 @@ class InterlockCondition(Configurable):
 
     lastgood = 0
 
+    async def getProxy(self, local, key, deviceId):
+        local[key] = await connectDevice(deviceId)
+
     def compile(self, condition):
         cond, subs = replace(condition)
         local = {k: self.parent.getLocalDevice(v)
                        for k, v in subs.items()}
         local['self'] = self.parent
+        for k, v in local.items():
+            if v is None:
+                background(self.getProxy(local, k, subs[k]))
         return local, compile(cond, self.parent.deviceId.value, 'eval')
 
     def check(self):
         msg = None
         for k, v in self.locals.items():
-            if k != 'self' and v.state in {State.UNKNOWN, State.ERROR}:
+            if v is None:
+                interlock = True
+                msg = f'device {k} not (yet) there'
+                break
+            elif k != 'self' and v.state in {State.UNKNOWN, State.ERROR}:
                 interlock = True
                 msg = f'device {v.deviceId.value} in error'
                 break
