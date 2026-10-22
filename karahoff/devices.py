@@ -330,7 +330,7 @@ class DigitalOutput(OptionalSwitchMixin):
 
     on = Overwrite(allowedStates={State.OFF, State.RUNNING})
 
-    @InterlockSlot(allowedStates={State.ON, State.RUNNING})
+    @InterlockSlot(allowedStates={State.ON, State.RUNNING, State.ERROR})
     def off(self):
         for d in self.switchDevices:
             d.value = 0
