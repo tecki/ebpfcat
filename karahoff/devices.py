@@ -1017,13 +1017,6 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
     def update_properties(self):
         self.device.max_acceleration = \
             int((self.maxAcceleration / self.motorStep / 1e9 * 2**32).value)
-        if self.lastposition is None \
-                or abs(self.device.encoder - self.lastposition) > 3:
-            self.actualPosition = self.calculate_position() * now()
-            self.rawPosition = self.device.encoder
-            if not isSet(self.targetPosition):
-                self.targetPosition = self.actualPosition
-            self.lastposition = self.device.encoder
         if self.lastvelocity is None \
                 or abs(self.device.velocity - self.lastvelocity) > 3:
             self.actualVelocity = self.device.velocity * self.motorStep \
@@ -1064,17 +1057,19 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
                     self.counts = []
                     self.encoders = []
 
-        if (ret := super().update_properties()) is not None:
-            return ret
-        elif self.terminals["E"] is not None and not self.device.encoder_ready:
+        if self.terminals["E"] is not None and not self.device.encoder_ready:
             return State.ERROR, f'encoder reported error'
-        if abs(self.device.encoder - self.lastposition) > 3:
-            self.actualPosition = (self.device.encoder * self.encodeStep
-                                   + self.offset) * now()
+        if self.lastposition is None \
+                or abs(self.device.encoder - self.lastposition) > 3:
+            self.actualPosition = self.calculate_position() * now()
             self.rawPosition = self.device.encoder
             if not isSet(self.targetPosition):
                 self.targetPosition = self.actualPosition
             self.lastposition = self.device.encoder
+        # we want to assure that the actualPosition has been set before this,
+        # as interlocks often depend on it
+        if (ret := super().update_properties()) is not None:
+            return ret
         if self.motor_term.error.get(self.device):
             return State.ERROR, 'motor reported error'
         elif self.isServo \
