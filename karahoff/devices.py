@@ -1036,9 +1036,9 @@ class Motor(OptionalKeepOnMixin, Interlock, EtherCATDevice):
             cwLimit = self.device.low_switch != self.invertLimits
             ccwLimit = self.device.high_switch != self.invertLimits
         if ccwLimit != self.isCCWLimit:
-            self.isCCWLimit = ccwLimit
+            self.isCCWLimit = ccwLimit.value
         if cwLimit != self.isCWLimit:
-            self.isCWLimit = cwLimit
+            self.isCWLimit = cwLimit.value
 
         self.device.deadband_exceeded = 0
         self.device.max_velocity = \
