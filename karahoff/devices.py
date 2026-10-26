@@ -1221,7 +1221,9 @@ class MotorFollower(Motor):
         self.device.leader = leader
         self.device.SWITCH_OFF = self.SWITCH_OFF
         self.device.follow_factor = self.factor.value
-        self.device.motors_factor = (leader.motorStep / self.motorStep).value
+        self.device.motors_factor = (leader.motorStep / self.motorStep
+                                     * sign(self.proportional)
+                                     * sign(leader.proportional)).value
         self.device.encoders_factor = (leader.encodeStep
                                        / self.encodeStep).value
         self.device.follow_lag = int(self.maxLag // self.encodeStep)
@@ -1306,7 +1308,7 @@ class FixedMotorFollower(Motor):
         self.device.motors_factor = (leader.motorStep / self.motorStep).value
         self.device.encoders_factor = (leader.encodeStep
                                        / self.encodeStep).value
-        self.device.follow_lag = int(self.maxLag // self.encodeStep)
+        self.device.follow_lag = int(abs(self.maxLag // self.encodeStep))
         self.device.follow_offset = \
             int((self.follow_offset - self.offset + leader.offset)
                 // self.encodeStep)
