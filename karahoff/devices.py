@@ -1356,7 +1356,7 @@ class DisengagementMotor(Motor):
 class SynchronizeDevice(RotationDevice):
     trigtime = DeviceVar('Q')
     trigposition = DeviceVar('i')
-    set_velocity = DeviceVar('h')
+    set_velocity = DeviceVar('q')
     lastswitch = DeviceVar('B')
     doSynchronize = DeviceVar('B')
 
@@ -1366,11 +1366,11 @@ class SynchronizeDevice(RotationDevice):
             self.velocity_raw = self.set_velocity
 
     def program(self):
-        with (self.high_switch == 0) & (self.lastswitch == 1) \
+        with (self.low_switch == 0) & (self.lastswitch == 1) \
                 & (self.last_velocity > 0):
             self.trigtime = ktime(self.ebpf)
             self.trigposition = self.encoder
-        self.lastswitch = self.high_switch
+        self.lastswitch = self.low_switch
         super().program()
 
 
