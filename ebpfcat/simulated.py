@@ -18,7 +18,7 @@
 import gc
 import os
 from asyncio import CancelledError, ensure_future, get_event_loop, run
-from multiprocessing import Array, Process, Value, get_context
+from multiprocessing import get_context
 
 from .ebpf import EBPFBase, Map
 
@@ -44,9 +44,10 @@ class Memoryview:
     while memoryview uses memcpy, which tries to use as big a unit size
     as possible. This makes synchronization much better.
     """
+
     def __init__(self, array):
         self.array = array
-        self.memview = memoryview(array).cast('B')
+        self.memview = memoryview(array).cast("B")
 
     def __getitem__(self, key):
         return self.memview[key]
@@ -66,11 +67,11 @@ class Memoryview:
 
 class ProcessEBPF(SimulatedEBPF):
     def __init__(self, **kwargs):
-        self.ctx = get_context('spawn')
+        self.ctx = get_context("spawn")
         super().__init__(**kwargs)
 
     def get_array(self, size):
-        return Memoryview(self.ctx.Array('B', size).get_obj())
+        return Memoryview(self.ctx.Array("B", size).get_obj())
 
     @property
     def running(self):
@@ -82,8 +83,8 @@ class ProcessEBPF(SimulatedEBPF):
         gc.disable()
         param = os.sched_param(os.sched_get_priority_max(os.SCHED_RR))
         os.sched_setscheduler(0, os.SCHED_RR, param)
-        if self.name != 'No Name':
-            with open('/proc/self/comm', 'w') as fout:
+        if self.name != "No Name":
+            with open("/proc/self/comm", "w") as fout:
                 fout.write(self.name[-15:])
         run(self.subprocess_loop())
 
@@ -115,7 +116,7 @@ class ProcessEBPF(SimulatedEBPF):
                 loop.remove_reader(fd)
 
     def start(self):
-        self.runningValue = self.ctx.Value('B')
+        self.runningValue = self.ctx.Value("B")
         self.runningValue.value = True
         self.process = self.ctx.Process(target=self.subprocess_run)
         self.process.start()

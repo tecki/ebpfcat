@@ -20,7 +20,7 @@ from itertools import chain
 from logging import getLogger
 
 
-logger = getLogger('ebpfcat')
+logger = getLogger("ebpfcat")
 
 
 class sub:
@@ -31,7 +31,7 @@ class sub:
     def __getattr__(self, name):
         mro = self.base.__class__.__mro__[::-1]
         i = mro.index(self.cls)
-        for cls in chain(mro[i + 1 :], mro[:i + 1]):
+        for cls in chain(mro[i + 1 :], mro[: i + 1]):
             func = cls.__dict__.get(name)
             if func is not None:
                 return func.__get__(self.base, cls)
@@ -39,6 +39,7 @@ class sub:
 
 
 if __name__ == "__main__":
+
     class A:
         def g(self):
             print("A.f")
@@ -55,11 +56,9 @@ if __name__ == "__main__":
         def f(self):
             print("D.f")
 
-
     b = D()
     print(D.__mro__)
     sub(A, b).f()
     sub(B, b).f()
     sub(C, b).f()
     sub(D, b).f()
-

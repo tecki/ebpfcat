@@ -22,8 +22,15 @@
 """
 import string
 from ctypes import (
-    CDLL, addressof, c_char, c_char_p, c_int, c_void_p, cast,
-    create_string_buffer, get_errno)
+    CDLL,
+    addressof,
+    c_char,
+    c_int,
+    c_void_p,
+    cast,
+    create_string_buffer,
+    get_errno,
+)
 from enum import Enum, Flag
 from os import strerror
 from platform import machine
@@ -34,7 +41,7 @@ try:
         "armv7l": 386,
         "x86_64": 321,
         "aarch64": 280,
-        }[machine()]
+    }[machine()]
 except KeyError:
     print("Unknown platform:", machine())
 
@@ -102,11 +109,13 @@ class UpdateFlags(Flag):
 
 libc = CDLL("libc.so.6", use_errno=True)
 
+
 def addrof(ptr):
     if isinstance(ptr, bytearray):
         return addressof(c_char.from_buffer(ptr))
     else:
         return cast(ptr, c_void_p).value
+
 
 def bpf(cmd, fmt, *args):
     attr = pack(fmt, *args)
@@ -116,12 +125,14 @@ def bpf(cmd, fmt, *args):
         raise OSError(get_errno(), strerror(get_errno()))
     return ret, unpack(fmt, attr.raw)
 
-def create_map(map_type, key_size, value_size, max_entries,
-               attributes=MapFlags(0)):
+
+def create_map(map_type, key_size, value_size, max_entries, attributes=MapFlags(0)):
     assert isinstance(map_type, MapType)
     assert isinstance(attributes, MapFlags)
-    return bpf(0, "IIIII", map_type.value, key_size, value_size, max_entries,
-               attributes.value)[0]
+    return bpf(
+        0, "IIIII", map_type.value, key_size, value_size, max_entries, attributes.value
+    )[0]
+
 
 def _lookup_elem(cmd, fd, key, fmt):
     if isinstance(fmt, int):
@@ -143,11 +154,14 @@ def _lookup_elem(cmd, fd, key, fmt):
     else:
         return None
 
+
 def lookup_elem(*args):
     return _lookup_elem(1, *args)
 
+
 def lookup_and_delete_elem(*args):
     return _lookup_elem(21, *args)
+
 
 def update_elem(fd, key, value, flags=UpdateFlags.ANY):
     assert isinstance(flags, UpdateFlags)
@@ -158,6 +172,7 @@ def update_elem(fd, key, value, flags=UpdateFlags.ANY):
             raise IndexError("map is full")
         raise
 
+
 def delete_elem(fd, key):
     try:
         return bpf(3, "IQ", fd, addrof(key))[0]
@@ -165,6 +180,7 @@ def delete_elem(fd, key):
         if e.errno == 2:
             raise KeyError
         raise
+
 
 def get_next_key(fd, key):
     if isinstance(key, int):
@@ -181,11 +197,22 @@ def get_next_key(fd, key):
         raise
     return ret
 
+
 allowed_chars = set(string.ascii_letters + string.digits + "-_")
 
-def prog_load(prog_type, insns, license,
-              log_level=0, log_size=4096, kern_version=0, flags=0,
-              name="", ifindex=0, attach_type=0):
+
+def prog_load(
+    prog_type,
+    insns,
+    license,
+    log_level=0,
+    log_size=4096,
+    kern_version=0,
+    flags=0,
+    name="",
+    ifindex=0,
+    attach_type=0,
+):
     if log_level == 0:
         log_buf = 0
         log_size = 0
@@ -193,12 +220,24 @@ def prog_load(prog_type, insns, license,
         the_logbuf = create_string_buffer(log_size)
         log_buf = addrof(the_logbuf)
     license = license.encode("utf8")
-    assert len(name) < 16 and set(name) <= allowed_chars, f'wrong name {name}'
+    assert len(name) < 16 and set(name) <= allowed_chars, f"wrong name {name}"
     try:
-        fd, _ = bpf(5, "IIQQIIQII16sII", prog_type.value, int(len(insns) // 8),
-                    addrof(insns), addrof(license), log_level, log_size,
-                    log_buf, kern_version, flags, name.encode("utf8"), ifindex,
-                    attach_type)
+        fd, _ = bpf(
+            5,
+            "IIQQIIQII16sII",
+            prog_type.value,
+            int(len(insns) // 8),
+            addrof(insns),
+            addrof(license),
+            log_level,
+            log_size,
+            log_buf,
+            kern_version,
+            flags,
+            name.encode("utf8"),
+            ifindex,
+            attach_type,
+        )
     except OSError as e:
         if log_level != 0:
             raise BPFError(e.errno, the_logbuf.value.decode("utf8"))
@@ -208,17 +247,19 @@ def prog_load(prog_type, insns, license,
     else:
         return fd, None
 
+
 def obj_pin(pathname, fd):
     pn = pathname.encode("utf8")
     bpf(6, "QI", addrof(pn), fd)
+
 
 def obj_get(pathname):
     pn = pathname.encode("utf8")
     fd, _ = bpf(7, "Q", addrof(pn))
     return fd
 
-def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
-                  repeat=1):
+
+def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out, repeat=1):
     if isinstance(data_in, int):
         data_in = create_string_buffer(data_in)
     else:
@@ -230,6 +271,15 @@ def prog_test_run(fd, data_in, data_out, ctx_in, ctx_out,
     data_out = create_string_buffer(data_out)
     ctx_out = create_string_buffer(ctx_out)
     ret, (_, retval, _, _, _, _, _, duration) = bpf(
-            10, "IIIIQQII20x", fd, 0, len(data_in), len(data_out),
-            addrof(data_in), addrof(data_out), repeat, 0)
+        10,
+        "IIIIQQII20x",
+        fd,
+        0,
+        len(data_in),
+        len(data_out),
+        addrof(data_in),
+        addrof(data_out),
+        repeat,
+        0,
+    )
     return ret, retval, duration, data_out.value, ctx_out.value

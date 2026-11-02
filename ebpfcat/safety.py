@@ -29,9 +29,7 @@ programmed by different means. The communication is not part of the safety
 considerations of Safety-over-Ethercat.
 """
 
-from itertools import count
-
-from .ethercat import ECCmd, EtherCatError, Packet, SyncManager
+from .ethercat import ECCmd, Packet, SyncManager
 from .ebpfcat import Device, EBPFTerminal, ProcessDesc, TerminalVar, DeviceVar
 
 
@@ -44,6 +42,7 @@ class SafetyDevice(Device):
 
     :param main_terminal: The terminal that controls the safety PLC
     """
+
     safe_logic_state = TerminalVar()
     my_output = TerminalVar()
     generic_input = TerminalVar()
@@ -93,7 +92,7 @@ class SafetyDevice(Device):
 class SafetyMain(EBPFTerminal):
     """The main instance of a safety PLC"""
 
-    compatibility = {(2, 0x1afe3052), (2, 190787666)}
+    compatibility = {(2, 0x1AFE3052), (2, 190787666)}
 
     safe_logic_state = ProcessDesc(0xF100, 1)
     cycle_counter = ProcessDesc(0xF100, 2)
@@ -109,8 +108,8 @@ class SafetyMain(EBPFTerminal):
 
         self.sub_addrs = []
         for idx, subidx in self.pdos:
-            if idx & 0xf00f == 0x6001 and subidx == 1:
-                safe_addr, = await self.sdo_read_format('<H', idx + 0x3000, 2)
+            if idx & 0xF00F == 0x6001 and subidx == 1:
+                (safe_addr,) = await self.sdo_read_format("<H", idx + 0x3000, 2)
                 self.sub_addrs.append((idx - 1, safe_addr))
 
     def allocate(self, packet, readwrite):
@@ -122,10 +121,8 @@ class SafetyMain(EBPFTerminal):
         for idx, safe_addr in self.sub_addrs:
             term = self.ec.terminal_by_safe_address[safe_addr]
             term.bases = {
-                SyncManager.IN: (self.sub_in_base,
-                                 self.pdos[idx + 0x1000, 1][1]),
-                SyncManager.OUT: (self.sub_out_base,
-                                  self.pdos[idx, 1][1]),
+                SyncManager.IN: (self.sub_in_base, self.pdos[idx + 0x1000, 1][1]),
+                SyncManager.OUT: (self.sub_out_base, self.pdos[idx, 1][1]),
             }
 
         bases = {}
@@ -140,12 +137,12 @@ class SafetyMain(EBPFTerminal):
 
 class SafetySub(EBPFTerminal):
     """All sub instances of a safety PLC"""
-    
+
     compatibility = {(2, 0x7703052), (2, 190328914)}
 
     async def initialize(self, *args, **kwargs):
         await super().initialize(*args, **kwargs)
-        safe_address, = await self.sdo_read_format('<H', 0x9001, 2)
+        (safe_address,) = await self.sdo_read_format("<H", 0x9001, 2)
         self.ec.terminal_by_safe_address[safe_address] = self
 
     def allocate(self, packet, readwrite):

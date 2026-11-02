@@ -23,41 +23,64 @@ terminals, these are the base classes to inherit from:
     :members:
 
 """
+
 import logging
-from asyncio import CancelledError, Event, gather, get_event_loop, sleep
+from asyncio import CancelledError, Event, gather, sleep
 from contextlib import AsyncExitStack
 from itertools import chain
 from struct import pack, unpack
 
-from ebpfcat import devices, terminals
 from ebpfcat.ebpfcat import (
-    FastSyncGroup, ParallelEtherCat, ProcessSyncGroup, Struct,
-    SyncGroup, Terminal)
-from ebpfcat.ethercat import EEPROM, EtherCatError, MachineState, SyncManager
+    FastSyncGroup,
+    ParallelEtherCat,
+    ProcessSyncGroup,
+    SyncGroup,
+    Terminal,
+)
+from ebpfcat.ethercat import EEPROM, EtherCatError, MachineState
 from karabo import middlelayer as ml
 from karabo.middlelayer import (
-    AccessMode, Assignment, Bool, Configurable, Device, Double, Float, Int64,
-    MetricPrefix, Simple, Slot, State, String, Unit, VectorHash, VectorInt64,
-    VectorString, background, getDevice, isSet, unit, waitUntil)
+    AccessMode,
+    Assignment,
+    Bool,
+    Configurable,
+    Device,
+    Double,
+    Int64,
+    MetricPrefix,
+    Simple,
+    Slot,
+    State,
+    String,
+    Unit,
+    VectorHash,
+    VectorInt64,
+    VectorString,
+    background,
+    getDevice,
+    isSet,
+    unit,
+    waitUntil,
+)
 
-logger = logging.getLogger('ebpfcat')
+logger = logging.getLogger("ebpfcat")
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 formats = {
-    ml.UInt8: 'B',
-    ml.Int8: 'b',
-    ml.UInt16: 'H',
-    ml.Int16: 'h',
-    ml.UInt32: 'I',
-    ml.Int32: 'i',
-    ml.UInt64: 'Q',
-    ml.Int64: 'q',
-    ml.Float: 'f',
-    ml.Double: 'd',
-    ml.Bool: '?',
+    ml.UInt8: "B",
+    ml.Int8: "b",
+    ml.UInt16: "H",
+    ml.Int16: "h",
+    ml.UInt32: "I",
+    ml.Int32: "i",
+    ml.UInt64: "Q",
+    ml.Int64: "q",
+    ml.Float: "f",
+    ml.Double: "d",
+    ml.Bool: "?",
 }
 
 
@@ -69,13 +92,13 @@ class TerminalTable(ml.Configurable):
     name = ml.String()
     classId = ml.String()
     serialNo = ml.Int64()
-    vendorId = ml.Int32(displayType='hex')
-    productCode = ml.Int32(displayType='hex')
+    vendorId = ml.Int32(displayType="hex")
+    productCode = ml.Int32(displayType="hex")
 
 
 class CoETable(ml.Configurable):
-    index = ml.UInt16(displayType='hex')
-    subIndex = ml.UInt8(displayType='hex')
+    index = ml.UInt16(displayType="hex")
+    subIndex = ml.UInt8(displayType="hex")
     address = ml.String()
     comment = ml.String()
     format = ml.String()
@@ -97,25 +120,31 @@ class EtherCATMaster(Device):
     have a serial number yet, one may be written with
     :meth:`writeSerial`.
     """
+
     instances = {}
     terminalsInitializingCount = 0
 
-    interface = String(accessMode=AccessMode.INITONLY,
-                       assignment=Assignment.MANDATORY)
+    interface = String(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
     serialNumbers = VectorInt64(
-        accessMode=AccessMode.READONLY, displayedName='Serial Numbers',
+        accessMode=AccessMode.READONLY,
+        displayedName="Serial Numbers",
         description="""The serial numbers of the termials in the order
         they have been found on the bus. Negative numbers indicate that
-        no serial number has been set for this terminal.""")
+        no serial number has been set for this terminal.""",
+    )
 
     targetTerminal = Int64(
-        displayedName='Target Terminal',
+        displayedName="Target Terminal",
         description="""The serial number of the terminal to be used for
-        other commands, or a negative number for the number on the bus""")
-    targetSerial = ml.UInt32(displayedName='Target Serial Number',
-                             description='The serial number to write')
-    information = String(accessMode=AccessMode.READONLY,
-                         description='The information read from the terminal')
+        other commands, or a negative number for the number on the bus""",
+    )
+    targetSerial = ml.UInt32(
+        displayedName="Target Serial Number", description="The serial number to write"
+    )
+    information = String(
+        accessMode=AccessMode.READONLY,
+        description="The information read from the terminal",
+    )
 
     def __init__(self, configuration):
         super().__init__(configuration)
@@ -147,7 +176,7 @@ class EtherCATMaster(Device):
         if serialNo > 0:
             old = self.addr_by_serial.get(serialNo)
             if old is not None and old != address:
-                status = f'double serial number found: {serialNo} at {i}'
+                status = f"double serial number found: {serialNo} at {i}"
                 self.status = status
                 self.logger.error(status)
                 self.state = State.ERROR
@@ -157,13 +186,14 @@ class EtherCATMaster(Device):
         self.addr_by_serial[i] = address
         return i
 
-    @Slot(displayedName='Scan Bus')
+    @Slot(displayedName="Scan Bus")
     async def scanBus(self):
         """Scan the bus and read the terminal serial numbers"""
         count = await self.ethercat.count()
         self.status = f"counted {count} terminals"
-        self.serialNumbers = \
-            await gather(*(self.init_one_terminal(-i) for i in range(count)))
+        self.serialNumbers = await gather(
+            *(self.init_one_terminal(-i) for i in range(count))
+        )
 
     async def getTerminal(self):
         address = self.addr_by_serial[self.targetTerminal.value]
@@ -173,7 +203,7 @@ class EtherCATMaster(Device):
             await term.initialize(absolute=address)
         return term
 
-    @Slot(displayedName='Get Information')
+    @Slot(displayedName="Get Information")
     async def getInfo(self):
         """get information about the targetTerminal"""
         term = await self.getTerminal()
@@ -181,60 +211,64 @@ class EtherCATMaster(Device):
         i = 1
         ret = []
         while i < len(infos):
-            ret.append(infos[i+1 : i+infos[i]+1].decode("latin1"))
+            ret.append(infos[i + 1 : i + infos[i] + 1].decode("latin1"))
             i += infos[i] + 1
-        self.information = '\n'.join(ret)
+        self.information = "\n".join(ret)
 
-    @Slot(displayedName='Write Serial Number')
+    @Slot(displayedName="Write Serial Number")
     async def writeSerial(self):
         """write the serial number to the EEPROM of the terminal"""
         term = await self.getTerminal()
-        await term.eeprom_write_one(0xe, self.targetSerial.value & 0xffff)
-        await term.eeprom_write_one(0xf, self.targetSerial.value >> 16)
+        await term.eeprom_write_one(0xE, self.targetSerial.value & 0xFFFF)
+        await term.eeprom_write_one(0xF, self.targetSerial.value >> 16)
 
 
 class EtherCATSyncGroupBase(Device):
     master = String(accessMode=AccessMode.INITONLY)
     devices = VectorString(accessMode=AccessMode.INITONLY)
     interval = Double(defaultValue=0.05)
-    cycletime = Double(accessMode=AccessMode.INITONLY, defaultValue=10,
-                       unitSymbol=Unit.SECOND,
-                       metricPrefixSymbol=MetricPrefix.MILLI)
+    cycletime = Double(
+        accessMode=AccessMode.INITONLY,
+        defaultValue=10,
+        unitSymbol=Unit.SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI,
+    )
     debug = Bool(accessMode=AccessMode.INITONLY, defaultValue=False)
     max_wkc_errors = ml.UInt32(
-        displayedName='Working Counter Error Limit',
-        description='Stop the sync group in case of that many WKC errors',
-        defaultValue=5)
+        displayedName="Working Counter Error Limit",
+        description="Stop the sync group in case of that many WKC errors",
+        defaultValue=5,
+    )
     task = None
 
     async def onInitialization(self):
         self.status = "waiting for master"
         master = await getDevice(self.master)
-        assert master.serverId == self.serverId, f'server {master.serverId}'
+        assert master.serverId == self.serverId, f"server {master.serverId}"
         self.ethercat = self.getLocalDevice(self.master)
         assert isinstance(self.ethercat, EtherCATMaster)
         self.status = "waiting for devices"
         devs = await gather(*[getDevice(d) for d in self.devices])
         for d in devs:
-            assert d.serverId == self.serverId, f'{d.deviceId} on {d.serverId}'
+            assert d.serverId == self.serverId, f"{d.deviceId} on {d.serverId}"
         self.status = "waiting for master to go to ON state"
         with master:
             await waitUntil(lambda: master.state == State.ON)
-        self.status = 'master is ON'
+        self.status = "master is ON"
         self.devs = [self.getLocalDevice(d) for d in self.devices]
         self.status = "waiting for devices to join"
         if self.ethercat.terminalsInitializingCount != 0:
             await self.ethercat.terminalsInitialized.wait()
         for d in self.devs:
-            d.status = f'joining {self.deviceId}'
+            d.status = f"joining {self.deviceId}"
         while True:
             try:
                 for d in self.devs:
                     try:
                         d.join(self)
                     except Exception as e:
-                        e.add_note(f'while {d.deviceId} is joining')
-                        self.status = f'error in {d.deviceId}: {e}'
+                        e.add_note(f"while {d.deviceId} is joining")
+                        self.status = f"error in {d.deviceId}: {e}"
                         raise
                 break
             except TerminalUnknownError as e:
@@ -243,7 +277,8 @@ class EtherCATSyncGroupBase(Device):
         self.status = "ready"
         self.syncGroup = self.SyncGroup(
             self.ethercat.ethercat,
-            list(chain.from_iterable(d.get_devices() for d in self.devs)))
+            list(chain.from_iterable(d.get_devices() for d in self.devs)),
+        )
         self.syncGroup.name = self.deviceId.value
         self.syncGroup.cycletime = float(self.cycletime / unit.second)
         self.syncGroup.debug = self.debug.value
@@ -259,17 +294,20 @@ class EtherCATSyncGroupBase(Device):
             while not self.syncGroupTask.done():
                 if last_wkc_errors < self.syncGroup.wkc_errors:
                     self.state = State.ERROR
-                    self.status = 'working counter mismatches: ' \
-                            f'{self.syncGroup.wkc_errors}'
+                    self.status = (
+                        "working counter mismatches: " f"{self.syncGroup.wkc_errors}"
+                    )
                     last_wkc_errors = self.syncGroup.wkc_errors
                     if last_wkc_errors - last_good_wkc > self.max_wkc_errors:
                         return
                 else:
                     last_wkc_errors = last_good_wkc = self.syncGroup.wkc_errors
-                    if self.state != State.RUNNING \
-                            and self.syncGroup.current_data is not None:
+                    if (
+                        self.state != State.RUNNING
+                        and self.syncGroup.current_data is not None
+                    ):
                         self.state = State.RUNNING
-                        self.status = ''
+                        self.status = ""
                 if self.syncGroup.current_data is not None:
                     for d in self.devs:
                         try:
@@ -292,7 +330,7 @@ class EtherCATSyncGroupBase(Device):
         except CancelledError:
             self.state = State.OFF
         except Exception as e:
-            self.logger.exception('Sync group %s failed', self.deviceId)
+            self.logger.exception("Sync group %s failed", self.deviceId)
             raise
         finally:
             if not self.syncGroupTask.done():
@@ -300,7 +338,7 @@ class EtherCATSyncGroupBase(Device):
             self.state = State.ERROR
             for d in self.devs:
                 d.state = State.UNKNOWN
-                d.status = f'Sync Group {self.deviceId} Stopped'
+                d.status = f"Sync Group {self.deviceId} Stopped"
 
 
 class EtherCATSyncGroup(EtherCATSyncGroupBase):
@@ -311,6 +349,7 @@ class FastEtherCATSyncGroup(EtherCATSyncGroupBase):
     """A fast sync group where the code runs as EBPF
 
     Use this sync group for fast control loops, as needed for motors."""
+
     SyncGroup = FastSyncGroup
 
 
@@ -320,6 +359,7 @@ class ProcessEtherCATSyncGroup(EtherCATSyncGroupBase):
     This is a general purpose sync group for all slow needs, like
     vacuum.
     """
+
     SyncGroup = ProcessSyncGroup
 
 
@@ -370,8 +410,7 @@ class EtherCATDevice(Device):
         here.
         """
 
-        if state != self.state or (status is not None and status !=
-                                   self.status):
+        if state != self.state or (status is not None and status != self.status):
             self.state = state
             self.status = status
         self.state_change.set()
@@ -385,10 +424,10 @@ class EtherCATDevice(Device):
         elif isinstance(device, EtherCATTerminal):
             ret = device.terminal
         else:
-            self.status = f'not a terminal {name}'
+            self.status = f"not a terminal {name}"
             raise TerminalUnknownError(name)
         if ret is None:
-            self.status = f'missing terminal {name}'
+            self.status = f"missing terminal {name}"
             raise TerminalUnknownError(name)
         for c in channel:
             ret = getattr(ret, c)
@@ -410,9 +449,10 @@ class EtherCATDevice(Device):
         """
 
     syncGroupDevice = String(
-        displayedName='Sync Group',
-        description='The Sync Group this device is member of',
-        accessMode=AccessMode.READONLY)
+        displayedName="Sync Group",
+        description="The Sync Group this device is member of",
+        accessMode=AccessMode.READONLY,
+    )
 
     def join(self, syncGroup):
         """Let this device join a sync group
@@ -455,7 +495,7 @@ class Channel(Configurable):
             try:
                 await entry.write(value.value)
             except EtherCatError as e:
-                self.get_root().logger.warning('could not write %s', attr.key)
+                self.get_root().logger.warning("could not write %s", attr.key)
             r = await entry.read()
             setattr(self, attr.key, r)
 
@@ -486,42 +526,52 @@ class EtherCATTerminal(Device):
         The instance of the :class:`~ebpfcat.ebpfcat.Terminal`.
     """
 
-    master = String(accessMode=AccessMode.INITONLY,
-                    assignment=Assignment.MANDATORY)
-    vendorId = ml.Int32(displayedName='Vendor ID',
-                        accessMode=AccessMode.READONLY)
-    productCode = ml.Int32(displayedName='Product Code',
-                           accessMode=AccessMode.READONLY)
-    revisionNo = ml.Int32(displayedName='Revision Number',
-                          accessMode=AccessMode.READONLY)
+    master = String(accessMode=AccessMode.INITONLY, assignment=Assignment.MANDATORY)
+    vendorId = ml.Int32(displayedName="Vendor ID", accessMode=AccessMode.READONLY)
+    productCode = ml.Int32(displayedName="Product Code", accessMode=AccessMode.READONLY)
+    revisionNo = ml.Int32(
+        displayedName="Revision Number", accessMode=AccessMode.READONLY
+    )
     serialNumber = ml.Int32(
-        displayedName='Serial Number', accessMode=AccessMode.INITONLY,
+        displayedName="Serial Number",
+        accessMode=AccessMode.INITONLY,
         description="""The serial number of the terminal this device should
         control. Use negative numbers to indicate the position on the bus if
         no serial number is known (or set). At XFEL, this serial number is
-        usually the QR code.""", assignment=Assignment.MANDATORY)
+        usually the QR code.""",
+        assignment=Assignment.MANDATORY,
+    )
     coe = VectorHash(
-        displayedName='CoE parameters',
+        displayedName="CoE parameters",
         description="Additional CoE paramters to be set upon intialization",
-        accessMode=AccessMode.INITONLY, rows=CoETable, defaultValue=[])
-    currentCoE = VectorHash(displayedName='Current CoE Parameters',
-                            accessMode=AccessMode.READONLY, rows=CoETable)
-    watchdog = ml.Float(accessMode=AccessMode.INITONLY,
-                        unitSymbol=Unit.SECOND,
-                        metricPrefixSymbol=MetricPrefix.MILLI)
+        accessMode=AccessMode.INITONLY,
+        rows=CoETable,
+        defaultValue=[],
+    )
+    currentCoE = VectorHash(
+        displayedName="Current CoE Parameters",
+        accessMode=AccessMode.READONLY,
+        rows=CoETable,
+    )
+    watchdog = ml.Float(
+        accessMode=AccessMode.INITONLY,
+        unitSymbol=Unit.SECOND,
+        metricPrefixSymbol=MetricPrefix.MILLI,
+    )
     terminal = None
 
     async def onInitialization(self):
         self.status = "waiting for master"
         dev = await getDevice(self.master)
-        assert dev.serverId == self.serverId, f'wrong server {dev.serverId}'
+        assert dev.serverId == self.serverId, f"wrong server {dev.serverId}"
         self.ethercat = self.getLocalDevice(self.master)
         await waitUntil(lambda: self.ethercat.state == State.ON)
         try:
             addr = self.ethercat.addr_by_serial[self.serialNumber.value]
         except KeyError:
-            self.logger.exception('no terminal with serial number %i',
-                                  self.serialNumber.value)
+            self.logger.exception(
+                "no terminal with serial number %i", self.serialNumber.value
+            )
             raise
         self.terminal = self.Base(self.ethercat.ethercat)
         self.terminal.name = self.deviceId.value
@@ -534,7 +584,7 @@ class EtherCATTerminal(Device):
                 wd = int(self.watchdog / (100 * unit.microsecond))
                 await self.terminal.set_watchdog(wd, wd)
 
-            self.status = 'parsing SDOs'
+            self.status = "parsing SDOs"
             self.vendorId = self.terminal.vendorId
             self.productCode = self.terminal.productCode
             self.revisionNo = self.terminal.revisionNo
@@ -552,32 +602,39 @@ class EtherCATTerminal(Device):
 
             for k in self._sdo_channels:
                 await getattr(self, k)._initialize(
-                    getattr(self.terminal, getattr(self.__class__, k).alias))
+                    getattr(self.terminal, getattr(self.__class__, k).alias)
+                )
 
-            self.status = 'setting custom CoE parameters'
+            self.status = "setting custom CoE parameters"
             new_coes = []
             for coe in self.coe:
-                if not coe['address']:
-                    index = coe['index'].value
-                    subindex = coe['subIndex'].value
+                if not coe["address"]:
+                    index = coe["index"].value
+                    subindex = coe["subIndex"].value
                 else:
-                    index, subindex = [int(i, 16)
-                                       for i in coe['address'].split(':')]
+                    index, subindex = [int(i, 16) for i in coe["address"].split(":")]
                 await self.terminal.sdo_write(
-                        pack(coe['format'], coe['value']), index, subindex)
+                    pack(coe["format"], coe["value"]), index, subindex
+                )
                 ret = await self.terminal.sdo_read(index, subindex)
-                new_coes.append((0, 0, f'{index:04X}:{subindex:02X}',
-                                 coe['comment'], coe['format'],
-                                 unpack(coe['format'], ret)[0]))
+                new_coes.append(
+                    (
+                        0,
+                        0,
+                        f"{index:04X}:{subindex:02X}",
+                        coe["comment"],
+                        coe["format"],
+                        unpack(coe["format"], ret)[0],
+                    )
+                )
             self.coe = new_coes
-            self.ethercat.term_by_name[self.deviceId.split('/')[-1]] = \
-                self.terminal
+            self.ethercat.term_by_name[self.deviceId.split("/")[-1]] = self.terminal
         finally:
             self.ethercat.terminalsInitializingCount -= 1
             if self.ethercat.terminalsInitializingCount == 0:
                 self.ethercat.terminalsInitialized.set()
                 self.ethercat.terminalsInitialized.clear()
-        self.status = 'ready'
+        self.status = "ready"
         background(self.monitor())
 
     async def monitor(self):
@@ -590,20 +647,21 @@ class EtherCATTerminal(Device):
                 status = e
             if error:
                 self.state = State.ERROR
-                self.status = f'error no {status}'
+                self.status = f"error no {status}"
                 laststate = None
             elif laststate is not state:
                 self.state = {
-                        MachineState.INIT: State.DISABLED,
-                        MachineState.PRE_OPERATIONAL: State.STARTING,
-                        MachineState.SAFE_OPERATIONAL: State.OFF,
-                        MachineState.OPERATIONAL: State.ON}[state]
-                self.status = ''
+                    MachineState.INIT: State.DISABLED,
+                    MachineState.PRE_OPERATIONAL: State.STARTING,
+                    MachineState.SAFE_OPERATIONAL: State.OFF,
+                    MachineState.OPERATIONAL: State.ON,
+                }[state]
+                self.status = ""
                 laststate = state
             await sleep(1)
 
     async def onDestruction(self):
-        del self.ethercat.term_by_name[self.deviceId.split('/')[-1]]
+        del self.ethercat.term_by_name[self.deviceId.split("/")[-1]]
 
     @classmethod
     def sdo_setter(cls, attr):
@@ -628,15 +686,16 @@ class EtherCATTerminal(Device):
                 try:
                     value = await vv.read()
                 except EtherCatError as e:
-                    coe.append((0, 0, f'{k:04X}:{kk:02X}', str(vv),
-                                f"Error {e.args[0]}", 0))
+                    coe.append(
+                        (0, 0, f"{k:04X}:{kk:02X}", str(vv), f"Error {e.args[0]}", 0)
+                    )
                 else:
-                    if isinstance(value, int) and -2 ** 63 <= value < 2 ** 63:
-                        coe.append((0, 0, f'{k:04X}:{kk:02X}', str(vv),
-                                    f'{value:x}', value))
+                    if isinstance(value, int) and -(2**63) <= value < 2**63:
+                        coe.append(
+                            (0, 0, f"{k:04X}:{kk:02X}", str(vv), f"{value:x}", value)
+                        )
                     else:
-                        coe.append((0, 0, f'{k:04X}:{kk:02X}', str(vv),
-                                    repr(value), 0))
+                        coe.append((0, 0, f"{k:04X}:{kk:02X}", str(vv), repr(value), 0))
         self.currentCoE = coe
 
     @classmethod

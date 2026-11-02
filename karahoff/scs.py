@@ -1,9 +1,19 @@
-from asyncio import gather, sleep
+from asyncio import sleep
 
 from karabo.middlelayer import (
-    AccessMode, Bool, DeviceNode, Double, KaraboError, Slot, State, String,
-    Unit, background, unit, waitUntil)
-from numpy import arcsin, arctan, pi, sin, sqrt, tan
+    AccessMode,
+    Bool,
+    DeviceNode,
+    Double,
+    KaraboError,
+    Slot,
+    State,
+    String,
+    Unit,
+    background,
+    unit,
+)
+from numpy import arcsin, arctan, sin, sqrt, tan
 
 from .master import EtherCATDevice
 from .devices import Safety
@@ -21,15 +31,11 @@ class SCS_XRD_TRF(EtherCATDevice):
     lightBarrier = DeviceNode()
 
     targetPosition = Double(unitSymbol=Unit.DEGREE)
-    actualPosition = Double(accessMode=AccessMode.READONLY,
-                            unitSymbol=Unit.DEGREE)
-    trf1error = Double(accessMode=AccessMode.READONLY,
-                       unitSymbol=Unit.DEGREE)
-    trf3error = Double(accessMode=AccessMode.READONLY,
-                       unitSymbol=Unit.DEGREE)
+    actualPosition = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
+    trf1error = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
+    trf3error = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
 
-    rryerror = Double(accessMode=AccessMode.READONLY,
-                      unitSymbol=Unit.DEGREE)
+    rryerror = Double(accessMode=AccessMode.READONLY, unitSymbol=Unit.DEGREE)
     ignoreRRY = Bool(defaultValue=False)
 
     async def onInitialization(self):
@@ -72,25 +78,26 @@ class SCS_XRD_TRF(EtherCATDevice):
                         except KaraboError:
                             pass
                         self.state = State.ERROR
-                        self.status = 'error in RRY'
+                        self.status = "error in RRY"
                 await sleep(0.3)
         finally:
-            self.status = 'RRY follower failed'
-
+            self.status = "RRY follower failed"
 
     def update_properties(self):
         if self.m2.lastposition is None:
             return
         current = 2 * arcsin(sin(self.m2.actualPosition / 2) * SIN)
         self.actualPosition = current + OFFSET
-        target = -arctan(tan(current / 2) / sqrt(TAN**2 - tan(current / 2)**2))
+        target = -arctan(tan(current / 2) / sqrt(TAN**2 - tan(current / 2) ** 2))
         self.trf1error = self.m1.actualPosition - target
         self.trf3error = self.m3.actualPosition - target
         self.rryerror = self.rry.actualPosition - self.actualPosition
-        if abs(self.trf1error.value) > 0.1 \
-                or abs(self.trf3error.value) > 0.1 \
-                or (not self.ignoreRRY and abs(self.rryerror.value) > 1) \
-                or (not self.ignoreRRY and self.lightBarrier.state != State.ON):
+        if (
+            abs(self.trf1error.value) > 0.1
+            or abs(self.trf3error.value) > 0.1
+            or (not self.ignoreRRY and abs(self.rryerror.value) > 1)
+            or (not self.ignoreRRY and self.lightBarrier.state != State.ON)
+        ):
             if self.state != State.ERROR:
                 self.m1.do_off()
                 self.m2.do_off()
@@ -109,10 +116,12 @@ class SCS_XRD_TRF(EtherCATDevice):
 
         self.m1.device.follow_offset = int(
             (target - self.m1.offset) // self.m1.encodeStep
-            - self.m2.device.encoder * self.m1.device.encoders_factor * self.m1.factor)
+            - self.m2.device.encoder * self.m1.device.encoders_factor * self.m1.factor
+        )
         self.m3.device.follow_offset = int(
             (target - self.m3.offset) // self.m3.encodeStep
-            - self.m2.device.encoder * self.m3.device.encoders_factor * self.m3.factor)
+            - self.m2.device.encoder * self.m3.device.encoders_factor * self.m3.factor
+        )
 
     @Slot(allowedStates={State.OFF})
     async def move(self):
@@ -124,7 +133,9 @@ class SCS_XRD_TRF(EtherCATDevice):
         await sleep(0.3)
         assert self.m1.state == State.ENGAGED
         assert self.m3.state == State.ENGAGED
-        self.m2.targetPosition = 2 * arcsin(sin((self.targetPosition - OFFSET) / 2) / SIN)
+        self.m2.targetPosition = 2 * arcsin(
+            sin((self.targetPosition - OFFSET) / 2) / SIN
+        )
         await self.m2.move()
         self.state = State.ON
 
@@ -132,7 +143,7 @@ class SCS_XRD_TRF(EtherCATDevice):
     async def moveToStart(self):
         current = 2 * arcsin(sin(self.m2.actualPosition / 2) * SIN)
         self.targetPosition = current + OFFSET
-        target = -arctan(tan(current / 2) / sqrt(TAN**2 - tan(current / 2)**2))
+        target = -arctan(tan(current / 2) / sqrt(TAN**2 - tan(current / 2) ** 2))
         self.m1.targetPosition = self.m3.targetPosition = target
         self.m1.do_move()
         self.m3.do_move()
@@ -146,15 +157,15 @@ class SCS_XRD_TRF(EtherCATDevice):
 
 
 class HRIXSSafety(Safety):
-    running = Bool(alias='1', accessMode=AccessMode.READONLY)
-    button_pressed = Bool(alias='0x100', accessMode=AccessMode.READONLY)
-    manual_mode = Bool(alias='4', accessMode=AccessMode.READONLY)
-    auto_mode = Bool(alias='2', accessMode=AccessMode.READONLY)
-    hutch_searched = Bool(alias='8', accessMode=AccessMode.READONLY)
-    dty = Bool(alias='0x20', accessMode=AccessMode.READONLY)
-    dtz = Bool(alias='0x40', accessMode=AccessMode.READONLY)
-    gtz = Bool(alias='0x10', accessMode=AccessMode.READONLY)
-    rry = Bool(alias='0x80', accessMode=AccessMode.READONLY)
+    running = Bool(alias="1", accessMode=AccessMode.READONLY)
+    button_pressed = Bool(alias="0x100", accessMode=AccessMode.READONLY)
+    manual_mode = Bool(alias="4", accessMode=AccessMode.READONLY)
+    auto_mode = Bool(alias="2", accessMode=AccessMode.READONLY)
+    hutch_searched = Bool(alias="8", accessMode=AccessMode.READONLY)
+    dty = Bool(alias="0x20", accessMode=AccessMode.READONLY)
+    dtz = Bool(alias="0x40", accessMode=AccessMode.READONLY)
+    gtz = Bool(alias="0x10", accessMode=AccessMode.READONLY)
+    rry = Bool(alias="0x80", accessMode=AccessMode.READONLY)
 
     RUN_BIT = 2
     ACKNOWLEDGE_BIT = 1
@@ -170,8 +181,8 @@ class FFTSafety(Safety):
     RUN_BIT = 1
     ACKNOWLEDGE_BIT = 2
 
-    running = Bool(alias='0x10', accessMode=AccessMode.READONLY)
-    switchedOn = Bool(alias='2', accessMode=AccessMode.READONLY)
+    running = Bool(alias="0x10", accessMode=AccessMode.READONLY)
+    switchedOn = Bool(alias="2", accessMode=AccessMode.READONLY)
 
     def update_properties(self):
         state = super().update_properties()
@@ -187,14 +198,15 @@ class SCS_DRX(EtherCATDevice):
     def join(self, syncGroup):
         super().join(syncGroup)
 
-        self.dtz = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/DTZ')
-        self.gtz = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/GTZ')
-        self.dty = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/DTY1')
-        self.drx = self.getLocalDevice('SCS_HRIXS_MOV/MOTOR/DRX')
+        self.dtz = self.getLocalDevice("SCS_HRIXS_MOV/MOTOR/DTZ")
+        self.gtz = self.getLocalDevice("SCS_HRIXS_MOV/MOTOR/GTZ")
+        self.dty = self.getLocalDevice("SCS_HRIXS_MOV/MOTOR/DTY1")
+        self.drx = self.getLocalDevice("SCS_HRIXS_MOV/MOTOR/DRX")
 
     def update_properties(self):
-        target = -arctan2(self.dty.actualPosition,
-                          self.dtz.actualPosition - self.gtz.actualPosition)
+        target = -arctan2(
+            self.dty.actualPosition, self.dtz.actualPosition - self.gtz.actualPosition
+        )
         if not isSet(self.drx.actualPosition):
             return State.UNKNOWN
         if abs(target - self.drx.actualPosition) > 0.1 * unit.degree:

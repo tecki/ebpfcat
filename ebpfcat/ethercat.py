@@ -25,11 +25,18 @@
 this modules contains the code to actually talk to EtherCAT terminals.
 """
 from asyncio import (
-    CancelledError, Event, Future, Lock, Protocol, Queue, TaskGroup,
-    ensure_future, gather, get_event_loop)
+    CancelledError,
+    Future,
+    Protocol,
+    Queue,
+    TaskGroup,
+    ensure_future,
+    gather,
+    get_event_loop,
+)
 from contextlib import asynccontextmanager
 from enum import Enum, IntEnum
-from itertools import count, pairwise
+from itertools import pairwise
 import operator
 from random import randint
 from socket import AF_PACKET
@@ -38,12 +45,14 @@ from struct import pack, unpack, unpack_from, calcsize
 from .lock import MailboxLock
 from .util import logger
 
+
 class EtherCatError(Exception):
     """This represents an error on the EtherCat bus"""
 
 
 class ECCmd(Enum):
     """The possible EtherCat commands in a Datagram"""
+
     NOP = 0  #: No Operation
     APRD = 1  #: Auto Increment Read
     APWR = 2  #: Auto Increment Write
@@ -67,6 +76,7 @@ class ECDataType(Enum):
         obj._value_ = value
         obj.fmt = fmt
         return obj
+
     INVALID = 0, None
     BOOLEAN = 0x1, "?"
     INTEGER8 = 0x2, "b"
@@ -96,6 +106,7 @@ class ECDataType(Enum):
     BIT7 = 0x36, "B"
     BIT8 = 0x37, "B"
 
+
 class MBXType(Enum):
     ERR = 0  #: Error
     AOE = 1  #: ADS over EtherCAT
@@ -103,7 +114,8 @@ class MBXType(Enum):
     COE = 3  #: CANopen over EtherCAT
     FOE = 4  #: File over EtherCAT
     SOE = 5  #: Servo over EtherCAT
-    VOE = 0xf  #: Vendor over EtherCAT
+    VOE = 0xF  #: Vendor over EtherCAT
+
 
 class CoECmd(Enum):
     EMERGENCY = 1
@@ -114,6 +126,7 @@ class CoECmd(Enum):
     TXPDO_RR = 6
     RXPDO_RR = 7
     SDOINFO = 8
+
 
 class ODCmd(Enum):
     LIST_REQ = 1
@@ -132,11 +145,13 @@ class ODCmd(Enum):
     SEG_UP_REQ = 0x60
     ABORT = 0x80
 
+
 class EEPROM(IntEnum):
     VENDOR_ID = 8
     PRODUCT_CODE = 10
     REVISION = 12
     SERIAL_NO = 14
+
 
 class MachineState(Enum):
     """The states of the EtherCAT state machine
@@ -145,15 +160,18 @@ class MachineState(Enum):
     be taken, BOOTSTRAP is at the end as this is a
     state we usually do not go to.
     """
+
     INIT = 1
     PRE_OPERATIONAL = 2
     SAFE_OPERATIONAL = 4
     OPERATIONAL = 8
     BOOTSTRAP = 3
 
+
 class SyncManager(Enum):
     OUT = 2
     IN = 3
+
 
 class ObjectDescription:
     def __init__(self, terminal):
@@ -175,8 +193,7 @@ class ObjectEntry:
 
     async def read(self):
         ret = await self.terminal.sdo_read(self.index, self.valueInfo)
-        if self.dataType in (ECDataType.VISIBLE_STRING,
-                             ECDataType.UNICODE_STRING):
+        if self.dataType in (ECDataType.VISIBLE_STRING, ECDataType.UNICODE_STRING):
             return ret.decode("utf8")
         elif isinstance(self.dataType, int) or self.dataType.fmt is None:
             return ret
@@ -184,8 +201,7 @@ class ObjectEntry:
             return unpack("<" + self.dataType.fmt, ret)[0]
 
     async def write(self, data):
-        if self.dataType in (ECDataType.VISIBLE_STRING,
-                             ECDataType.UNICODE_STRING):
+        if self.dataType in (ECDataType.VISIBLE_STRING, ECDataType.UNICODE_STRING):
             d = data.encode("utf8")
         elif isinstance(self.dataType, int) or self.dataType.fmt is None:
             d = data
@@ -199,9 +215,11 @@ class ObjectEntry:
             return "[unread ObjectEntry]"
 
         dt = self.dataType
-        return f'{self.name} ' \
-               f'{dt.name if isinstance(dt, ECDataType) else dt} ' \
-               f'({self.bitLength} bit) flags {self.objectAccess:X}'
+        return (
+            f"{self.name} "
+            f"{dt.name if isinstance(dt, ECDataType) else dt} "
+            f"({self.bitLength} bit) flags {self.objectAccess:X}"
+        )
 
 
 def datasize(args, data):
@@ -220,6 +238,7 @@ class Packet:
     packets. We implicitly add a datagram in the front which later serves
     as an identifier for the packet.
     """
+
     MAXSIZE = 1500  # maximum size we use for an EtherCAT packet
     ETHERNET_HEADER = 14
     PACKET_HEADER = 16
@@ -246,8 +265,7 @@ class Packet:
 
         Return a pair that represents the start and stop of the datagram's
         data inside the packet."""
-        newsize = self.size + len(data) + self.DATAGRAM_HEADER \
-                  + self.DATAGRAM_TAIL
+        newsize = self.size + len(data) + self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
         if newsize > self.MAXSIZE:
             raise OverflowError(f"ethercat packet size too big: {newsize}")
         elif len(self.data) > 14:
@@ -266,32 +284,54 @@ class Packet:
         An implicit empty datagram is added at the beginning of the packet
         that may be used as an identifier for the packet.
         """
-        ret = [pack("<HBBiHHHH", (self.size-2) | 0x1000, 0, 0,
-                    index, 0x8002, 0, ethertype, 0)]
+        ret = [
+            pack(
+                "<HBBiHHHH",
+                (self.size - 2) | 0x1000,
+                0,
+                0,
+                index,
+                0x8002,
+                0,
+                ethertype,
+                0,
+            )
+        ]
         for i, (cmd, data, wkc, *dgram) in enumerate(self.data, start=1):
-            ret.append(pack("<BBhHHH" if len(dgram) == 3 else "<BBIHH",
-                            cmd.value, *dgram,
-                            len(data) | ((i < len(self.data)) << 15), 0))
+            ret.append(
+                pack(
+                    "<BBhHHH" if len(dgram) == 3 else "<BBIHH",
+                    cmd.value,
+                    *dgram,
+                    len(data) | ((i < len(self.data)) << 15),
+                    0,
+                )
+            )
             ret.append(data)
-            ret.append(pack('<H', wkc))
+            ret.append(pack("<H", wkc))
         if self.size < 46:
             ret.append(b"3" * (46 - self.size))
-        return b''.join(ret)
+        return b"".join(ret)
 
     def __str__(self):
-        ret = "\n".join(f"{cmd} {data} {idx} {addr}"
-                        for cmd, data, wkc, idx, *addr in self.data)
+        ret = "\n".join(
+            f"{cmd} {data} {idx} {addr}" for cmd, data, wkc, idx, *addr in self.data
+        )
         return "Packet([" + ret + "]"
 
     def disassemble(self, data):
         pos = 14 + self.DATAGRAM_HEADER
         ret = []
         for cmd, bits, wkc, *dgram in self.data:
-            ret.append(unpack("<Bxh6x", data[pos-self.DATAGRAM_HEADER:pos])
-                       + (data[pos:pos+len(bits)],
-                        unpack("<H", data[pos+len(bits):pos+len(bits)+2])[0]))
+            ret.append(
+                unpack("<Bxh6x", data[pos - self.DATAGRAM_HEADER : pos])
+                + (
+                    data[pos : pos + len(bits)],
+                    unpack("<H", data[pos + len(bits) : pos + len(bits) + 2])[0],
+                )
+            )
             pos += self.DATAGRAM_HEADER + self.DATAGRAM_TAIL
-        return ''.join(f"{i}: {c} {a} {f} {d}\n" for i, (c, a, d, f) in enumerate(ret))
+        return "".join(f"{i}: {c} {a} {f} {d}\n" for i, (c, a, d, f) in enumerate(ret))
 
     def full(self):
         """Is the data limit reached?"""
@@ -305,7 +345,7 @@ class EtherCat(Protocol):
     It keeps the socket, and eventually all data flows through it.
 
     This class supports both to send individual datagrams and wait for their
-    response, but also to send and receive entire packets. """
+    response, but also to send and receive entire packets."""
 
     ethertype = 0x88A4  # this is the incoming protocol, not necessary EtherCAT
     terminal_addr_range = (1000, 30000)
@@ -323,7 +363,8 @@ class EtherCat(Protocol):
         """connect to the EtherCAT loop"""
         self.send_queue = Queue()
         await get_event_loop().create_datagram_endpoint(
-            lambda: self, family=AF_PACKET, proto=0xA488)
+            lambda: self, family=AF_PACKET, proto=0xA488
+        )
 
     def get_mbx_lock(self, no):
         return MailboxLock()
@@ -337,21 +378,21 @@ class EtherCat(Protocol):
 
         This method runs while we are connected, takes the datagrams
         to be sent from a queue, packs them in a packet and ships them
-        out. """
+        out."""
         try:
             dgrams = []
             packet = Packet()
             sent = True
             while True:
                 if sent:
-                   *dgram, future = await self.send_queue.get()
+                    *dgram, future = await self.send_queue.get()
                 try:
-                   lastsize = packet.size
-                   start, stop = packet.append(*dgram)
-                   dgrams.append((start, stop, future))
-                   sent = True
-                   if not self.send_queue.empty():
-                       continue
+                    lastsize = packet.size
+                    start, stop = packet.append(*dgram)
+                    dgrams.append((start, stop, future))
+                    sent = True
+                    if not self.send_queue.empty():
+                        continue
                 except OverflowError:
                     sent = False
                 ensure_future(self.process_packet(dgrams, packet))
@@ -367,10 +408,9 @@ class EtherCat(Protocol):
         try:
             data = await self.roundtrip_packet(packet)
             for start, stop, future in dgrams:
-                wkc, = unpack_from("<H", data, stop)
+                (wkc,) = unpack_from("<H", data, stop)
                 if wkc == 0:
-                    future.set_exception(
-                        EtherCatError("datagram was not processed"))
+                    future.set_exception(EtherCatError("datagram was not processed"))
                 elif not future.done():
                     future.set_result(data[start:stop])
                 else:
@@ -388,15 +428,14 @@ class EtherCat(Protocol):
         """Send a packet and return the response
 
         Send the ``packet`` to the loop and wait that it comes back,
-        and return that to the caller. """
+        and return that to the caller."""
         if self.transport.is_closing():
-            raise EtherCatError('transport already closed')
+            raise EtherCatError("transport already closed")
         if index is None:
             index = randint(2000, 1000000000)
             while index in self.wait_futures:
                 index = randint(2000, 1000000000)
-            self.transport.sendto(packet.assemble(index, self.ethertype),
-                                  self.addr)
+            self.transport.sendto(packet.assemble(index, self.ethertype), self.addr)
         else:
             assert index not in self.wait_futures
             self.transport.sendto(packet, self.addr)
@@ -420,7 +459,7 @@ class EtherCat(Protocol):
         Any additional parameters will be interpreted as follows: every `str` is
         interpreted as a format for a `struct.pack`, everything else is the data
         for those format. Upon returning, the received data will be unpacked
-        accoding to the format strings. """
+        accoding to the format strings."""
         future = Future()
         fmt = "<" + "".join(arg for arg in args[:-1] if isinstance(arg, str))
         out = pack(fmt, *[arg for arg in args if not isinstance(arg, str)])
@@ -431,8 +470,9 @@ class EtherCat(Protocol):
             out += b"\0" * data
         elif data is not None:
             out += data
-        self.send_queue.put_nowait((cmd, out, idx, operator.index(pos),
-                                    operator.index(offset), future))
+        self.send_queue.put_nowait(
+            (cmd, out, idx, operator.index(pos), operator.index(offset), future)
+        )
         ret = await future
         if data is None:
             return unpack(fmt, ret)
@@ -448,7 +488,7 @@ class EtherCat(Protocol):
         p = Packet()
         p.append(ECCmd.APRD, b"\0\0", 0, 0, 0x10)
         ret = await self.roundtrip_packet(p)
-        no, = unpack_from("<h", ret, 18)  # number of terminals
+        (no,) = unpack_from("<h", ret, 18)  # number of terminals
         return no
 
     async def find_free_address(self):
@@ -468,7 +508,7 @@ class EtherCat(Protocol):
 
     async def assigned_address(self, position):
         """return the set adress of terminal at position, if none set one"""
-        ret, = await self.roundtrip(ECCmd.APRD, position, 0x10, "H", 0)
+        (ret,) = await self.roundtrip(ECCmd.APRD, position, 0x10, "H", 0)
         if ret != 0:
             return ret
         ret = await self.find_free_address()
@@ -477,14 +517,12 @@ class EtherCat(Protocol):
 
     async def eeprom_read(self, position, start):
         """read 4 bytes from the eeprom of terminal *position* at *start*"""
-        while (await self.roundtrip(ECCmd.APRD, position,
-                                    0x502, "H"))[0] & 0x8000:
+        while (await self.roundtrip(ECCmd.APRD, position, 0x502, "H"))[0] & 0x8000:
             pass
         await self.roundtrip(ECCmd.APWR, position, 0x502, "HI", 0x100, start)
         busy = 0x8000
         while busy & 0x8000:
-            busy, data = await self.roundtrip(ECCmd.APRD, position,
-                                              0x502, "H4xI")
+            busy, data = await self.roundtrip(ECCmd.APRD, position, 0x502, "H4xI")
         return data
 
     def connection_made(self, transport):
@@ -495,12 +533,12 @@ class EtherCat(Protocol):
 
     def datagram_received(self, data, addr):
         """distribute received packets to the recipients"""
-        index, = unpack_from("<I", data, Packet.PACKET_INDEX)
+        (index,) = unpack_from("<I", data, Packet.PACKET_INDEX)
         future = self.wait_futures.get(index)
         if future is not None and not future.done():
             future.set_result(data)
         else:
-            logger.warning('received unknown packet %i (%x)', index, data[3])
+            logger.warning("received unknown packet %i (%x)", index, data[3])
 
     async def scan_serial_numbers(self):
         """Scan the bus and read the terminal serial numbers
@@ -516,8 +554,7 @@ class EtherCat(Protocol):
             if serialNo > 0:
                 old = addr_by_serial.get(serialNo)
                 if old is not None and old != address:
-                    logger.warning('double serial number found: %i at %i',
-                                   serialNo, i)
+                    logger.warning("double serial number found: %i at %i", serialNo, i)
                 else:
                     addr_by_serial[serialNo] = (address, -i)
             else:
@@ -533,13 +570,15 @@ class EtherCat(Protocol):
         ret = []
 
         async def get_fmmu(i):
-            fmmu_no, = await self.roundtrip(ECCmd.APRD, -i, 4, 'B')
+            (fmmu_no,) = await self.roundtrip(ECCmd.APRD, -i, 4, "B")
             for index in range(fmmu_no):
                 logical, size, active = await self.roundtrip(
-                        ECCmd.APRD, -i, 0x600 + 0x10 * index, "IH5xB")
+                    ECCmd.APRD, -i, 0x600 + 0x10 * index, "IH5xB"
+                )
                 if logical == 0:
                     continue
                 ret.append((logical, size, i))
+
         no = await self.count()
         async with TaskGroup() as tg:
             for i in range(no):
@@ -548,18 +587,19 @@ class EtherCat(Protocol):
         for (logical1, size1, no1), (logical2, size2, no2) in pairwise(ret):
             if logical1 + size1 > logical2:
                 raise EtherCatError(
-                    f'overlapping fmmu ranges: {no1}: {logical1:x} + {size1} '
-                    f'> {logical2:x} of {no2}')
+                    f"overlapping fmmu ranges: {no1}: {logical1:x} + {size1} "
+                    f"> {logical2:x} of {no2}"
+                )
         return ret
 
     async def clear_fmmus(self):
         ret = []
 
         async def clear_fmmu(i):
-            fmmu_no, = await self.roundtrip(ECCmd.APRD, -i, 4, 'B')
+            (fmmu_no,) = await self.roundtrip(ECCmd.APRD, -i, 4, "B")
             for index in range(fmmu_no):
-                await self.roundtrip(ECCmd.APWR, -i,
-                                     0x600 + 0x10 * index, data=16)
+                await self.roundtrip(ECCmd.APWR, -i, 0x600 + 0x10 * index, data=16)
+
         no = await self.count()
         async with TaskGroup() as tg:
             for i in range(no):
@@ -568,10 +608,11 @@ class EtherCat(Protocol):
 
 class Terminal:
     """Represent one terminal (*SubDevice* or *slave*) in the loop"""
+
     def __init__(self, ethercat):
         self.ec = ethercat
 
-    name = 'No Name'
+    name = "No Name"
 
     def __repr__(self):
         return f'{self.__class__.__name__}("{self.name}")'
@@ -606,11 +647,11 @@ class Terminal:
 
         await self.set_state(MachineState.INIT)
 
-        fmmu_no, = await self.read(4, "B")
+        (fmmu_no,) = await self.read(4, "B")
         self.fmmu_used = [None] * fmmu_no
         # switch off all fmmus
         for i in range(fmmu_no):
-            await self.write(0x60c + 0x10 * i, "B", 0)
+            await self.write(0x60C + 0x10 * i, "B", 0)
 
         await self.apply_eeprom()
 
@@ -624,11 +665,13 @@ class Terminal:
         """
         assert (relative is None) != (absolute is None)
         if relative is not None:
-            self.position, = await self.ec.roundtrip(ECCmd.APRD, relative,
-                                                     0x10, "H")
+            (self.position,) = await self.ec.roundtrip(ECCmd.APRD, relative, 0x10, "H")
             if self.position == 0:
-                logger.info('terminal "%s" at %i has no address, initializing',
-                            self.name, relative)
+                logger.info(
+                    'terminal "%s" at %i has no address, initializing',
+                    self.name,
+                    relative,
+                )
                 return await self.initialize(relative=relative)
         else:
             self.position = absolute
@@ -646,7 +689,7 @@ class Terminal:
 
     async def reset(self):
         tasks = []
-        for c in 'RES':
+        for c in "RES":
             p = Packet()
             p.append(ECCmd.FPWR, c.encode(), 0, self.position, 0x40)
             tasks.append(self.ec.roundtrip_packet(p))
@@ -656,8 +699,8 @@ class Terminal:
         """set the watchdog time for the PDI and process data watchdog
 
         Note that this is discouraged, as it usually masks real problems."""
-        await self.write(0x410, 'H', pdi)
-        await self.write(0x420, 'H', process)
+        await self.write(0x410, "H", pdi)
+        await self.write(0x420, "H", process)
 
     async def apply_eeprom(self):
         await self.read_eeprom()
@@ -681,7 +724,7 @@ class Terminal:
         assert len(data) >= 8 and len(data) % 8 == 0
         for i in range(len(data) - 8, -1, -8):
             offset, size, mode = unpack_from("<HHB", data, i)
-            mode &= 0xf
+            mode &= 0xF
             if mode == 0:
                 self.pdo_in_off = offset
                 self.pdo_in_sz = size
@@ -712,7 +755,8 @@ class Terminal:
 
         parse the PDO assignment from the SDO if available, or EEPROM
         if not. Return the number of bits for the output PDO and the
-        input PDO. """
+        input PDO."""
+
         async def parse_eeprom(s):
             i = 0
             bitpos = 0
@@ -721,21 +765,26 @@ class Terminal:
                 idx, e, sm, u1, u2, u3 = unpack_from("<HBbBBH", s, i)
                 i += 8
                 for er in range(e):
-                    idx, subidx, k1, k2, bits, = unpack_from("<HBBBB2x", s, i)
+                    (
+                        idx,
+                        subidx,
+                        k1,
+                        k2,
+                        bits,
+                    ) = unpack_from("<HBBBB2x", s, i)
                     yield idx, subidx, bits
                     i += 8
 
         async def parse_sdo(index):
-            assignments, = await self.sdo_read_format("B", index, 0)
+            (assignments,) = await self.sdo_read_format("B", index, 0)
             bitpos = 0
             for i in range(1, assignments + 1):
-                pdo, = await self.sdo_read_format("<H", index, i)
+                (pdo,) = await self.sdo_read_format("<H", index, i)
                 if pdo == 0:
                     continue
-                count, = await self.sdo_read_format("B", pdo, 0)
+                (count,) = await self.sdo_read_format("B", pdo, 0)
                 for j in range(1, count + 1):
-                    bits, subidx, idx = \
-                        await self.sdo_read_format("<BBH", pdo, j)
+                    bits, subidx, idx = await self.sdo_read_format("<BBH", pdo, j)
                     yield idx, subidx, bits
 
         async def parse(func, sm):
@@ -748,38 +797,51 @@ class Terminal:
                 elif (bits % 8) or (bitpos % 8):
                     raise RuntimeError("PDOs must be byte-aligned")
                 else:
-                    self.pdos[idx, subidx] = \
-                        (sm, bitpos // 8,
-                         {8: "B", 16: "H", 32: "I", 64: "Q"}[bits])
+                    self.pdos[idx, subidx] = (
+                        sm,
+                        bitpos // 8,
+                        {8: "B", 16: "H", 32: "I", 64: "Q"}[bits],
+                    )
                 bitpos += bits
             return bitpos
 
         self.pdos = {}
         if self.has_mailbox():
-            return (await parse(parse_sdo(0x1c12), SyncManager.OUT),
-                    await parse(parse_sdo(0x1c13), SyncManager.IN))
+            return (
+                await parse(parse_sdo(0x1C12), SyncManager.OUT),
+                await parse(parse_sdo(0x1C13), SyncManager.IN),
+            )
         else:
             return (
-                await parse(parse_eeprom(self.eeprom[51]), SyncManager.OUT)
-                if 51 in self.eeprom else 0,
-                await parse(parse_eeprom(self.eeprom[50]), SyncManager.IN)
-                if 50 in self.eeprom else 0)
+                (
+                    await parse(parse_eeprom(self.eeprom[51]), SyncManager.OUT)
+                    if 51 in self.eeprom
+                    else 0
+                ),
+                (
+                    await parse(parse_eeprom(self.eeprom[50]), SyncManager.IN)
+                    if 50 in self.eeprom
+                    else 0
+                ),
+            )
 
     async def set_state(self, state, *, clear_error=False, check=True):
         """try to set the state"""
         assert isinstance(state, MachineState)
         if clear_error:
             try:
-                await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
-                                        state.value | 0x10)
+                await self.ec.roundtrip(
+                    ECCmd.FPWR, self.position, 0x0120, "H", state.value | 0x10
+                )
             except EtherCatError:
-                logger.debug('failed clearing error, was there '
-                             f'no error in terminal "{self.name}"?')
+                logger.debug(
+                    "failed clearing error, was there "
+                    f'no error in terminal "{self.name}"?'
+                )
         try:
-            await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H",
-                                    state.value)
+            await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H", state.value)
         except Exception as e:
-            e.add_note(f'in terminal {self.name}')
+            e.add_note(f"in terminal {self.name}")
             raise
 
         if not check:
@@ -789,14 +851,17 @@ class Terminal:
         while state != newstate:
             newstate, error, status = await self.get_state()
             if error:
-                raise EtherCatError(f'could not set state {state}, '
-                                    f'error {status} in terminal {self.name}')
+                raise EtherCatError(
+                    f"could not set state {state}, "
+                    f"error {status} in terminal {self.name}"
+                )
 
     async def get_state(self):
         """get the current state, error flag and status word"""
-        state, status = await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                                0x0130, "H2xH")
-        return MachineState(state & 0xf), bool(state & 0x10), status
+        state, status = await self.ec.roundtrip(
+            ECCmd.FPRD, self.position, 0x0130, "H2xH"
+        )
+        return MachineState(state & 0xF), bool(state & 0x10), status
 
     async def to_operational(self, target=MachineState.OPERATIONAL):
         """try to bring the terminal to operational state
@@ -810,14 +875,14 @@ class Terminal:
         order = list(MachineState)
         state, error, status = ret = await self.get_state()
         if error:
-            await self.ec.roundtrip(ECCmd.FPWR, self.position,
-                                    0x0120, "H", 0x11)
+            await self.ec.roundtrip(ECCmd.FPWR, self.position, 0x0120, "H", 0x11)
             state = MachineState.INIT
-        for current in order[order.index(state) + 1:]:
+        for current in order[order.index(state) + 1 :]:
             if state.value >= target.value:
                 return ret
-            await self.ec.roundtrip(ECCmd.FPWR, self.position,
-                                    0x0120, "H", current.value)
+            await self.ec.roundtrip(
+                ECCmd.FPWR, self.position, 0x0120, "H", current.value
+            )
             while current is not state:
                 state, error, status = await self.get_state()
                 if error:
@@ -826,16 +891,18 @@ class Terminal:
     async def read(self, start, *args, **kwargs):
         """read data from the terminal at offset `start`
 
-        see :meth:`EtherCat.roundtrip` for details on more parameters. """
-        return (await self.ec.roundtrip(ECCmd.FPRD, self.position,
-                                        start, *args, **kwargs))
+        see :meth:`EtherCat.roundtrip` for details on more parameters."""
+        return await self.ec.roundtrip(
+            ECCmd.FPRD, self.position, start, *args, **kwargs
+        )
 
     async def write(self, start, *args, **kwargs):
         """write data to the terminal at offset `start`
 
         see :meth:`EtherCat.roundtrip` for details on more parameters"""
-        return (await self.ec.roundtrip(ECCmd.FPWR, self.position,
-                                        start, *args, **kwargs))
+        return await self.ec.roundtrip(
+            ECCmd.FPWR, self.position, start, *args, **kwargs
+        )
 
     async def _eeprom_read_one(self, start):
         """read 8 bytes from the eeprom at `start`"""
@@ -858,15 +925,16 @@ class Terminal:
         while (await self.read(0x502, "H"))[0] & 0x8000:
             pass
         busy = 0x1000
-        while busy & 0xff00:
+        while busy & 0xFF00:
             await self.write(0x502, "HIH", 0x201, start, data)
             busy = 0x8000
             while busy & 0x8000:
-                busy, = await self.read(0x502, "H")
+                (busy,) = await self.read(0x502, "H")
             await self.write(0x502, "H", 0)
 
     async def read_eeprom(self):
         """read the entire eeprom"""
+
         async def get_data(size):
             nonlocal data, pos
 
@@ -880,33 +948,41 @@ class Terminal:
         data = b""
         self.eeprom = {}
 
-        self.vendorId, self.productCode = \
-                unpack('<II', await self._eeprom_read_one(EEPROM.VENDOR_ID))
-        self.revisionNo, self.serialNo = \
-                unpack('<II', await self._eeprom_read_one(EEPROM.REVISION))
+        self.vendorId, self.productCode = unpack(
+            "<II", await self._eeprom_read_one(EEPROM.VENDOR_ID)
+        )
+        self.revisionNo, self.serialNo = unpack(
+            "<II", await self._eeprom_read_one(EEPROM.REVISION)
+        )
 
         while True:
             hd, ws = unpack("<HH", await get_data(4))
-            if hd == 0xffff:
+            if hd == 0xFFFF:
                 return
             self.eeprom[hd] = await get_data(ws * 2)
 
     def has_mailbox(self):
         return self.mbx_out_off is not None and self.mbx_in_off is not None
 
-    async def mbx_send(self, type, *args, data=None,
-                       address=0, priority=0, channel=0):
+    async def mbx_send(self, type, *args, data=None, address=0, priority=0, channel=0):
         """send data to the mailbox"""
-        status, = await self.read(0x805, "B")  # always using mailbox 0, OK?
+        (status,) = await self.read(0x805, "B")  # always using mailbox 0, OK?
         if status & 8:
             etype, edata = await self.mbx_recv()
-            logger.error('terminal %s received unexpected mail %s "%s"',
-                         self.name, etype, edata)
+            logger.error(
+                'terminal %s received unexpected mail %s "%s"', self.name, etype, edata
+            )
         assert self.mbx_out_off is not None, "not send mailbox defined"
-        await self.write(self.mbx_out_off, "HHBB", datasize(args, data),
-                         address, channel | priority << 6,
-                         type.value | self.mbx_lock.next_counter() << 4,
-                         *args, data=data)
+        await self.write(
+            self.mbx_out_off,
+            "HHBB",
+            datasize(args, data),
+            address,
+            channel | priority << 6,
+            type.value | self.mbx_lock.next_counter() << 4,
+            *args,
+            data=data,
+        )
         await self.write(self.mbx_out_off + self.mbx_out_sz - 1, data=1)
 
     async def mbx_recv(self):
@@ -914,16 +990,18 @@ class Terminal:
         status = 0
         while status & 8 == 0:
             # always using mailbox 1, OK?
-            status, = await self.read(0x80D, "B")
+            (status,) = await self.read(0x80D, "B")
         assert self.mbx_in_off is not None, "not receive mailbox defined"
         dlen, address, prio, type, data = await self.read(
-                self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6)
-        return MBXType(type & 0xf), data[:dlen]
+            self.mbx_in_off, "HHBB", data=self.mbx_in_sz - 6
+        )
+        return MBXType(type & 0xF), data[:dlen]
 
     async def coe_request(self, coecmd, odcmd, *args, **kwargs):
         async with self.mbx_lock:
-            await self.mbx_send(MBXType.COE, "HBxH", coecmd.value << 12,
-                                odcmd.value, 0, *args, **kwargs)
+            await self.mbx_send(
+                MBXType.COE, "HBxH", coecmd.value << 12, odcmd.value, 0, *args, **kwargs
+            )
             fragments = True
             ret = []
             offset = 8  # skip header in first packet
@@ -933,12 +1011,16 @@ class Terminal:
                 while type is not MBXType.COE:
                     type, data = await self.mbx_recv()
                     if type is not MBXType.COE:
-                        logger.warning(f"expected CoE package, got {type}, "
-                                       f"for terminal {self.name}")
+                        logger.warning(
+                            f"expected CoE package, got {type}, "
+                            f"for terminal {self.name}"
+                        )
                 coecmd, rodcmd, fragments = unpack("<HBxH", data[:6])
-                if rodcmd & 0x7f != odcmd.value + 1:
-                    raise EtherCatError(f"expected {odcmd.value}, got {rodcmd}, "
-                                        f"for terminal {self.name}")
+                if rodcmd & 0x7F != odcmd.value + 1:
+                    raise EtherCatError(
+                        f"expected {odcmd.value}, got {rodcmd}, "
+                        f"for terminal {self.name}"
+                    )
                 ret.append(data[offset:])
                 offset = 6
             return b"".join(ret)
@@ -951,47 +1033,56 @@ class Terminal:
         """
         async with self.mbx_lock:
             await self.mbx_send(
-                    MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                    ODCmd.UP_REQ_CA.value if subindex is None
-                    else ODCmd.UP_REQ.value,
-                    index, 1 if subindex is None else subindex)
+                MBXType.COE,
+                "HBHB4x",
+                CoECmd.SDOREQ.value << 12,
+                ODCmd.UP_REQ_CA.value if subindex is None else ODCmd.UP_REQ.value,
+                index,
+                1 if subindex is None else subindex,
+            )
             type = None
             while type is not MBXType.COE:
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
-                    logger.warning(f"expected CoE package, got {type}, "
-                                   f"for terminal {self.name}")
+                    logger.warning(
+                        f"expected CoE package, got {type}, "
+                        f"for terminal {self.name}"
+                    )
             coecmd, sdocmd, idx, subidx, size = unpack("<HBHBI", data[:10])
             if coecmd >> 12 != CoECmd.SDORES.value:
                 if subindex is None and coecmd >> 12 == CoECmd.SDOREQ.value:
                     return b""  # if there is no data, the terminal fails
                 raise EtherCatError(
                     f"expected CoE SDORES (3), got {coecmd>>12:x} "
-                    f"for {index:X}:{9 if subindex is None else subindex:02X}")
+                    f"for {index:X}:{9 if subindex is None else subindex:02X}"
+                )
             if idx != index:
                 raise EtherCatError(f"requested index {index}, got {idx}")
             if sdocmd & 2:
-                return data[6 : 10 - ((sdocmd>>2) & 3)]
+                return data[6 : 10 - ((sdocmd >> 2) & 3)]
             ret = [data[10:]]
             retsize = len(ret[0])
 
             toggle = 0
             while retsize < size:
                 await self.mbx_send(
-                        MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                        ODCmd.SEG_UP_REQ.value + toggle, index,
-                        1 if subindex is None else subindex)
+                    MBXType.COE,
+                    "HBHB4x",
+                    CoECmd.SDOREQ.value << 12,
+                    ODCmd.SEG_UP_REQ.value + toggle,
+                    index,
+                    1 if subindex is None else subindex,
+                )
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
                     raise EtherCatError(f"expected CoE, got {type}")
                 coecmd, sdocmd = unpack("<HB", data[:3])
                 if coecmd >> 12 != CoECmd.SDORES.value:
-                    raise EtherCatError(
-                        f"expected CoE cmd SDORES, got {coecmd}")
-                if sdocmd & 0xe0 != 0:
+                    raise EtherCatError(f"expected CoE cmd SDORES, got {coecmd}")
+                if sdocmd & 0xE0 != 0:
                     raise EtherCatError(f"requested index {index}, got {idx}")
                 if sdocmd & 1 and len(data) == 7:
-                    data = data[:3 + (sdocmd >> 1) & 7]
+                    data = data[: 3 + (sdocmd >> 1) & 7]
                 ret.append(data[3:])
                 retsize += len(data) - 3
                 if sdocmd & 1:
@@ -1016,29 +1107,47 @@ class Terminal:
         if len(data) <= 4 and subindex is not None:
             async with self.mbx_lock:
                 await self.mbx_send(
-                        MBXType.COE, "HBHB4s", CoECmd.SDOREQ.value << 12,
-                        ODCmd.DOWN_EXP.value | (((4 - len(data)) << 2) & 0xc),
-                        index, subindex, data)
+                    MBXType.COE,
+                    "HBHB4s",
+                    CoECmd.SDOREQ.value << 12,
+                    ODCmd.DOWN_EXP.value | (((4 - len(data)) << 2) & 0xC),
+                    index,
+                    subindex,
+                    data,
+                )
                 type, data = await self.mbx_recv()
             if type is not MBXType.COE:
-                raise EtherCatError(f"expected CoE, got {type}, {data} "
-                                    f"{odata} {index:x}:{subindex:x}")
+                raise EtherCatError(
+                    f"expected CoE, got {type}, {data} "
+                    f"{odata} {index:x}:{subindex:x}"
+                )
             coecmd, sdocmd, idx, subidx = unpack("<HBHB", data[:6])
             if idx != index or subindex != subidx:
-                raise EtherCatError(f"requested index {index:x}:{subindex:x}, "
-                                    f"got {idx:x}:{subidx:x}")
+                raise EtherCatError(
+                    f"requested index {index:x}:{subindex:x}, "
+                    f"got {idx:x}:{subidx:x}"
+                )
             if coecmd >> 12 != CoECmd.SDORES.value:
-                raise EtherCatError(f"expected CoE SDORES, got {coecmd>>12:x} "
-                                    f"for {index:x}:{subindex:x}")
+                raise EtherCatError(
+                    f"expected CoE SDORES, got {coecmd>>12:x} "
+                    f"for {index:x}:{subindex:x}"
+                )
         else:
             async with self.mbx_lock:
                 stop = min(len(data), self.mbx_out_sz - 16)
                 await self.mbx_send(
-                        MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                        ODCmd.DOWN_INIT_CA.value if subindex is None
-                        else ODCmd.DOWN_INIT.value,
-                        index, 1 if subindex is None else subindex,
-                        data=data[:stop])
+                    MBXType.COE,
+                    "HBHB4x",
+                    CoECmd.SDOREQ.value << 12,
+                    (
+                        ODCmd.DOWN_INIT_CA.value
+                        if subindex is None
+                        else ODCmd.DOWN_INIT.value
+                    ),
+                    index,
+                    1 if subindex is None else subindex,
+                    data=data[:stop],
+                )
                 type, data = await self.mbx_recv()
                 if type is not MBXType.COE:
                     raise EtherCatError(f"expected CoE, got {type}")
@@ -1053,15 +1162,20 @@ class Terminal:
                     stop = min(len(data), start + self.mbx_out_sz - 9)
                     if stop == len(data):
                         if stop - start < 7:
-                            cmd = 1 + (7-stop+start << 1)
+                            cmd = 1 + (7 - stop + start << 1)
                             d = data[start:stop] + b"\0" * (7 - stop + start)
                         else:
                             cmd = 1
                             d = data[start:stop]
                         await self.mbx_send(
-                                MBXType.COE, "HBHB4x", CoECmd.SDOREQ.value << 12,
-                                cmd + toggle, index,
-                                1 if subindex is None else subindex, data=d)
+                            MBXType.COE,
+                            "HBHB4x",
+                            CoECmd.SDOREQ.value << 12,
+                            cmd + toggle,
+                            index,
+                            1 if subindex is None else subindex,
+                            data=d,
+                        )
                         type, data = await self.mbx_recv()
                         if type is not MBXType.COE:
                             raise EtherCatError(f"expected CoE, got {type}")
@@ -1074,11 +1188,13 @@ class Terminal:
 
     async def read_object_entry(self, index, subidx):
         """read a object entry from the CoE self description"""
-        data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OE_REQ,
-                                      "HBB", index, subidx, 7)
+        data = await self.coe_request(
+            CoECmd.SDOINFO, ODCmd.OE_REQ, "HBB", index, subidx, 7
+        )
         oe = ObjectEntry(self, index)
-        oe.valueInfo, dataType, oe.bitLength, oe.objectAccess = \
-            unpack_from("<BxHHH", data)
+        oe.valueInfo, dataType, oe.bitLength, oe.objectAccess = unpack_from(
+            "<BxHHH", data
+        )
         assert subidx == oe.valueInfo
         oe.dataTypeOriginal = dataType
         if dataType < 2048:
@@ -1097,8 +1213,7 @@ class Terminal:
         ret = {}
 
         for index in idxes:
-            data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OD_REQ,
-                                          "H", index)
+            data = await self.coe_request(CoECmd.SDOINFO, ODCmd.OD_REQ, "H", index)
             dtype, ms, oc = unpack("<HBB", data[:4])
 
             od = ObjectDescription(self)
@@ -1133,7 +1248,7 @@ class Terminal:
             size = self.pdo_out_sz
             index = 0
             if self.fmmu_used[0] is not None:
-                raise EtherCatError(f'write fmmu already set in {self.name}')
+                raise EtherCatError(f"write fmmu already set in {self.name}")
         else:
             offset = self.pdo_in_off
             size = self.pdo_in_sz
@@ -1143,8 +1258,18 @@ class Terminal:
 
         self.fmmu_used[index] = logical
         try:
-            await self.write(0x600 + 0x10 * index, "IHBBHBBB3x", logical, size,
-                             0, 7, offset, 0, 2 if write else 1, 1)
+            await self.write(
+                0x600 + 0x10 * index,
+                "IHBBHBBB3x",
+                logical,
+                size,
+                0,
+                7,
+                offset,
+                0,
+                2 if write else 1,
+                1,
+            )
             yield index
             await self.write(0x600 + 0x10 * index, data=16)
         finally:

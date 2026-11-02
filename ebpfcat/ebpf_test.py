@@ -19,11 +19,18 @@
 from unittest import TestCase, main
 import tempfile
 
-from . import ebpf
 from .arraymap import ArrayMap, PerCPUArrayMap
 from .ebpf import (
-    AssembleError, EBPF, FuncId, LocalVar, Member, Opcode, Structure,
-    SubProgram, ktime)
+    AssembleError,
+    EBPF,
+    FuncId,
+    LocalVar,
+    Member,
+    Opcode,
+    Structure,
+    SubProgram,
+    ktime,
+)
 from .simulated import ProcessEBPF, SimulatedEBPF
 from .hashmap import HashMap, Dict
 from .xdp import XDP, PacketVar
@@ -37,24 +44,26 @@ class Tests(TestCase):
 
     def test_assemble(self):
         e = EBPF()
-        e.append(Opcode.MUL, 3, 4, 0x2c3d, 0x2d3e4f5e)
+        e.append(Opcode.MUL, 3, 4, 0x2C3D, 0x2D3E4F5E)
         self.assertEqual(e.assemble(), b"$C=,^O>-")
 
     def test_assemble_long(self):
         e = EBPF()
         e.r5 = 0x3333333344444444
-        self.assertEqual(e.assemble(),
-                         b'\x18\x05\x00\x00DDDD\x00\x00\x00\x003333')
+        self.assertEqual(e.assemble(), b"\x18\x05\x00\x00DDDD\x00\x00\x00\x003333")
 
     def test_assign(self):
         e = EBPF()
         e.owners = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
         e.r5 = 7
         e.r6 = e.r3
-        self.assertOpcodesEqual(e, [
-            "r5 = 7",
-            "r6 = r3",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r5 = 7",
+                "r6 = r3",
+            ],
+        )
 
     def test_word(self):
         e = EBPF()
@@ -63,12 +72,15 @@ class Tests(TestCase):
         e.w4 = e.w1
         e.w2 += 3
         e.w5 += e.w6
-        self.assertOpcodesEqual(e, [
-            "r3 = 7",
-            "w4 = w1",
-            "w2 += 3",
-            "w5 += w6",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r3 = 7",
+                "w4 = w1",
+                "w2 += 3",
+                "w5 += w6",
+            ],
+        )
 
     def test_augassign(self):
         e = EBPF()
@@ -96,30 +108,33 @@ class Tests(TestCase):
         e.sr4 >>= 3
         e.sr4 >>= e.r7
 
-        self.assertOpcodesEqual(e, [
-            "r5 += 7",
-            "r3 += r6",
-            "r4 += -3",
-            "r4 -= r7",
-            "r4 *= 3",
-            "r4 *= r7",
-            "r4 /= 3",
-            "r4 /= r7",
-            "r4 |= 3",
-            "r4 |= r7",
-            "r4 &= 3",
-            "r4 &= r7",
-            "r4 <<= 3",
-            "r4 <<= r7",
-            "r4 >>= 3",
-            "r4 >>= r7",
-            "r4 %= 3",
-            "r4 %= r7",
-            "r4 ^= 3",
-            "r4 ^= r7",
-            "r4 s>>= 3",
-            "r4 s>>= r7",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r5 += 7",
+                "r3 += r6",
+                "r4 += -3",
+                "r4 -= r7",
+                "r4 *= 3",
+                "r4 *= r7",
+                "r4 /= 3",
+                "r4 /= r7",
+                "r4 |= 3",
+                "r4 |= r7",
+                "r4 &= 3",
+                "r4 &= r7",
+                "r4 <<= 3",
+                "r4 <<= r7",
+                "r4 >>= 3",
+                "r4 >>= r7",
+                "r4 %= 3",
+                "r4 %= r7",
+                "r4 ^= 3",
+                "r4 ^= r7",
+                "r4 s>>= 3",
+                "r4 s>>= r7",
+            ],
+        )
 
     def test_memory(self):
         e = EBPF()
@@ -138,26 +153,29 @@ class Tests(TestCase):
         e.r5 = e.mQ[e.r3 - 7]
         e.r5 = e.mb[e.r3] >> 2
         e.r5 = e.mB[e.r3] >> 2
-        self.assertOpcodesEqual(e, [
-            "*(u8 *)(r5 +0) = 7",
-            "*(u16 *)(r3 +2) = 3",
-            "*(u32 *)(r8 +7) = 5",
-            "*(u64 *)(r3 -7) = 2",
-            "*(u8 *)(r5 +0) = r1",
-            "*(u16 *)(r3 +2) = r2",
-            "*(u32 *)(r8 +7) = r3",
-            "*(u64 *)(r3 -7) = r4",
-            "r2 = *(u8 *)(r5 +0)",
-            "r3 = *(u16 *)(r3 +2)",
-            "r4 = *(u32 *)(r8 +7)",
-            "r5 = *(u64 *)(r3 -7)",
-            "r5 = *(u8 *)(r3 +0)",
-            "r5 <<= 56",
-            "r5 s>>= 56",
-            "r5 s>>= 2",
-            "r5 = *(u8 *)(r3 +0)",
-            "r5 >>= 2",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "*(u8 *)(r5 +0) = 7",
+                "*(u16 *)(r3 +2) = 3",
+                "*(u32 *)(r8 +7) = 5",
+                "*(u64 *)(r3 -7) = 2",
+                "*(u8 *)(r5 +0) = r1",
+                "*(u16 *)(r3 +2) = r2",
+                "*(u32 *)(r8 +7) = r3",
+                "*(u64 *)(r3 -7) = r4",
+                "r2 = *(u8 *)(r5 +0)",
+                "r3 = *(u16 *)(r3 +2)",
+                "r4 = *(u32 *)(r8 +7)",
+                "r5 = *(u64 *)(r3 -7)",
+                "r5 = *(u8 *)(r3 +0)",
+                "r5 <<= 56",
+                "r5 s>>= 56",
+                "r5 s>>= 2",
+                "r5 = *(u8 *)(r3 +0)",
+                "r5 >>= 2",
+            ],
+        )
 
     def test_double_add(self):
         e = EBPF()
@@ -169,24 +187,27 @@ class Tests(TestCase):
         e.mI[7 - (e.r1 + 3)] = 3
         e.mI[(e.r1 + 3) - e.r2] = 5
 
-        self.assertOpcodesEqual(e, [
-            "*(u32 *)(r1 +10) = 3",
-            "*(u32 *)(r1 +10) = 3",
-            "r0 = r1",
-            "r0 += 3",
-            "r0 += r2",
-            "*(u32 *)(r0 +0) = 5",
-            "*(u32 *)(r1 -4) = 3",
-            "r0 = 7",
-            "r3 = r1",
-            "r3 += 3",
-            "r0 -= r3",
-            "*(u32 *)(r0 +0) = 3",
-            "r0 = r1",
-            "r0 += 3",
-            "r0 -= r2",
-            "*(u32 *)(r0 +0) = 5",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "*(u32 *)(r1 +10) = 3",
+                "*(u32 *)(r1 +10) = 3",
+                "r0 = r1",
+                "r0 += 3",
+                "r0 += r2",
+                "*(u32 *)(r0 +0) = 5",
+                "*(u32 *)(r1 -4) = 3",
+                "r0 = 7",
+                "r3 = r1",
+                "r3 += 3",
+                "r0 -= r3",
+                "*(u32 *)(r0 +0) = 3",
+                "r0 = r1",
+                "r0 += 3",
+                "r0 -= r2",
+                "*(u32 *)(r0 +0) = 5",
+            ],
+        )
 
     def test_fixed(self):
         e = EBPF()
@@ -228,112 +249,110 @@ class Tests(TestCase):
         e.x5 = 3 // e.x6
         e.x4 = 4.5 // e.x6
 
-
-        self.assertOpcodesEqual(e, [
-            "r1 = r2",
-            "r1 += 3",
-            "r1 *= 100000",
-            "r3 = r4",
-            "r3 *= 100000",
-            "r3 += 350000",
-            "r5 = r6",
-            "r5 += 300000",
-            "r1 = r2",
-            "r1 *= 100000",
-            "r1 += r3",
-            "r1 /= 100000",
-            "r4 = r5",
-            "r4 += r6",
-            "r1 = 200000",
-            "r1 -= r2",
-            "r1 /= 100000",
-            "r3 = 340000",
-            "r7 = r4",
-            "r7 *= 100000",
-            "r3 -= r7",
-            "r3 /= 100000",
-            "r5 = r6",
-            "r5 %= 400000",
-            "r5 /= 100000",
-
-            "r1 = r2",
-            "r1 *= 3",
-            "r1 *= 100000",
-            "r3 = r4",
-            "r3 *= 350000",
-            "r5 = r6",
-            "r5 *= 3",
-            "r1 = r2",
-            "r1 *= r3",
-            "r1 /= 100000",
-            "r4 = r5",
-            "r4 *= r6",
-            "r4 /= 100000",
-
-            "r1 = r2",
-            "r1 *= 100000",
-            "r1 /= 3",
-            "r3 = r4",
-            "r7 = 0x2540be400",
-            "r3 *= r7",
-            "r3 /= 350000",
-            "r5 = r6",
-            "r5 /= 3",
-            "r1 = r2",
-            "r7 = 0x2540be400",
-            "r1 *= r7",
-            "r1 /= r3",
-            "r1 /= 100000",
-            "r4 = r5",
-            "r4 *= 100000",
-            "r4 /= r6",
-
-            "r1 = r2",
-            "r1 /= 3",
-            "r1 *= 100000",
-            "r3 = r4",
-            "r3 *= 100000",
-            "r3 /= 350000",
-            "r3 *= 100000",
-            "r5 = r6",
-            "r5 /= 300000",
-            "r5 *= 100000",
-            "r1 = r2",
-            "r1 *= 100000",
-            "r1 /= r3",
-            "r4 = r5",
-            "r4 /= r6",
-            "r4 *= 100000",
-
-            "r1 = 300000",
-            "r1 /= r2",
-            "r3 = 350000",
-            "r3 /= r4",
-            "r5 = 0x6fc23ac00",
-            "r5 /= r6",
-            "r4 = 0xa7a358200",
-            "r4 /= r6",
-            "r1 = 3",
-            "r1 /= r2",
-            "r1 *= 100000",
-            "r3 = 3",
-            "r3 /= r4",
-            "r3 *= 100000",
-            "r5 = 300000",
-            "r5 /= r6",
-            "r5 *= 100000",
-            "r4 = 450000",
-            "r4 /= r6",
-            "r4 *= 100000",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r1 = r2",
+                "r1 += 3",
+                "r1 *= 100000",
+                "r3 = r4",
+                "r3 *= 100000",
+                "r3 += 350000",
+                "r5 = r6",
+                "r5 += 300000",
+                "r1 = r2",
+                "r1 *= 100000",
+                "r1 += r3",
+                "r1 /= 100000",
+                "r4 = r5",
+                "r4 += r6",
+                "r1 = 200000",
+                "r1 -= r2",
+                "r1 /= 100000",
+                "r3 = 340000",
+                "r7 = r4",
+                "r7 *= 100000",
+                "r3 -= r7",
+                "r3 /= 100000",
+                "r5 = r6",
+                "r5 %= 400000",
+                "r5 /= 100000",
+                "r1 = r2",
+                "r1 *= 3",
+                "r1 *= 100000",
+                "r3 = r4",
+                "r3 *= 350000",
+                "r5 = r6",
+                "r5 *= 3",
+                "r1 = r2",
+                "r1 *= r3",
+                "r1 /= 100000",
+                "r4 = r5",
+                "r4 *= r6",
+                "r4 /= 100000",
+                "r1 = r2",
+                "r1 *= 100000",
+                "r1 /= 3",
+                "r3 = r4",
+                "r7 = 0x2540be400",
+                "r3 *= r7",
+                "r3 /= 350000",
+                "r5 = r6",
+                "r5 /= 3",
+                "r1 = r2",
+                "r7 = 0x2540be400",
+                "r1 *= r7",
+                "r1 /= r3",
+                "r1 /= 100000",
+                "r4 = r5",
+                "r4 *= 100000",
+                "r4 /= r6",
+                "r1 = r2",
+                "r1 /= 3",
+                "r1 *= 100000",
+                "r3 = r4",
+                "r3 *= 100000",
+                "r3 /= 350000",
+                "r3 *= 100000",
+                "r5 = r6",
+                "r5 /= 300000",
+                "r5 *= 100000",
+                "r1 = r2",
+                "r1 *= 100000",
+                "r1 /= r3",
+                "r4 = r5",
+                "r4 /= r6",
+                "r4 *= 100000",
+                "r1 = 300000",
+                "r1 /= r2",
+                "r3 = 350000",
+                "r3 /= r4",
+                "r5 = 0x6fc23ac00",
+                "r5 /= r6",
+                "r4 = 0xa7a358200",
+                "r4 /= r6",
+                "r1 = 3",
+                "r1 /= r2",
+                "r1 *= 100000",
+                "r3 = 3",
+                "r3 /= r4",
+                "r3 *= 100000",
+                "r5 = 300000",
+                "r5 /= r6",
+                "r5 *= 100000",
+                "r4 = 450000",
+                "r4 /= r6",
+                "r4 *= 100000",
+            ],
+        )
 
     def test_local(self):
         class Local(EBPF):
-            a = LocalVar('b')
-            b = LocalVar('H')
-            c = LocalVar('i')
-            d = LocalVar('Q')
-            lx = LocalVar('x')
+            a = LocalVar("b")
+            b = LocalVar("H")
+            c = LocalVar("i")
+            d = LocalVar("Q")
+            lx = LocalVar("x")
 
         e = Local(ProgType.XDP, "GPL")
         e.a = 5
@@ -342,17 +361,20 @@ class Tests(TestCase):
         e.lx = 7
         e.b = e.x1
 
-        self.assertOpcodesEqual(e, [
-            "*(u8 *)(r10 -1) = 5",
-            "r0 = *(u32 *)(r10 -8)",
-            "w0 s>>= 3",
-            "*(u16 *)(r10 -4) = r0",
-            "*(u64 *)(r10 -16) = r1",
-            "*(u64 *)(r10 -24) = 700000",
-            "r0 = r1",
-            "w0 /= 100000",
-            "*(u16 *)(r10 -4) = r0",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "*(u8 *)(r10 -1) = 5",
+                "r0 = *(u32 *)(r10 -8)",
+                "w0 s>>= 3",
+                "*(u16 *)(r10 -4) = r0",
+                "*(u64 *)(r10 -16) = r1",
+                "*(u64 *)(r10 -24) = 700000",
+                "r0 = r1",
+                "w0 /= 100000",
+                "*(u16 *)(r10 -4) = r0",
+            ],
+        )
 
     def test_short_comparison(self):
         e = EBPF()
@@ -367,17 +389,17 @@ class Tests(TestCase):
         with 100 < e.sw3:
             pass
 
-        self.assertOpcodesEqual(e, [
-            "if w3 s>= 0x64 goto pc+0",
-
-            "r3 <<= 32",
-            "r3 s>>= 32",
-            "if r3 s<= r4 goto pc+0",
-
-            "if r3 != r4 goto pc+0",
-
-            "if w3 s<= 0x64 goto pc+0",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "if w3 s>= 0x64 goto pc+0",
+                "r3 <<= 32",
+                "r3 s>>= 32",
+                "if r3 s<= r4 goto pc+0",
+                "if r3 != r4 goto pc+0",
+                "if w3 s<= 0x64 goto pc+0",
+            ],
+        )
 
     def test_local_bits(self):
         class Local(EBPF):
@@ -399,43 +421,46 @@ class Tests(TestCase):
 
         e.a = e.b
 
-        self.assertOpcodesEqual(e, [
-            "r0 = *(u8 *)(r10 -1)",
-            "if r0 & 0x20 goto pc+1",
-            "goto pc+3",
-            "r0 = *(u8 *)(r10 -1)",
-            "w0 |= 32",
-            "*(u8 *)(r10 -1) = r0",
-            "r0 = *(u8 *)(r10 -1)",
-            "r0 &= 32",
-            "r0 >>= 5",
-            "w0 <<= 3",
-            "w0 &= 120",
-            "r2 = *(u8 *)(r10 -2)",
-            "w2 &= -121",
-            "w0 |= w2",
-            "*(u8 *)(r10 -2) = r0",
-            "r0 = *(u8 *)(r10 -1)",
-            "if r0 & 0x20 goto pc+4",
-            "r0 = *(u8 *)(r10 -2)",
-            "w0 &= -121",
-            "w0 |= 24",
-            "*(u8 *)(r10 -2) = r0",
-            "r0 = *(u8 *)(r10 -2)",
-            "if r0 & 0x78 goto pc+1",
-            "goto pc+3",
-            "r0 = *(u8 *)(r10 -1)",
-            "w0 &= -33",
-            "*(u8 *)(r10 -1) = r0",
-            "r2 = *(u8 *)(r10 -2)",
-            "if r2 & 0x78 goto pc+3",
-            "r0 = *(u8 *)(r10 -1)",
-            "w0 &= -33",
-            "goto pc+2",
-            "r0 = *(u8 *)(r10 -1)",
-            "w0 |= 32",
-            "*(u8 *)(r10 -1) = r0",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = *(u8 *)(r10 -1)",
+                "if r0 & 0x20 goto pc+1",
+                "goto pc+3",
+                "r0 = *(u8 *)(r10 -1)",
+                "w0 |= 32",
+                "*(u8 *)(r10 -1) = r0",
+                "r0 = *(u8 *)(r10 -1)",
+                "r0 &= 32",
+                "r0 >>= 5",
+                "w0 <<= 3",
+                "w0 &= 120",
+                "r2 = *(u8 *)(r10 -2)",
+                "w2 &= -121",
+                "w0 |= w2",
+                "*(u8 *)(r10 -2) = r0",
+                "r0 = *(u8 *)(r10 -1)",
+                "if r0 & 0x20 goto pc+4",
+                "r0 = *(u8 *)(r10 -2)",
+                "w0 &= -121",
+                "w0 |= 24",
+                "*(u8 *)(r10 -2) = r0",
+                "r0 = *(u8 *)(r10 -2)",
+                "if r0 & 0x78 goto pc+1",
+                "goto pc+3",
+                "r0 = *(u8 *)(r10 -1)",
+                "w0 &= -33",
+                "*(u8 *)(r10 -1) = r0",
+                "r2 = *(u8 *)(r10 -2)",
+                "if r2 & 0x78 goto pc+3",
+                "r0 = *(u8 *)(r10 -1)",
+                "w0 &= -33",
+                "goto pc+2",
+                "r0 = *(u8 *)(r10 -1)",
+                "w0 |= 32",
+                "*(u8 *)(r10 -1) = r0",
+            ],
+        )
 
     def test_bits_and_or(self):
         class Local(EBPF):
@@ -447,23 +472,26 @@ class Tests(TestCase):
             with (e.a != 0) & (e.stmp > 0) | (e.a == 0) & (e.stmp < 0):
                 e.stmp = 0
 
-        self.assertOpcodesEqual(e, [
-            "r2 = *(u8 *)(r10 -1)",
-            "if r2 & 0x20 goto pc+1",
-            "goto pc+1",
-            "if r0 s> 0x0 goto pc+3",
-            "r2 = *(u8 *)(r10 -1)",
-            "if r2 & 0x20 goto pc+2",
-            "if r0 s>= 0x0 goto pc+1",
-            "r0 = 0",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r2 = *(u8 *)(r10 -1)",
+                "if r2 & 0x20 goto pc+1",
+                "goto pc+1",
+                "if r0 s> 0x0 goto pc+3",
+                "r2 = *(u8 *)(r10 -1)",
+                "if r2 & 0x20 goto pc+2",
+                "if r0 s>= 0x0 goto pc+1",
+                "r0 = 0",
+            ],
+        )
 
     def test_local_subprog(self):
         class Local(EBPF):
-            a = LocalVar('I')
+            a = LocalVar("I")
 
         class Sub(SubProgram):
-            b = LocalVar('I')
+            b = LocalVar("I")
 
             def program(self):
                 self.b *= 3
@@ -475,45 +503,51 @@ class Tests(TestCase):
         s1.b = 3
         e.r3 = s1.b
         s2.b = 7
-        self.assertOpcodesEqual(e, [
-            "*(u32 *)(r10 -4) = 5",
-            "*(u32 *)(r10 -12) = 3",
-            "r3 = *(u32 *)(r10 -12)",
-            "*(u32 *)(r10 -12) = 7",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "*(u32 *)(r10 -4) = 5",
+                "*(u32 *)(r10 -12) = 3",
+                "r3 = *(u32 *)(r10 -12)",
+                "*(u32 *)(r10 -12) = 7",
+            ],
+        )
 
     def test_sign_extend(self):
         class Local(EBPF):
-            a = LocalVar('b')
-            b = LocalVar('H')
-            c = LocalVar('i')
-            d = LocalVar('Q')
+            a = LocalVar("b")
+            b = LocalVar("H")
+            c = LocalVar("i")
+            d = LocalVar("Q")
 
         e = Local(ProgType.XDP, "GPL")
         e.b = e.a + e.c
         e.d = e.b + e.c
 
-        self.assertOpcodesEqual(e, [
-            "r0 = *(u8 *)(r10 -1)",
-            "w0 <<= 24",
-            "w0 s>>= 24",
-            "r2 = *(u32 *)(r10 -8)",
-            "w0 += w2",
-            "*(u16 *)(r10 -4) = r0",
-            "r0 = *(u16 *)(r10 -4)",
-            "r2 = *(u32 *)(r10 -8)",
-            "r2 <<= 32",
-            "r2 s>>= 32",
-            "r0 += r2",
-            "*(u64 *)(r10 -16) = r0",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = *(u8 *)(r10 -1)",
+                "w0 <<= 24",
+                "w0 s>>= 24",
+                "r2 = *(u32 *)(r10 -8)",
+                "w0 += w2",
+                "*(u16 *)(r10 -4) = r0",
+                "r0 = *(u16 *)(r10 -4)",
+                "r2 = *(u32 *)(r10 -8)",
+                "r2 <<= 32",
+                "r2 s>>= 32",
+                "r0 += r2",
+                "*(u64 *)(r10 -16) = r0",
+            ],
+        )
 
     def test_lock_add(self):
         class Local(EBPF):
-            a = LocalVar('I')
-            b = LocalVar('q')
-            c = LocalVar('h')
-            d = LocalVar('x')
+            a = LocalVar("I")
+            b = LocalVar("q")
+            c = LocalVar("h")
+            d = LocalVar("x")
 
         e = Local(ProgType.XDP, "GPL")
         e.a += 3
@@ -529,33 +563,36 @@ class Tests(TestCase):
         e.d -= 5
         e.d += e.r1
 
-        self.assertOpcodesEqual(e, [
-            "r0 = 3",
-            "lock *(u32 *)(r10 -4) += r0",
-            "lock *(u32 *)(r1 +0) += r1",
-            "r0 = -3",
-            "lock *(u32 *)(r10 -4) += r0",
-            "r0 = 3",
-            "lock *(u64 *)(r10 -16) += r0",
-            "lock *(u64 *)(r1 +0) += r1",
-            "r0 = *(u16 *)(r10 -18)",
-            "w0 <<= 16",
-            "w0 s>>= 16",
-            "w0 += 3",
-            "*(u16 *)(r10 -18) = r0",
-            "r0 = *(u8 *)(r1 +0)",
-            "w0 += w1",
-            "*(u8 *)(r1 +0) = r0",
-            "r0 = -500000",
-            "lock *(u64 *)(r10 -32) += r0",
-            "r0 = r1",
-            "r0 *= 100000",
-            "lock *(u64 *)(r10 -32) += r0",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = 3",
+                "lock *(u32 *)(r10 -4) += r0",
+                "lock *(u32 *)(r1 +0) += r1",
+                "r0 = -3",
+                "lock *(u32 *)(r10 -4) += r0",
+                "r0 = 3",
+                "lock *(u64 *)(r10 -16) += r0",
+                "lock *(u64 *)(r1 +0) += r1",
+                "r0 = *(u16 *)(r10 -18)",
+                "w0 <<= 16",
+                "w0 s>>= 16",
+                "w0 += 3",
+                "*(u16 *)(r10 -18) = r0",
+                "r0 = *(u8 *)(r1 +0)",
+                "w0 += w1",
+                "*(u8 *)(r1 +0) = r0",
+                "r0 = -500000",
+                "lock *(u64 *)(r10 -32) += r0",
+                "r0 = r1",
+                "r0 *= 100000",
+                "lock *(u64 *)(r10 -32) += r0",
+            ],
+        )
 
     def test_array(self):
         class Local(EBPF):
-            ar = LocalVar('5B')
+            ar = LocalVar("5B")
 
         e = Local(ProgType.XDP, "GPL")
         e.ar[1] = 3
@@ -563,18 +600,21 @@ class Tests(TestCase):
         e.ar[e.r1] = 7
         e.r2 = e.ar[e.r1]
 
-        self.assertOpcodesEqual(e, [
-            "*(u8 *)(r10 -4) = 3",
-            "r1 = *(u8 *)(r10 -2)",
-            "r0 = r10",
-            "r0 += -5",
-            "r0 += r1",
-            "*(u8 *)(r0 +0) = 7",
-            "r2 = r10",
-            "r2 += -5",
-            "r2 += r1",
-            "r2 = *(u8 *)(r2 +0)",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "*(u8 *)(r10 -4) = 3",
+                "r1 = *(u8 *)(r10 -2)",
+                "r0 = r10",
+                "r0 += -5",
+                "r0 += r1",
+                "*(u8 *)(r0 +0) = 7",
+                "r2 = r10",
+                "r2 += -5",
+                "r2 += r1",
+                "r2 = *(u8 *)(r2 +0)",
+            ],
+        )
 
     def test_jump(self):
         e = EBPF()
@@ -632,38 +672,41 @@ class Tests(TestCase):
         e.r0 = 1
         t1.target()
         t2.target()
-        self.assertOpcodesEqual(e, [
-            "goto pc+1",
-            "r0 = 1",
-            "if r5 > 0x3 goto pc+4",
-            "if r1 > r2 goto pc+3",
-            "if r7 >= 0x2 goto pc+2",
-            "if r4 >= r3 goto pc+1",
-            "r0 = 1",
-            "if r5 < 0x3 goto pc+4",
-            "if r1 < r2 goto pc+3",
-            "if r7 <= 0x2 goto pc+2",
-            "if r4 <= r3 goto pc+1",
-            "r0 = 1",
-            "if r5 s> 0x3 goto pc+4",
-            "if r1 s> r2 goto pc+3",
-            "if r7 s>= 0x2 goto pc+2",
-            "if r4 s>= r3 goto pc+1",
-            "r0 = 1",
-            "if r5 s< 0x3 goto pc+4",
-            "if r1 s< r2 goto pc+3",
-            "if r7 s<= 0x2 goto pc+2",
-            "if r4 s<= r3 goto pc+1",
-            "r0 = 1",
-            "if r5 == 0x3 goto pc+4",
-            "if r1 == r2 goto pc+3",
-            "if r7 != 0x2 goto pc+2",
-            "if r4 != r3 goto pc+1",
-            "r0 = 1",
-            "if r5 & 0x3 goto pc+2",
-            "if r1 & r2 goto pc+1",
-            "r0 = 1",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "goto pc+1",
+                "r0 = 1",
+                "if r5 > 0x3 goto pc+4",
+                "if r1 > r2 goto pc+3",
+                "if r7 >= 0x2 goto pc+2",
+                "if r4 >= r3 goto pc+1",
+                "r0 = 1",
+                "if r5 < 0x3 goto pc+4",
+                "if r1 < r2 goto pc+3",
+                "if r7 <= 0x2 goto pc+2",
+                "if r4 <= r3 goto pc+1",
+                "r0 = 1",
+                "if r5 s> 0x3 goto pc+4",
+                "if r1 s> r2 goto pc+3",
+                "if r7 s>= 0x2 goto pc+2",
+                "if r4 s>= r3 goto pc+1",
+                "r0 = 1",
+                "if r5 s< 0x3 goto pc+4",
+                "if r1 s< r2 goto pc+3",
+                "if r7 s<= 0x2 goto pc+2",
+                "if r4 s<= r3 goto pc+1",
+                "r0 = 1",
+                "if r5 == 0x3 goto pc+4",
+                "if r1 == r2 goto pc+3",
+                "if r7 != 0x2 goto pc+2",
+                "if r4 != r3 goto pc+1",
+                "r0 = 1",
+                "if r5 & 0x3 goto pc+2",
+                "if r1 & r2 goto pc+1",
+                "r0 = 1",
+            ],
+        )
 
     def test_with(self):
         e = EBPF()
@@ -688,27 +731,30 @@ class Tests(TestCase):
             pass
         with e.x4 > e.x2:
             pass
-        self.assertOpcodesEqual(e, [
-            "if r2 <= 0x3 goto pc+2",
-            "r2 = 5",
-            "goto pc+1",
-            "r6 = 7",
-            "if r2 == 0x0 goto pc+1",
-            "r3 = 2",
-            "if r4 <= 0x3 goto pc+2",
-            "r5 = 7",
-            "goto pc+4",
-            'if r4 >= 0x3 goto pc+2',
-            'r5 = 8',
-            'goto pc+1',
-            "r7 = 8",
-            "if r4 s<= 0x493e0 goto pc+0",
-            "if r4 s>= 0x493e0 goto pc+0",
-            "r9 = r4",
-            "r9 *= 100000",
-            "if r9 <= 0x55730 goto pc+0",
-            "if r4 s<= r2 goto pc+0",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "if r2 <= 0x3 goto pc+2",
+                "r2 = 5",
+                "goto pc+1",
+                "r6 = 7",
+                "if r2 == 0x0 goto pc+1",
+                "r3 = 2",
+                "if r4 <= 0x3 goto pc+2",
+                "r5 = 7",
+                "goto pc+4",
+                "if r4 >= 0x3 goto pc+2",
+                "r5 = 8",
+                "goto pc+1",
+                "r7 = 8",
+                "if r4 s<= 0x493e0 goto pc+0",
+                "if r4 s>= 0x493e0 goto pc+0",
+                "r9 = r4",
+                "r9 *= 100000",
+                "if r9 <= 0x55730 goto pc+0",
+                "if r4 s<= r2 goto pc+0",
+            ],
+        )
 
     def test_with_inversion(self):
         e = EBPF()
@@ -719,16 +765,19 @@ class Tests(TestCase):
             e.r1 = 4
         with Else:
             e.r0 = 3
-        self.assertOpcodesEqual(e, [
-            "if r1 & 0x1 goto pc+1",
-            "goto pc+1",
-            "r0 = 2",
-            "if r1 & 0x7 goto pc+2",
-            "r0 = 3",
-            "goto pc+2",
-            "r0 = 2",
-            "r1 = 4",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "if r1 & 0x1 goto pc+1",
+                "goto pc+1",
+                "r0 = 2",
+                "if r1 & 0x7 goto pc+2",
+                "r0 = 3",
+                "goto pc+2",
+                "r0 = 2",
+                "r1 = 4",
+            ],
+        )
 
     def test_with_and(self):
         e = EBPF()
@@ -739,16 +788,19 @@ class Tests(TestCase):
             e.r2 = 5
         with Else:
             e.r3 = 7
-        self.assertOpcodesEqual(e, [
-            "if r2 <= 0x3 goto pc+2",
-            "if r3 <= 0x2 goto pc+1",
-            "r1 = 5",
-            "if r2 <= 0x2 goto pc+3",
-            "if r1 >= 0x2 goto pc+2",
-            "r2 = 5",
-            "goto pc+1",
-            "r3 = 7",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "if r2 <= 0x3 goto pc+2",
+                "if r3 <= 0x2 goto pc+1",
+                "r1 = 5",
+                "if r2 <= 0x2 goto pc+3",
+                "if r1 >= 0x2 goto pc+2",
+                "r2 = 5",
+                "goto pc+1",
+                "r3 = 7",
+            ],
+        )
 
     def test_with_or(self):
         e = EBPF()
@@ -761,18 +813,21 @@ class Tests(TestCase):
         with Else:
             e.r3 = 7
             e.r4 = 3
-        self.assertOpcodesEqual(e, [
-            "if r2 > 0x3 goto pc+1",
-            "if r3 <= 0x2 goto pc+1",
-            "r1 = 5",
-            "if r2 > 0x2 goto pc+1",
-            "if r1 <= 0x2 goto pc+3",
-            "r2 = 5",
-            "r5 = 4",
-            "goto pc+2",
-            "r3 = 7",
-            "r4 = 3",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "if r2 > 0x3 goto pc+1",
+                "if r3 <= 0x2 goto pc+1",
+                "r1 = 5",
+                "if r2 > 0x2 goto pc+1",
+                "if r1 <= 0x2 goto pc+3",
+                "r2 = 5",
+                "r5 = 4",
+                "goto pc+2",
+                "r3 = 7",
+                "r4 = 3",
+            ],
+        )
 
     def test_comp_binary(self):
         e = EBPF()
@@ -786,18 +841,21 @@ class Tests(TestCase):
         e.r0 = 8
         tgt.target()
 
-        self.assertOpcodesEqual(e, [
-            "r0 = r1",
-            "r0 += r3",
-            "if r0 <= 0x3 goto pc+2",
-            "r0 = 5",
-            "goto pc+1",
-            "r0 = 7",
-            "r4 = r2",
-            "r4 += r5",
-            "if r0 < r4 goto pc+1",
-            "r0 = 8",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = r1",
+                "r0 += r3",
+                "if r0 <= 0x3 goto pc+2",
+                "r0 = 5",
+                "goto pc+1",
+                "r0 = 7",
+                "r4 = r2",
+                "r4 += r5",
+                "if r0 < r4 goto pc+1",
+                "r0 = 8",
+            ],
+        )
 
     def test_huge(self):
         e = EBPF()
@@ -807,15 +865,18 @@ class Tests(TestCase):
             e.r3 = e.r4 + 0x1234567890
         e.r3 = 0x90000000
 
-        self.assertOpcodesEqual(e, [
-            "r3 = 0x1234567890",
-            "r4 = FD#7",
-            "if r3 != 0x0 goto pc+4",
-            "r3 = r4",
-            "r0 = 0x1234567890",
-            "r3 += r0",
-            "r3 = 0x90000000",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r3 = 0x1234567890",
+                "r4 = FD#7",
+                "if r3 != 0x0 goto pc+4",
+                "r3 = r4",
+                "r0 = 0x1234567890",
+                "r3 += r0",
+                "r3 = 0x90000000",
+            ],
+        )
 
     def test_simple_binary(self):
         e = EBPF()
@@ -829,31 +890,34 @@ class Tests(TestCase):
         e.sr0 = e.sr1 >> e.r2
         e.w0 = e.w1 + e.w2
         e.r0 = e.r1 & e.r2  # attention, special case
-        self.assertOpcodesEqual(e, [
-            "r0 = r1",
-            "r0 *= r2",
-            "r0 += r3",
-            "r0 = r1",
-            "r0 *= r2",
-            "r0 += 3",
-            "r0 = r1",
-            "r0 *= 2",
-            "r0 += 3",
-            "r0 = r1",
-            "r0 *= 2",
-            "r0 += 3",
-            "r0 = r1",
-            "r0 *= 2",
-            "r0 += 3",
-            "r0 = r1",
-            "r0 s>>= 2",
-            "r0 = r1",
-            "r0 s>>= r2",
-            "w0 = w1",
-            "w0 += w2",
-            "r0 = r1",
-            "r0 &= r2",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = r1",
+                "r0 *= r2",
+                "r0 += r3",
+                "r0 = r1",
+                "r0 *= r2",
+                "r0 += 3",
+                "r0 = r1",
+                "r0 *= 2",
+                "r0 += 3",
+                "r0 = r1",
+                "r0 *= 2",
+                "r0 += 3",
+                "r0 = r1",
+                "r0 *= 2",
+                "r0 += 3",
+                "r0 = r1",
+                "r0 s>>= 2",
+                "r0 = r1",
+                "r0 s>>= r2",
+                "w0 = w1",
+                "w0 += w2",
+                "r0 = r1",
+                "r0 &= r2",
+            ],
+        )
 
     def test_mixed_binary(self):
         e = EBPF()
@@ -861,14 +925,17 @@ class Tests(TestCase):
         e.w1 = e.r2 + e.w3
         e.r1 = e.w2 + e.w3
         e.w1 = e.w2 + e.w3
-        self.assertOpcodesEqual(e, [
-            "r1 = r2",
-            "w1 += w3",
-            "w1 = w2",
-            "r1 += r3",
-            "w1 = w2",
-            "w1 += w3",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r1 = r2",
+                "w1 += w3",
+                "w1 = w2",
+                "r1 += r3",
+                "w1 = w2",
+                "w1 += w3",
+            ],
+        )
 
     def test_mixed_compare(self):
         e = EBPF()
@@ -877,13 +944,15 @@ class Tests(TestCase):
             pass
         with (e.r1 + e.sr2) > 3:
             pass
-        self.assertOpcodesEqual(e, [
-            "if r1 s<= r2 goto pc+0",
-            "r4 = r1",
-            "r4 += r2",
-            "if r4 s<= 0x3 goto pc+0",
-        ])
-
+        self.assertOpcodesEqual(
+            e,
+            [
+                "if r1 s<= r2 goto pc+0",
+                "r4 = r1",
+                "r4 += r2",
+                "if r4 s<= 0x3 goto pc+0",
+            ],
+        )
 
     def test_reverse_binary(self):
         e = EBPF()
@@ -893,52 +962,59 @@ class Tests(TestCase):
         e.r3 = 7 % (e.r2 + 3)
         e.r3 = 7 >> e.r2
         e.r3 = -7 >> e.r2
-        self.assertOpcodesEqual(e, [
-            "r3 = 7",
-            "r4 = r2",
-            "r4 += 2",
-            "r3 /= r4",
-            "r3 = 7",
-            "r3 <<= r2",
-            "r3 = 7",
-            "r4 = r2",
-            "r4 += 3",
-            "r3 %= r4",
-            "r3 = 7",
-            "r3 >>= r2",
-            "r3 = -7",
-            "r3 s>>= r2",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r3 = 7",
+                "r4 = r2",
+                "r4 += 2",
+                "r3 /= r4",
+                "r3 = 7",
+                "r3 <<= r2",
+                "r3 = 7",
+                "r4 = r2",
+                "r4 += 3",
+                "r3 %= r4",
+                "r3 = 7",
+                "r3 >>= r2",
+                "r3 = -7",
+                "r3 s>>= r2",
+            ],
+        )
 
     def test_negation(self):
         e = EBPF()
         e.r7 = -e.r1
         e.r7 = -e.r7
-        self.assertOpcodesEqual(e, [
-            "r7 = r1",
-            "r7 = -r7",
-            "r7 = -r7",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r7 = r1",
+                "r7 = -r7",
+                "r7 = -r7",
+            ],
+        )
 
     def test_absolute(self):
         e = EBPF()
         e.r7 = abs(e.r1)
         with abs(e.r7) > 3:
             e.x3 = abs(e.x1)
-        self.assertOpcodesEqual(e, [
-            "r7 = r1",
-            "if r7 s>= 0x0 goto pc+1",
-            "r7 = -r7",
-
-            "r0 = r7",
-            "if r0 s>= 0x0 goto pc+1",
-            "r0 = -r0",
-            "if r0 <= 0x3 goto pc+3",
-
-            "r3 = r1",
-            "if r3 s>= 0x0 goto pc+1",
-            "r3 = -r3",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r7 = r1",
+                "if r7 s>= 0x0 goto pc+1",
+                "r7 = -r7",
+                "r0 = r7",
+                "if r0 s>= 0x0 goto pc+1",
+                "r0 = -r0",
+                "if r0 <= 0x3 goto pc+3",
+                "r3 = r1",
+                "if r3 s>= 0x0 goto pc+1",
+                "r3 = -r3",
+            ],
+        )
 
     def test_jump_data(self):
         e = EBPF()
@@ -979,10 +1055,13 @@ class Tests(TestCase):
         e = EBPF()
         e.r8 = 23
         e.call(FuncId.ktime_get_ns)
-        self.assertOpcodesEqual(e, [
-            "r8 = 23",
-            "call #5",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r8 = 23",
+                "call #5",
+            ],
+        )
         e.r7 = e.r0
         e.r5 = e.r8
         with self.assertRaises(AssembleError):
@@ -999,39 +1078,40 @@ class Tests(TestCase):
         e.r0 = (e.r1 * e.r3) - (e.r10 * e.r5)
         e.r5 = (e.r1 * e.r3) + e.mI[e.r10 + e.r0]
         e.r5 = e.r3 + e.r5
-        self.assertOpcodesEqual(e, [
-            "r3 = r1",
-            "r0 = r10",
-            "r0 *= 2",
-            "r3 -= r0",
-            "r0 = r3",
-            "w0 *= 2",
-            "*(u16 *)(r10 -10) = r0",
-            "r0 = r10",
-            "r0 += r3",
-            "r2 = r3",
-            "w2 *= 2",
-            "*(u16 *)(r0 +0) = r2",
-
-            "r5 = r10",
-            "r5 += r3",
-            "r5 = *(u16 *)(r5 +0)",
-
-            "r0 = r1",
-            "r0 *= r3",
-            "r2 = r10",
-            "r2 *= r5",
-            "r0 -= r2",
-            "r5 = r1",
-            "r5 *= r3",
-            "r2 = r10",
-            "r2 += r0",
-            "r2 = *(u32 *)(r2 +0)",
-            "r5 += r2",
-            "r2 = r3",
-            "r2 += r5",
-            "r5 = r2",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r3 = r1",
+                "r0 = r10",
+                "r0 *= 2",
+                "r3 -= r0",
+                "r0 = r3",
+                "w0 *= 2",
+                "*(u16 *)(r10 -10) = r0",
+                "r0 = r10",
+                "r0 += r3",
+                "r2 = r3",
+                "w2 *= 2",
+                "*(u16 *)(r0 +0) = r2",
+                "r5 = r10",
+                "r5 += r3",
+                "r5 = *(u16 *)(r5 +0)",
+                "r0 = r1",
+                "r0 *= r3",
+                "r2 = r10",
+                "r2 *= r5",
+                "r0 -= r2",
+                "r5 = r1",
+                "r5 *= r3",
+                "r2 = r10",
+                "r2 += r0",
+                "r2 = *(u32 *)(r2 +0)",
+                "r5 += r2",
+                "r2 = r3",
+                "r2 += r5",
+                "r5 = r2",
+            ],
+        )
         with self.assertRaises(AssembleError):
             e.r8 = e.r2
 
@@ -1050,34 +1130,40 @@ class Tests(TestCase):
             e.xtmp = 3
             e.r3 = e.xtmp
             e.xtmp = e.r3 * 3.5
-        self.assertOpcodesEqual(e, [
-            "r0 = 7",
-            "r2 = 3",
-            "r3 = r2",
-            "r4 = 5",
-            "r7 = r4",
-            "r2 = 2",
-            "r3 = r2",
-            "r2 = 300000",
-            "r3 = r2",
-            "r3 /= 100000",
-            "r2 = r3",
-            "r2 *= 350000",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = 7",
+                "r2 = 3",
+                "r3 = r2",
+                "r4 = 5",
+                "r7 = r4",
+                "r2 = 2",
+                "r3 = r2",
+                "r2 = 300000",
+                "r3 = r2",
+                "r3 /= 100000",
+                "r2 = r3",
+                "r2 *= 350000",
+            ],
+        )
 
     def test_ktime(self):
         e = EBPF()
         e.r0 = 3
         e.r3 = ktime(e)
-        self.assertOpcodesEqual(e, [
-            "r0 = 3",
-            "r6 = r0",
-            "r7 = r1",
-            "call #5",
-            "r3 = r0",
-            "r0 = r6",
-            "r1 = r7",
-            ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r0 = 3",
+                "r6 = r0",
+                "r7 = r1",
+                "call #5",
+                "r3 = r0",
+                "r0 = r6",
+                "r1 = r7",
+            ],
+        )
 
     def test_xdp(self):
         e = XDP(license="GPL")
@@ -1085,16 +1171,19 @@ class Tests(TestCase):
             e.r3 = p.pH[22]
         with p.Else:
             e.r3 = 77
-        self.assertOpcodesEqual(e, [
-            "r9 = *(u32 *)(r1 +0)",
-            "r0 = *(u32 *)(r1 +4)",
-            "r2 = *(u32 *)(r1 +0)",
-            "r2 += 100",
-            "if r0 <= r2 goto pc+2",
-            "r3 = *(u16 *)(r9 +22)",
-            "goto pc+1",
-            "r3 = 77",
-        ])
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r9 = *(u32 *)(r1 +0)",
+                "r0 = *(u32 *)(r1 +4)",
+                "r2 = *(u32 *)(r1 +0)",
+                "r2 += 100",
+                "if r0 <= r2 goto pc+2",
+                "r3 = *(u16 *)(r9 +22)",
+                "goto pc+1",
+                "r3 = 77",
+            ],
+        )
 
     def test_endian(self):
         class P(XDP):
@@ -1116,34 +1205,36 @@ class Tests(TestCase):
                 self.pq = self.ph
 
         e = P(license="GPL")
-        self.assertOpcodesEqual(e, [
-            "r9 = *(u32 *)(r1 +0)",
-            "r0 = *(u32 *)(r1 +4)",
-            "r2 = *(u32 *)(r1 +0)",
-            "r2 += 100",
-            "if r0 <= r2 goto pc+19",
-            "*(u16 *)(r9 +20) = 3",
-            "*(u32 *)(r9 +28) = 83886080",
-            "r0 = 0x700000000000000",
-            "*(u64 *)(r9 +36) = r0",
-            "r0 = *(u16 *)(r9 +20)",
-            "r0 = bswap16 r0",
-            "w0 += 3",
-            "r0 = bswap16 r0",
-            "*(u16 *)(r9 +20) = r0",
-            "r0 = *(u32 *)(r9 +28)",
-            "r0 = bswap32 r0",
-            "w0 += 5",
-            "r0 = bswap32 r0",
-            "*(u32 *)(r9 +28) = r0",
-            "r0 = *(u16 *)(r9 +20)",
-            "r0 = bswap16 r0",
-            "r0 = bswap64 r0",
-            "*(u64 *)(r9 +36) = r0",
-            "r0 = 2",
-            "exit",
-        ])
-
+        self.assertOpcodesEqual(
+            e,
+            [
+                "r9 = *(u32 *)(r1 +0)",
+                "r0 = *(u32 *)(r1 +4)",
+                "r2 = *(u32 *)(r1 +0)",
+                "r2 += 100",
+                "if r0 <= r2 goto pc+19",
+                "*(u16 *)(r9 +20) = 3",
+                "*(u32 *)(r9 +28) = 83886080",
+                "r0 = 0x700000000000000",
+                "*(u64 *)(r9 +36) = r0",
+                "r0 = *(u16 *)(r9 +20)",
+                "r0 = bswap16 r0",
+                "w0 += 3",
+                "r0 = bswap16 r0",
+                "*(u16 *)(r9 +20) = r0",
+                "r0 = *(u32 *)(r9 +28)",
+                "r0 = bswap32 r0",
+                "w0 += 5",
+                "r0 = bswap32 r0",
+                "*(u32 *)(r9 +28) = r0",
+                "r0 = *(u16 *)(r9 +20)",
+                "r0 = bswap16 r0",
+                "r0 = bswap64 r0",
+                "*(u64 *)(r9 +36) = r0",
+                "r0 = 2",
+                "exit",
+            ],
+        )
 
     def test_xdp_minsize(self):
         class P(XDP):
@@ -1155,17 +1246,20 @@ class Tests(TestCase):
                 self.pv = self.pH[22]
 
         p = P(license="GPL")
-        self.assertOpcodesEqual(p, [
-            "r9 = *(u32 *)(r1 +0)",
-            "r0 = *(u32 *)(r1 +4)",
-            "r2 = *(u32 *)(r1 +0)",
-            "r2 += 100",
-            "if r0 <= r2 goto pc+2",
-            "r0 = *(u16 *)(r9 +22)",
-            "*(u16 *)(r9 +20) = r0",
-            "r0 = 2",
-            "exit",
-        ])
+        self.assertOpcodesEqual(
+            p,
+            [
+                "r9 = *(u32 *)(r1 +0)",
+                "r0 = *(u32 *)(r1 +4)",
+                "r2 = *(u32 *)(r1 +0)",
+                "r2 += 100",
+                "if r0 <= r2 goto pc+2",
+                "r0 = *(u16 *)(r9 +22)",
+                "*(u16 *)(r9 +20) = r0",
+                "r0 = 2",
+                "exit",
+            ],
+        )
 
 
 class KernelTests(TestCase):
@@ -1242,7 +1336,7 @@ class KernelTests(TestCase):
 
     def test_minimal(self):
         class Local(EBPF):
-            a = LocalVar('I')
+            a = LocalVar("I")
 
         e = Local(ProgType.XDP, "GPL")
         e.a = 7
@@ -1255,27 +1349,25 @@ class KernelTests(TestCase):
         print(e.load(log_level=1)[1])
 
     def test_attach(self):
-        import asyncio
-
         class Local(XDP):
-            license = 'GPL'
+            license = "GPL"
             minimumPacketSize = 100
 
         e = Local()
-        with e.run('lo'):
+        with e.run("lo"):
             pass
 
     def test_pinning(self):
         class Local(EBPF):
             userspace = ArrayMap()
-            a = userspace.globalVar('i')
+            a = userspace.globalVar("i")
 
-        e = Local(ProgType.XDP, 'GPL')
+        e = Local(ProgType.XDP, "GPL")
         e.a += 7
         e.exit()
 
         e.load()
-        with tempfile.TemporaryDirectory(dir='/sys/fs/bpf/') as pindir:
+        with tempfile.TemporaryDirectory(dir="/sys/fs/bpf/") as pindir:
             e.pin_maps(pindir)
             e.test_run(1000, 1000, 100, 100, 1)
             self.assertEqual(e.a, 7)
@@ -1283,7 +1375,7 @@ class KernelTests(TestCase):
             self.assertEqual(e.a, 14)
             e.close()
 
-            e = Local(ProgType.XDP, 'GPL', load_maps=pindir)
+            e = Local(ProgType.XDP, "GPL", load_maps=pindir)
             self.assertEqual(e.a, 14)
 
     def test_percpumap(self):
@@ -1316,7 +1408,6 @@ class KernelTests(TestCase):
 
             map = ArrayMap()
             ar = map.globalVar("i")
-
 
             def program(self):
                 self.ht1.key.keyB = self.ar
@@ -1385,7 +1476,7 @@ class KernelTests(TestCase):
 
     def test_hashtable(self):
         class Program(EBPF):
-            ht1 = Dict(key='i', value='q', size=4)
+            ht1 = Dict(key="i", value="q", size=4)
 
             map = ArrayMap()
             ar = map.globalVar("i")
@@ -1403,8 +1494,8 @@ class KernelTests(TestCase):
                     value.value += 3
                     self.ar = value
                     value.value = 9
-                    #self.r2 = 22
-                    #self.mA[self.r2] = 7
+                    # self.r2 = 22
+                    # self.mA[self.r2] = 7
                 with Else:
                     self.ar = 7
                 self.exit()
@@ -1442,7 +1533,8 @@ class ProcessProgram(SimulatedEBPF):
 
     def get_array(self, size):
         from multiprocessing import Array
-        return Array('B', size).get_obj()
+
+        return Array("B", size).get_obj()
 
     def program(self):
         self.a += 3
@@ -1451,7 +1543,7 @@ class ProcessProgram(SimulatedEBPF):
 
 
 class ProcessSubProgram(SubProgram):
-    b = ProcessProgram.map.globalVar('I')
+    b = ProcessProgram.map.globalVar("I")
 
     def program(self):
         self.b += 7
@@ -1516,7 +1608,8 @@ class SimulatedTests(TestCase):
 
     def test_process(self):
         from multiprocessing import get_context
-        ctx = get_context('spawn')
+
+        ctx = get_context("spawn")
         p = ProcessProgram()
         self.assertEqual(p.a, 0)
         proc = ctx.Process(target=p.program)
@@ -1526,7 +1619,8 @@ class SimulatedTests(TestCase):
 
     def test_subprogram(self):
         from multiprocessing import get_context
-        ctx = get_context('spawn')
+
+        ctx = get_context("spawn")
         s = ProcessSubProgram()
         p = ProcessProgram(subprograms=[s])
         self.assertEqual(p.a, 0)
@@ -1541,6 +1635,7 @@ class SimulatedTests(TestCase):
         import asyncio
 
         p = ProcessEBPFProgram()
+
         async def run():
             task = p.start()
             for i in range(10):
@@ -1551,6 +1646,7 @@ class SimulatedTests(TestCase):
                 self.fail()
             task.cancel()
             await task
+
         with self.assertRaises(asyncio.CancelledError):
             asyncio.run(run())
 
@@ -1564,7 +1660,7 @@ class MinorTests(TestCase):
         s = S()
         s.x = 3
         s.y = 5
-        self.assertEqual(repr(s), 'S(x=3, y=5)')
+        self.assertEqual(repr(s), "S(x=3, y=5)")
         self.assertEqual(list(s), [3, 5])
         x, y = s
         self.assertEqual(x, 3)
@@ -1579,8 +1675,8 @@ class MinorTests(TestCase):
         self.assertEqual(s, (9, 2))
         self.assertEqual(s.count(2), 1)
 
-        self.assertEqual(s.pack((0x38373635, 0x34)), b'56784')
-        self.assertEqual(s.unpack(b'12345'), (0x34333231, 0x35))
+        self.assertEqual(s.pack((0x38373635, 0x34)), b"56784")
+        self.assertEqual(s.unpack(b"12345"), (0x34333231, 0x35))
 
 
 if __name__ == "__main__":

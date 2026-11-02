@@ -20,13 +20,10 @@
 :mod:`!ebpfcat.ebpfcat` --- The high-level API for EtherCAT loops
 =================================================================
 """
-import asyncio
 import os
 import shutil
 import tempfile
-from asyncio import (
-    CancelledError, TimeoutError, ensure_future, gather, get_event_loop, sleep,
-    wait_for)
+from asyncio import CancelledError, TimeoutError, ensure_future, gather, sleep, wait_for
 from collections import defaultdict
 from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from enum import Enum
@@ -36,13 +33,24 @@ from time import monotonic
 
 from .arraymap import ArrayGlobalVarDesc, ArrayMap
 from .bpf import (
-    MapType, ProgType, create_map, delete_elem, lookup_elem, obj_get, obj_pin,
-    prog_test_run, update_elem)
-from .ebpf import (
-    EBPFBase, FuncId, MemoryDesc, SubProgram, prandom)
+    MapType,
+    create_map,
+    delete_elem,
+    lookup_elem,
+    obj_get,
+    obj_pin,
+    update_elem,
+)
+from .ebpf import EBPFBase, FuncId, MemoryDesc, SubProgram, prandom
 from .ethercat import (
-    ECCmd, EtherCat, EtherCatError, MachineState, Packet, SyncManager,
-    Terminal)
+    ECCmd,
+    EtherCat,
+    EtherCatError,
+    MachineState,
+    Packet,
+    SyncManager,
+    Terminal,
+)
 from .lock import LockFile, ParallelMailboxLock
 from .simulated import ProcessEBPF
 from .util import logger
@@ -64,6 +72,7 @@ class PacketDesc:
     :param size: either a :mod:`python:struct` definition of a data type,
         or an integer denoting the bit within a byte to be adressed.
     """
+
     def __init__(self, sm, position, size):
         self.sm = sm
         self.position = position
@@ -99,6 +108,7 @@ class ProcessDesc:
         different size as in a :mod:`python:struct` definition may be
         given here, or the number of a bit for a bit field.
     """
+
     def __init__(self, index, subindex, size=None):
         self.index = index
         self.subindex = subindex
@@ -141,7 +151,7 @@ class PacketVar(MemoryDesc):
         if isinstance(size, int):
             self.struct = None
         else:
-            self.struct = '<' + self.size
+            self.struct = "<" + self.size
             self.structsize = calcsize(self.struct)
 
     def set(self, device, value):
@@ -157,7 +167,7 @@ class PacketVar(MemoryDesc):
                 else:
                     data[start] &= ~mask
             else:
-                data[start : start+self.structsize] = pack(self.struct, value)
+                data[start : start + self.structsize] = pack(self.struct, value)
 
     def get(self, device):
         if device.sync_group.current_data is None:
@@ -171,12 +181,13 @@ class PacketVar(MemoryDesc):
                 return unpack_from(self.struct, data, start)[0]
 
     def _start(self, device):
-        return device.sync_group.pdo_assign[self.terminal][self.sm] \
-               + self.position
+        return device.sync_group.pdo_assign[self.terminal][self.sm] + self.position
 
     def fmt_addr(self, device):
-        return ((self.size, 1) if isinstance(self.size, int) else self.size,
-                self._start(device) + Packet.ETHERNET_HEADER)
+        return (
+            (self.size, 1) if isinstance(self.size, int) else self.size,
+            self._start(device) + Packet.ETHERNET_HEADER,
+        )
 
 
 class TerminalVar:
@@ -248,6 +259,7 @@ class DeviceVar(ArrayGlobalVarDesc):
         device = MyDevice()
         print(self.my_data)  # should print 7 once the program is running
     """
+
     def __init__(self, size="I", write=False):
         super().__init__(SyncGroupBase.properties, size)
         self.write = write
@@ -295,7 +307,7 @@ class Device(SubProgram):
         """overwrite this method for slow devices
 
         This method gets called regularly to actually implement the control
-        loop, for slow loops. """
+        loop, for slow loops."""
 
     def program(self):
         """overwrite this method with the EPBF generation code
@@ -337,6 +349,7 @@ class Struct:
     which is the offset in the CoE address space from the template structure to
     the one of the channel.
     """
+
     device = None
 
     def __new__(cls, *args, **kwargs):
@@ -350,8 +363,7 @@ class StructDesc:
             sm2 = sm3
         if coe is None:
             coe = sm3
-        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3,
-                                None: coe}
+        self.position_offset = {SyncManager.OUT: sm2, SyncManager.IN: sm3, None: coe}
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -375,6 +387,7 @@ class EBPFTerminal(Terminal):
     which is a set of tuples, each of which is a pair of Ethercat vendor and
     product id of all supported terminal types.
     """
+
     compatibility = None
     position_offset = {SyncManager.OUT: 0, SyncManager.IN: 0, None: 0}
     use_fmmu = True
@@ -383,15 +396,18 @@ class EBPFTerminal(Terminal):
 
     async def apply_eeprom(self):
         await super().apply_eeprom()
-        if (self.compatibility is not None and
-                (self.vendorId, self.productCode) not in self.compatibility):
+        if (
+            self.compatibility is not None
+            and (self.vendorId, self.productCode) not in self.compatibility
+        ):
             raise EtherCatError(
-                f"Incompatible Terminal: {self.vendorId}:{self.productCode}")
+                f"Incompatible Terminal: {self.vendorId}:{self.productCode}"
+            )
         await self.set_state(MachineState.PRE_OPERATIONAL)
         if self.out_pdos is not None:
-            await self.write_pdos(0x1c12, self.out_pdos)
+            await self.write_pdos(0x1C12, self.out_pdos)
         if self.in_pdos is not None:
-            await self.write_pdos(0x1c13, self.in_pdos)
+            await self.write_pdos(0x1C13, self.in_pdos)
         # we used to set self.pdos = {}, but that seems no good for safety term
         outbits, inbits = await self.parse_pdos()
         self.pdo_out_sz = int((outbits + 7) // 8)
@@ -406,10 +422,10 @@ class EBPFTerminal(Terminal):
         await self.parse_sdos()
 
     async def write_pdos(self, index, values):
-        await self.sdo_write(pack('B', 0), index, 0)
+        await self.sdo_write(pack("B", 0), index, 0)
         for i, v in enumerate(values, 1):
-            await self.sdo_write(pack('<H', v), index, i)
-        await self.sdo_write(pack('B', len(values)), index, 0)
+            await self.sdo_write(pack("<H", v), index, i)
+        await self.sdo_write(pack("B", len(values)), index, 0)
 
     def allocate(self, packet, readwrite):
         """allocate space in packet for the pdos of this terminal
@@ -426,19 +442,28 @@ class EBPFTerminal(Terminal):
                 packet.fmmu_in_size += self.pdo_in_sz
                 packet.fmmu_in_count += 1
             if readwrite and self.pdo_out_sz:
-                bases[SyncManager.OUT] = (BaseType.FMMU_OUT,
-                                          packet.fmmu_out_size)
+                bases[SyncManager.OUT] = (BaseType.FMMU_OUT, packet.fmmu_out_size)
                 packet.fmmu_out_size += self.pdo_out_sz
                 packet.fmmu_out_count += 1
         else:
             if self.pdo_in_sz:
                 bases[SyncManager.IN] = (BaseType.NO_FMMU, packet.size)
-                packet.append(ECCmd.FPRD, b"\0" * self.pdo_in_sz, 0,
-                              self.position, self.pdo_in_off)
+                packet.append(
+                    ECCmd.FPRD,
+                    b"\0" * self.pdo_in_sz,
+                    0,
+                    self.position,
+                    self.pdo_in_off,
+                )
             if readwrite and self.pdo_out_sz:
                 bases[SyncManager.OUT] = (BaseType.NO_FMMU, packet.size)
-                packet.append_writer(ECCmd.FPWR, b"\0" * self.pdo_out_sz, 0,
-                                     self.position, self.pdo_out_off)
+                packet.append_writer(
+                    ECCmd.FPWR,
+                    b"\0" * self.pdo_out_sz,
+                    0,
+                    self.position,
+                    self.pdo_out_off,
+                )
         return bases
 
     async def parse_sdos(self):
@@ -446,11 +471,15 @@ class EBPFTerminal(Terminal):
             for cls in obj.__class__.__mro__:
                 for k, v in cls.__dict__.items():
                     if isinstance(v, ServiceDesc):
-                        setattr(obj, k, await self.read_object_entry(
-                            v.index + offset, v.subidx))
+                        setattr(
+                            obj,
+                            k,
+                            await self.read_object_entry(v.index + offset, v.subidx),
+                        )
                     elif isinstance(v, StructDesc):
                         struct = getattr(self, k)
                         await parse_sdo(struct, struct.position_offset[None])
+
         await parse_sdo(self, 0)
 
     def update(self, data):
@@ -481,6 +510,7 @@ class EtherXDP(XDP):
     space can constantly read data independent of the EBPF program. It
     cannot write, however, as this would cause priority issues.
     """
+
     license = "GPL"
     minimumPacketSize = 30
 
@@ -500,21 +530,24 @@ class EtherXDP(XDP):
 
     def program(self):
         self.r8 = self.r1
-        with prandom(self.ebpf) & 0xffff < self.rate:
+        with prandom(self.ebpf) & 0xFFFF < self.rate:
             self.dropcounter += 1
             self.ebpf.exit(XDPExitCode.DROP)
         with self.ethertype == 0x88A4, self.cmd0 == 0:
             self.r3 = self.addr0  # use r3 for tail_call
-            with self.counters.get_address(None, False, False) as (dst, _), \
-                    self.r3 < FastEtherCat.MAX_PROGS:
+            with self.counters.get_address(None, False, False) as (
+                dst,
+                _,
+            ), self.r3 < FastEtherCat.MAX_PROGS:
                 self.r[dst] += 4 * self.r3
                 self.r4 = self.mB[self.r[dst]]
                 # we lost a packet
                 with self.index0 == self.r4 as Else:
                     self.mI[self.r[dst]] += 1 + (self.r4 & 1)
                 # normal case: two packets on the wire
-                with Else, ((self.index0 + 1 & 0xff) == self.r4) \
-                           | (self.index0 == 0) as Else:
+                with Else, ((self.index0 + 1 & 0xFF) == self.r4) | (
+                    self.index0 == 0
+                ) as Else:
                     self.mI[self.r[dst]] += 1
                     with self.r4 & 1:  # last one was active
                         self.index0 = self.mB[self.r[dst]]
@@ -539,6 +572,7 @@ class SimpleEtherCat(EtherCat):
 
 class FastEtherCat(SimpleEtherCat):
     """An EtherCAT driver class for fast and slow sync groups"""
+
     MAX_PROGS = 64
 
     def __init__(self, network):
@@ -554,11 +588,10 @@ class FastEtherCat(SimpleEtherCat):
             key = pack("<I", index)
 
             try:
-                ret = lookup_elem(self.programs, key, '<I')
+                ret = lookup_elem(self.programs, key, "<I")
             except KeyError:
                 break
-        update_elem(self.programs, key,
-                    pack("<I", sg.file_descriptor))
+        update_elem(self.programs, key, pack("<I", sg.file_descriptor))
         sg.close()
         self.sync_groups[index] = sg
         try:
@@ -570,8 +603,9 @@ class FastEtherCat(SimpleEtherCat):
     async def connect(self):
         await super().connect()
         self.ebpf = EtherXDP()
-        self.ebpf.programs = self.programs = \
-            create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
+        self.ebpf.programs = self.programs = create_map(
+            MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS
+        )
         self.ebpf.attach(self.addr[0])
 
     @asynccontextmanager
@@ -583,8 +617,7 @@ class FastEtherCat(SimpleEtherCat):
             try:
                 yield
             finally:
-                await gather(*[v.cancel_and_wait()
-                               for v in self.sync_groups.values()])
+                await gather(*[v.cancel_and_wait() for v in self.sync_groups.values()])
 
 
 class ParallelEtherCat(FastEtherCat):
@@ -601,13 +634,14 @@ class ParallelEtherCat(FastEtherCat):
     synchronize that, and put a map of XDP programs into ``/sys/fs/bpf``, where
     all participants can put their programs.
     """
+
     def get_ethertype(self, lockdir):
         while True:
             self.ethertype = randrange(0x3001, 0x3100)
             try:
-                lockfile = f'{self.ethertype}.lock'
-                with open(f'{lockdir}/{lockfile}', 'x') as lf:
-                    lf.write(f'{os.getpid():10}\n')
+                lockfile = f"{self.ethertype}.lock"
+                with open(f"{lockdir}/{lockfile}", "x") as lf:
+                    lf.write(f"{os.getpid():10}\n")
                 self.next_logical_addr = (self.ethertype - 0x3000) << 24
                 return lockfile
             except FileExistsError:
@@ -618,18 +652,18 @@ class ParallelEtherCat(FastEtherCat):
 
     @asynccontextmanager
     async def run(self):
-        lockdir = f'/run/lock/ebpf.{self.addr[0]}.lock'
-        programs = f'/sys/fs/bpf/{self.addr[0]}'
+        lockdir = f"/run/lock/ebpf.{self.addr[0]}.lock"
+        programs = f"/sys/fs/bpf/{self.addr[0]}"
 
         os.makedirs(programs, exist_ok=True)
-        programs += '/programs'
+        programs += "/programs"
 
-        tmpdir = tempfile.mkdtemp(dir='/run/lock')
+        tmpdir = tempfile.mkdtemp(dir="/run/lock")
         lockfile = self.get_ethertype(tmpdir)
         try:
             os.rename(tmpdir, lockdir)
         except OSError:
-            logger.info('other EPBFCat users found, use existing lock files')
+            logger.info("other EPBFCat users found, use existing lock files")
             shutil.rmtree(tmpdir)
             lockfile = self.get_ethertype(lockdir)
             try:
@@ -641,22 +675,22 @@ class ParallelEtherCat(FastEtherCat):
                     await sleep(0.1)
                     self.ebpf.programs = self.programs = obj_get(programs)
             except Exception:
-                os.remove(f'{lockdir}/{lockfile}')
+                os.remove(f"{lockdir}/{lockfile}")
                 raise
         else:
-            logger.info('no other EBPFCat user found, create lock files')
+            logger.info("no other EBPFCat user found, create lock files")
             try:
                 await super(FastEtherCat, self).connect()
                 self.ebpf = EtherXDP()
-                self.ebpf.programs = self.programs = \
-                    create_map(MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS)
+                self.ebpf.programs = self.programs = create_map(
+                    MapType.PROG_ARRAY, 4, 4, self.MAX_PROGS
+                )
                 try:
                     os.remove(programs)
                 except OSError:
                     pass
                 else:
-                    logger.error('an old programs file was still at %s',
-                                 programs)
+                    logger.error("an old programs file was still at %s", programs)
                 self.ebpf.attach(self.addr[0])
                 self.ebpf.close()
                 obj_pin(programs, self.programs)
@@ -664,29 +698,30 @@ class ParallelEtherCat(FastEtherCat):
             except Exception:
                 shutil.rmtree(lockdir)
                 raise
-        self.mbx_lock_file = LockFile(f'/run/ebpf/{self.addr[0]}',
-                                      *self.terminal_addr_range)
+        self.mbx_lock_file = LockFile(
+            f"/run/ebpf/{self.addr[0]}", *self.terminal_addr_range
+        )
         try:
             yield
         finally:
             self.transport.close()
             self.transport = None
-            await gather(*[v.cancel_and_wait()
-                           for v in self.sync_groups.values()])
+            await gather(*[v.cancel_and_wait() for v in self.sync_groups.values()])
             for entry in os.scandir(lockdir):
-                with open(entry.path, 'r') as fin:
+                with open(entry.path, "r") as fin:
                     pid = int(fin.read())
-                if not os.path.exists(f'/proc/{pid}'):
-                    logger.warning('lock file for pid %i exists, '
-                                   'but no process, removing', pid)
+                if not os.path.exists(f"/proc/{pid}"):
+                    logger.warning(
+                        "lock file for pid %i exists, " "but no process, removing", pid
+                    )
                     os.remove(entry)
-            os.remove(f'{lockdir}/{lockfile}')
+            os.remove(f"{lockdir}/{lockfile}")
             try:
                 os.rmdir(lockdir)
             except OSError:
-                logger.info('other EPBFCat users still alive, keep locks')
+                logger.info("other EPBFCat users still alive, keep locks")
             else:
-                logger.info('we are last EPBFCat user, remove locks')
+                logger.info("we are last EPBFCat user, remove locks")
                 self.ebpf.detach(self.addr[0])
                 os.remove(programs)
                 self.mbx_lock_file.remove()
@@ -700,6 +735,7 @@ class ParallelEtherCat(FastEtherCat):
 
 class SterilePacket(Packet):
     """a sterile packet has all its sets exchanged by NOPs"""
+
     logical_addr_inc = 0x800
 
     def __init__(self):
@@ -727,12 +763,22 @@ class SterilePacket(Packet):
     def append_fmmu(self, logical_in, logical_out):
         fmmu_in_pos = self.size
         if self.fmmu_in_size:
-            self.append(ECCmd.LRD, b"\0" * self.fmmu_in_size, 0,
-                        logical_in, counter=self.fmmu_in_count)
+            self.append(
+                ECCmd.LRD,
+                b"\0" * self.fmmu_in_size,
+                0,
+                logical_in,
+                counter=self.fmmu_in_count,
+            )
         fmmu_out_pos = self.size
         if self.fmmu_out_size:
-            self.append_writer(ECCmd.LWR, b"\0" * self.fmmu_out_size, 0,
-                               logical_out, counter=self.fmmu_out_count)
+            self.append_writer(
+                ECCmd.LWR,
+                b"\0" * self.fmmu_out_size,
+                0,
+                logical_out,
+                counter=self.fmmu_out_count,
+            )
         return fmmu_in_pos, fmmu_out_pos
 
     def activate(self, ebpf):
@@ -741,8 +787,7 @@ class SterilePacket(Packet):
             ebpf.ebpf.exit(XDPExitCode.TX)
         for start, stop, cmd in self.on_the_fly:
             ebpf.pB[start + self.ETHERNET_HEADER] = cmd.value
-            with ebpf.pH[stop + self.ETHERNET_HEADER - 2] \
-                    != self.counters[stop - 2]:
+            with ebpf.pH[stop + self.ETHERNET_HEADER - 2] != self.counters[stop - 2]:
                 ebpf.ebpf.wkc_errors += 1
             ebpf.pH[stop + self.ETHERNET_HEADER - 2] = 0
 
@@ -760,10 +805,10 @@ class SyncGroupBase:
 
     current_data = None
     logical_in = logical_out = None
-    name = 'No Name'
+    name = "No Name"
 
     properties = ArrayMap()
-    wkc_errors = properties.globalVar('I')
+    wkc_errors = properties.globalVar("I")
 
     def __init__(self, ec, devices, **kwargs):
         super().__init__(**kwargs)
@@ -782,34 +827,46 @@ class SyncGroupBase:
                 try:
                     base = bases.get(SyncManager.OUT)
                     if base is not None:
-                        await stack.enter_async_context(
-                                terminal.map_fmmu(base, True))
+                        await stack.enter_async_context(terminal.map_fmmu(base, True))
                     base = bases.get(SyncManager.IN)
                     if base is not None:
-                        await stack.enter_async_context(
-                                terminal.map_fmmu(base, False))
+                        await stack.enter_async_context(terminal.map_fmmu(base, False))
                 except Exception as e:
-                    e.add_note(f'while fmmu-mapping {terminal.name}')
+                    e.add_note(f"while fmmu-mapping {terminal.name}")
                     raise
             await self.inner_loop()
 
     async def clear_safe_errors(self):
         """clear the error why we went to safe operational"""
         await sleep(0.2)  # assure the watchdog kicks in
-        await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL,
-                                   clear_error=True)
-                       for t, rw in self.terminals.items() if rw])
+        await gather(
+            *[
+                t.set_state(MachineState.SAFE_OPERATIONAL, clear_error=True)
+                for t, rw in self.terminals.items()
+                if rw
+            ]
+        )
 
     async def inner_loop(self):
         data = self.asm_packet
         self.wkc_errors = 0
         lasttime = monotonic()
 
-        await gather(*[t.set_state(MachineState.SAFE_OPERATIONAL, clear_error=True)
-                       for t, rw in self.terminals.items() if rw])
+        await gather(
+            *[
+                t.set_state(MachineState.SAFE_OPERATIONAL, clear_error=True)
+                for t, rw in self.terminals.items()
+                if rw
+            ]
+        )
         future = self.ec.roundtrip_packet(data, self.packet_index)
-        await gather(*[t.set_state(MachineState.OPERATIONAL, check=False)
-                       for t, rw in self.terminals.items() if rw])
+        await gather(
+            *[
+                t.set_state(MachineState.OPERATIONAL, check=False)
+                for t, rw in self.terminals.items()
+                if rw
+            ]
+        )
         self.wkc_errors = 1  # write actions are ignored before
 
         while self.running:
@@ -819,40 +876,53 @@ class SyncGroupBase:
                 self.missed_counter += 1
                 logger.warning(
                     "%s: did not receive Ethercat response in time %i",
-                    self.name, self.missed_counter)
-                future = self.ec.roundtrip_packet(data,
-                                                  self.packet_index)
+                    self.name,
+                    self.missed_counter,
+                )
+                future = self.ec.roundtrip_packet(data, self.packet_index)
                 continue
             data = self.update_devices(data)
             newtime = monotonic()
             if newtime - lasttime > self.cycletime:
-                logger.warning('%s: response time exceeded (%.0f ms)',
-                               self.name, (newtime - lasttime) * 1000)
+                logger.warning(
+                    "%s: response time exceeded (%.0f ms)",
+                    self.name,
+                    (newtime - lasttime) * 1000,
+                )
             await sleep(self.cycletime - (newtime - lasttime))
             newtime = monotonic()
             if newtime - lasttime > 0.05:
-                logger.warning('%s: excessive cycle time (%.0f ms)',
-                               self.name, (newtime - lasttime) * 1000)
+                logger.warning(
+                    "%s: excessive cycle time (%.0f ms)",
+                    self.name,
+                    (newtime - lasttime) * 1000,
+                )
             lasttime = newtime
             future = self.ec.roundtrip_packet(data, self.packet_index)
 
     def allocate(self):
         self.packet = SterilePacket()
-        terminals = {t: t.allocate(self.packet, rw)
-                     for t, rw in self.terminals.items()}
+        terminals = {t: t.allocate(self.packet, rw) for t, rw in self.terminals.items()}
         logical_in = self.ec.get_fmmu_addr()
         logical_out = logical_in + self.packet.logical_addr_inc
         in_pos, out_pos = self.packet.append_fmmu(logical_in, logical_out)
         offsets = {BaseType.FMMU_IN: in_pos, BaseType.FMMU_OUT: out_pos}
-        self.pdo_assign = {t: {sm: offsets.get(base, 0) + off + Packet.DATAGRAM_HEADER
-                               for sm, (base, off) in d.items()}
-                           for t, d in terminals.items()}
-        offsets = {BaseType.FMMU_IN: logical_in,
-                   BaseType.FMMU_OUT: logical_out}
-        self.fmmu_maps = {t: {sm: offsets.get(base, base) + off
-                              for sm, (base, off) in d.items()
-                              if base is not BaseType.NO_FMMU}
-                          for t, d in terminals.items()}
+        self.pdo_assign = {
+            t: {
+                sm: offsets.get(base, 0) + off + Packet.DATAGRAM_HEADER
+                for sm, (base, off) in d.items()
+            }
+            for t, d in terminals.items()
+        }
+        offsets = {BaseType.FMMU_IN: logical_in, BaseType.FMMU_OUT: logical_out}
+        self.fmmu_maps = {
+            t: {
+                sm: offsets.get(base, base) + off
+                for sm, (base, off) in d.items()
+                if base is not BaseType.NO_FMMU
+            }
+            for t, d in terminals.items()
+        }
 
 
 class SyncGroup(SyncGroupBase):
@@ -866,7 +936,10 @@ class SyncGroup(SyncGroupBase):
             if data[pos] != counts:
                 logger.warning(
                     'EtherCAT datagram "%s" processed %i times, should be %i',
-                    self.name, data[pos], counts)
+                    self.name,
+                    data[pos],
+                    counts,
+                )
                 self.wkc_errors += 1
             self.current_data[pos] = 0
         for dev in self.devices:
@@ -877,8 +950,7 @@ class SyncGroup(SyncGroupBase):
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
-        self.asm_packet = self.packet.assemble(self.packet_index,
-                                               self.ec.ethertype)
+        self.asm_packet = self.packet.assemble(self.packet_index, self.ec.ethertype)
         self.current_data = bytearray(self.asm_packet)
         self.running = True
         task = ensure_future(self.run())
@@ -903,22 +975,21 @@ class ProcessSyncGroup(SyncGroup, ProcessEBPF):
 
     async def subprocess_loop(self):
         async with self.ec.run():
-            self.asm_packet = self.packet.assemble(self.packet_index,
-                                                   self.ec.ethertype)
+            self.asm_packet = self.packet.assemble(self.packet_index, self.ec.ethertype)
             for dev in self.devices:
                 dev.initialize()
             await super().inner_loop()
 
     @property
     def current_data(self):
-        return memoryview(self._current_data.get_obj()).cast('B')
+        return memoryview(self._current_data.get_obj()).cast("B")
 
     def start(self):
         assert isinstance(self.ec, ParallelEtherCat)
         self.allocate()
         self.packet_index = SyncGroup.packet_index
         SyncGroup.packet_index += 1
-        self._current_data = self.ctx.Array('B', max(46, self.packet.size))
+        self._current_data = self.ctx.Array("B", max(46, self.packet.size))
         task = ensure_future(self.run())
         return task
 
@@ -928,6 +999,7 @@ class ProcessSyncGroup(SyncGroup, ProcessEBPF):
 
 class FastSyncGroup(SyncGroupBase, XDP):
     """A :class:`SyncGroup` where all devices are EBPF programs"""
+
     license = "GPL"
     debug = False
 
@@ -941,8 +1013,7 @@ class FastSyncGroup(SyncGroupBase, XDP):
             return super().load()
 
     def program(self):
-        with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER \
-                as self.packet_access:
+        with self.packetSize >= self.packet.size + Packet.ETHERNET_HEADER as self.packet_access:
             self.packet.activate(self.packet_access)
             for dev in self.devices:
                 dev.program()
@@ -953,20 +1024,23 @@ class FastSyncGroup(SyncGroupBase, XDP):
             for dev in self.devices:
                 dev.initialize()
             self.wkc_errors = 0
-            self.asm_packet = self.packet.sterile(self.packet_index,
-                                                  self.ec.ethertype)
+            self.asm_packet = self.packet.sterile(self.packet_index, self.ec.ethertype)
             # prime the pump: two packets to get things going
             try:
-                await wait_for(self.ec.roundtrip_packet(
-                    self.asm_packet, self.packet_index), timeout=0.1)
-                raise EtherCatError(f'ebpf not installed? {self.name}')
+                await wait_for(
+                    self.ec.roundtrip_packet(self.asm_packet, self.packet_index),
+                    timeout=0.1,
+                )
+                raise EtherCatError(f"ebpf not installed? {self.name}")
             except TimeoutError:
                 pass  # all fine!
 
             try:
-                await wait_for(self.ec.roundtrip_packet(
-                    self.asm_packet, self.packet_index), timeout=0.1)
-                raise EtherCatError(f'ebpf not installed (2nd) ? {self.name}')
+                await wait_for(
+                    self.ec.roundtrip_packet(self.asm_packet, self.packet_index),
+                    timeout=0.1,
+                )
+                raise EtherCatError(f"ebpf not installed (2nd) ? {self.name}")
             except TimeoutError:
                 pass  # all fine!
 

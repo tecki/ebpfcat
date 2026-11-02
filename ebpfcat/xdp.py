@@ -21,14 +21,12 @@
 ================================================
 """
 
-__all__ = ["XDPExitCode", "XDPFlags", "PacketVar",  "XDP"]
+__all__ = ["XDPExitCode", "XDPFlags", "PacketVar", "XDP"]
 
 import os
-from asyncio import DatagramProtocol, Future, get_event_loop
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import contextmanager
 from enum import Enum
-from socket import (
-    AF_NETLINK, NETLINK_ROUTE, SOCK_DGRAM, if_nametoindex, socket)
+from socket import AF_NETLINK, NETLINK_ROUTE, SOCK_DGRAM, if_nametoindex, socket
 from struct import pack, unpack_from
 
 from .bpf import ProgType
@@ -51,6 +49,7 @@ class XDPFlags(Enum):
 
 class PacketArray:
     """access a packet like a Python array"""
+
     def __init__(self, ebpf, no, memory):
         self.ebpf = ebpf
         self.no = no
@@ -112,6 +111,7 @@ class PacketVar(MemoryDesc):
     :param fmt: the data type of the variable, following the
        conventions from the :mod:`struct` module.
     """
+
     base_register = 9
 
     def __init__(self, address, fmt):
@@ -151,6 +151,7 @@ class XDP(EBPF):
            with self.packetSize > 20:
                pass
     """
+
     minimumPacketSize = None
     defaultExitCode = XDPExitCode.PASS
     ebpf_log_level = 0
@@ -184,36 +185,38 @@ class XDP(EBPF):
         sock = socket(family=AF_NETLINK, type=SOCK_DGRAM, proto=NETLINK_ROUTE)
         sock.setsockopt(270, 11, 1)
         # this was adopted from xdp1_user.c
-        p = pack("IHHIIBxHiIiHHHHiHHI",
-                # NLmsghdr
-                52,  # length of if struct
-                19,  # RTM_SETLINK
-                5,  # REQ | ACK
-                1,  # sequence number
-                0,  # pid
-                # IFI
-                0,  # AF_UNSPEC
-                0,  # type
-                ifindex,
-                0,  #flags
-                0,  #change
-                # NLA
-                20,  # length of field
-                0x802B,  # NLA_F_NESTED | IFLA_XDP
-                # NLA_XDP
-                8,  # length of field
-                1,  # IFLA_XDP_FD
-                fd,
-                8,
-                3,  # IFLA_XDP_FLAGS,
-                flags.value)
+        p = pack(
+            "IHHIIBxHiIiHHHHiHHI",
+            # NLmsghdr
+            52,  # length of if struct
+            19,  # RTM_SETLINK
+            5,  # REQ | ACK
+            1,  # sequence number
+            0,  # pid
+            # IFI
+            0,  # AF_UNSPEC
+            0,  # type
+            ifindex,
+            0,  # flags
+            0,  # change
+            # NLA
+            20,  # length of field
+            0x802B,  # NLA_F_NESTED | IFLA_XDP
+            # NLA_XDP
+            8,  # length of field
+            1,  # IFLA_XDP_FD
+            fd,
+            8,
+            3,  # IFLA_XDP_FLAGS,
+            flags.value,
+        )
         sock.sendto(p, (0, 0))
 
         try:
             while True:
                 data = sock.recv(1000)
                 pos = 0
-                while (pos < len(data)):
+                while pos < len(data):
                     ln, type, flags, seq, pid = unpack_from("IHHII", data, pos)
                     if type == 3:  # DONE
                         return 0
@@ -233,7 +236,7 @@ class XDP(EBPF):
 
         :param network: the name of the network interface,
            like ``"eth0"``
-        :param flags: one of the :class:`XDPFlags` """
+        :param flags: one of the :class:`XDPFlags`"""
         ifindex = if_nametoindex(network)
         self.load(log_level=self.ebpf_log_level)
         self._netlink(ifindex, self.file_descriptor, flags)
@@ -243,7 +246,7 @@ class XDP(EBPF):
 
         :param network: the name of the network interface,
            like ``"eth0"``
-        :param flags: one of the :class:`XDPFlags` """
+        :param flags: one of the :class:`XDPFlags`"""
         ifindex = if_nametoindex(network)
         self._netlink(ifindex, -1, flags)
 
@@ -256,7 +259,7 @@ class XDP(EBPF):
 
         :param network: the name of the network interface,
            like ``"eth0"``
-        :param flags: one of the :class:`XDPFlags` """
+        :param flags: one of the :class:`XDPFlags`"""
         ifindex = if_nametoindex(network)
         self.load(log_level=self.ebpf_log_level)
         try:

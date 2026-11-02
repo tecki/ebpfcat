@@ -21,10 +21,7 @@ import os
 from asyncio import Lock, create_task, run, sleep
 from functools import wraps
 from multiprocessing import get_context
-from random import randrange
 from unittest import TestCase, main
-
-from .util import logger
 
 
 class LockFile:
@@ -32,14 +29,16 @@ class LockFile:
 
     The reason of existence for this class is that it can be pickled,
     so that lock files can be shared between processed."""
+
     def __init__(self, filename, minimum, maximum):
         self.filename = filename
         self.minimum = minimum
         self.maximum = maximum
-        os.makedirs(filename.rsplit('/', 1)[0], exist_ok=True)
+        os.makedirs(filename.rsplit("/", 1)[0], exist_ok=True)
         try:
-            self.fd = os.open(self.filename, os.O_CREAT | os.O_RDWR
-                                             | os.O_EXCL | os.O_CLOEXEC)
+            self.fd = os.open(
+                self.filename, os.O_CREAT | os.O_RDWR | os.O_EXCL | os.O_CLOEXEC
+            )
         except FileExistsError:
             self.fd = os.open(self.filename, os.O_RDWR | os.O_CLOEXEC)
         else:
@@ -64,6 +63,7 @@ class MailboxLock(Lock):
     Used for a single process program to assure two asyncio tasks
     do not use a mailbox at the same time, and keep the counter correct.
     """
+
     def __init__(self):
         super().__init__()
         self.counter = 0
@@ -81,6 +81,7 @@ class ParallelMailboxLock:
     Write the mailbox counter to a :class:`LockFile`, such that different
     processes can access the mailbox in order.
     """
+
     def __init__(self, lock_file, no):
         self.lock_file = lock_file
         assert self.lock_file.minimum <= no < self.lock_file.maximum
@@ -90,13 +91,14 @@ class ParallelMailboxLock:
     async def __aenter__(self):
         while True:
             try:
-                fcntl.lockf(self.lock_file.fd, fcntl.LOCK_NB | fcntl.LOCK_EX,
-                            1, self.no)
+                fcntl.lockf(
+                    self.lock_file.fd, fcntl.LOCK_NB | fcntl.LOCK_EX, 1, self.no
+                )
             except OSError:
                 await sleep(0)
                 continue
             break
-        self.counter, = os.pread(self.lock_file.fd, 1, self.no)
+        (self.counter,) = os.pread(self.lock_file.fd, 1, self.no)
 
     async def __aexit__(self, a, b, c):
         os.pwrite(self.lock_file.fd, bytes((self.counter,)), self.no)
@@ -113,7 +115,9 @@ def asynctst(f):
     @wraps(f)
     def wrapper(self):
         run(f(self))
+
     return wrapper
+
 
 class Tests(TestCase):
     @asynctst
@@ -121,6 +125,7 @@ class Tests(TestCase):
         async def locker(n):
             async with lock:
                 self.assertEqual(lock.next_counter(), n)
+
         task = create_task(locker(1))
         lock = MailboxLock()
         async with lock:
@@ -137,8 +142,8 @@ class Tests(TestCase):
         await task
 
     def spawn(self):
-        ctx = get_context('spawn')
+        ctx = get_context("spawn")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

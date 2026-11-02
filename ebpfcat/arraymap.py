@@ -31,7 +31,7 @@ from mmap import mmap
 from os import cpu_count
 from struct import pack, unpack_from
 
-from .bpf import MapFlags, MapType, create_map, lookup_elem, update_elem
+from .bpf import MapFlags, MapType, create_map, lookup_elem
 from .ebpf import Expression, FuncId, Map, MemoryDesc, fmtsize
 
 
@@ -71,9 +71,9 @@ class ArrayGlobalVarDesc(MemoryDesc):
                 fmt = "q"
                 value = int(value * Expression.FIXED_BASE)
             if not isinstance(value, tuple):
-                value = value,
+                value = (value,)
             b = pack(fmt, *value)
-            instance.ebpf.__dict__[self.map.name][0][addr:addr + len(b)] = b
+            instance.ebpf.__dict__[self.map.name][0][addr : addr + len(b)] = b
         else:
             super().__set__(instance, value)
 
@@ -98,8 +98,10 @@ class PerCPUVar(Sequence):
         if 0 <= key < len(self):
             return self.descriptor.unpack(
                 self.instance,
-                getattr(self.instance.ebpf, self.descriptor.map.name)
-                .data[key * self.descriptor.map.size:])
+                getattr(self.instance.ebpf, self.descriptor.map.name).data[
+                    key * self.descriptor.map.size :
+                ],
+            )
         else:
             raise IndexError(f"no such CPU #{key}")
 
@@ -128,8 +130,11 @@ class ArrayMap(Map):
             for cls in prog.__class__.__mro__:
                 unique = set()
                 for k, v in cls.__dict__.items():
-                    if isinstance(v, ArrayGlobalVarDesc) and v.map is self \
-                            and k not in unique:
+                    if (
+                        isinstance(v, ArrayGlobalVarDesc)
+                        and v.map is self
+                        and k not in unique
+                    ):
                         collection.append((fmtsize(v.fmt), prog, k))
                         unique.add(k)
         collection.sort(key=lambda t: t[0], reverse=True)
@@ -175,8 +180,9 @@ class PerCPUReader:
         self.data = None
 
     def read(self):
-        self.data = memoryview(lookup_elem(self.fd, bytes(4),
-                               self.map.size * self.map.cpu_no))
+        self.data = memoryview(
+            lookup_elem(self.fd, bytes(4), self.map.size * self.map.cpu_no)
+        )
 
 
 class PerCPUArrayMap(ArrayMap):
@@ -209,6 +215,7 @@ class PerCPUArrayMap(ArrayMap):
         count = sum(ebpf.counter)  # sum over all CPUs
         print(ebpf.counter[2])  # or access just one CPU
     """
+
     base_register = 6
 
     def globalVar(self, fmt="I"):

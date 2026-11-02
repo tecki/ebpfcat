@@ -25,7 +25,7 @@ in many projects.
 """
 from time import monotonic
 
-from .ebpfcat import Device, FastSyncGroup, TerminalVar, DeviceVar
+from .ebpfcat import Device, TerminalVar, DeviceVar
 from .ebpf import ktime
 
 
@@ -36,6 +36,7 @@ class AnalogInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
+
     value = DeviceVar(write=False)
     data = TerminalVar()
 
@@ -61,6 +62,7 @@ class AnalogOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
+
     value = DeviceVar(write=True)
     data = TerminalVar()
 
@@ -81,7 +83,8 @@ class DigitalInput(Device):
     It will read from there and return the result in its
     parameter `value`.
     """
-    value = DeviceVar('B', write=False)
+
+    value = DeviceVar("B", write=False)
     data = TerminalVar()
 
     def __init__(self, data):
@@ -100,7 +103,8 @@ class DigitalOutput(Device):
     This device can be linked to an analog output of a terminal.
     It will write the `value` to that terminal.
     """
-    value = DeviceVar('B')
+
+    value = DeviceVar("B")
     data = TerminalVar()
 
     def __init__(self, data):
@@ -119,6 +123,7 @@ class RandomOutput(Device):
     This device randomly switches its linked digital output
     on or off, with a probability given by :attr:`probability`.
     """
+
     seed = DeviceVar("I", write=True)
     value = DeviceVar("I", write=True)
     data = TerminalVar()
@@ -127,16 +132,16 @@ class RandomOutput(Device):
         self.data = data
 
     def program(self):
-        self.seed = self.seed * 0xcf019d85 + 1
+        self.seed = self.seed * 0xCF019D85 + 1
         self.data = self.value > self.seed
 
     @property
     def probability(self):
-        return self.value / 0xffffffff
+        return self.value / 0xFFFFFFFF
 
     @probability.setter
     def probability(self, value):
-        self.value = int(value * 0xffffffff)
+        self.value = int(value * 0xFFFFFFFF)
 
 
 class Counter(Device):
@@ -205,17 +210,19 @@ class Valve(Device):
     openSwitch = TerminalVar()
     closedSwitch = TerminalVar()
 
-    error = DeviceVar('?')
-    target = DeviceVar('?')
+    error = DeviceVar("?")
+    target = DeviceVar("?")
 
     movingTime = 5  # time in seconds to reach target
     safeState = False  # the safe state is closed
 
     def update(self):
         inPosition = self.openSwitch != self.closedSwitch
-        isCorrect = ((self.closedSwitch or not self.openSwitch)
-                     if (self.coil == self.safeState)
-                     else (self.openSwitch or not self.closedSwitch))
+        isCorrect = (
+            (self.closedSwitch or not self.openSwitch)
+            if (self.coil == self.safeState)
+            else (self.openSwitch or not self.closedSwitch)
+        )
         if inPosition and isCorrect:
             self.lastGood = monotonic()
             self.coil = self.target
@@ -286,6 +293,7 @@ class Motor(Device):
         the proportionality factor between the distance from target and the
         desired velocity.
     """
+
     velocity = TerminalVar()
     encoder = TerminalVar()
     low_switch = TerminalVar()
@@ -328,6 +336,7 @@ class Motor(Device):
 
 class Dummy(Device):
     """A placeholder device assuring a terminal is initialized"""
+
     def __init__(self, terminals):
         self.terminals = terminals
 
@@ -344,12 +353,14 @@ class RandomDropper(Device):
     This fake device randomly drops EtherCat packets, to simulate bad
     connections.
     """
+
     rate = DeviceVar("I", write=True)
 
     def program(self):
         from .xdp import XDPExitCode
+
         with self.ebpf.tmp:
             self.ebpf.tmp = ktime(self.ebpf)
-            self.ebpf.tmp = self.ebpf.tmp * 0xcf019d85 + 1
-            with self.ebpf.tmp & 0xffff < self.rate:
+            self.ebpf.tmp = self.ebpf.tmp * 0xCF019D85 + 1
+            with self.ebpf.tmp & 0xFFFF < self.rate:
                 self.ebpf.exit(XDPExitCode.DROP)

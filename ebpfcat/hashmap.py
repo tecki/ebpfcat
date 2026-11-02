@@ -30,11 +30,25 @@ from contextlib import contextmanager
 from struct import pack, unpack, unpack
 
 from .ebpf import (
-    AssembleError, Expression, FuncId, Map, Memory, MemoryDesc, Opcode,
-    Structure, fmtsize)
+    Expression,
+    FuncId,
+    Map,
+    Memory,
+    MemoryDesc,
+    Opcode,
+    Structure,
+    fmtsize,
+)
 from .bpf import (
-    MapType, UpdateFlags, create_map, delete_elem, get_next_key, lookup_elem,
-    lookup_and_delete_elem, update_elem)
+    MapType,
+    UpdateFlags,
+    create_map,
+    delete_elem,
+    get_next_key,
+    lookup_elem,
+    lookup_and_delete_elem,
+    update_elem,
+)
 
 
 __all__ = ["HashMap", "Dict"]
@@ -50,8 +64,9 @@ class HashGlobalVar(Expression):
 
     @contextmanager
     def get_address(self, dst, long, force=False):
-        with self.ebpf.save_registers([i for i in range(6) if i != dst]), \
-                self.ebpf.get_stack(4) as stack:
+        with self.ebpf.save_registers(
+            [i for i in range(6) if i != dst]
+        ), self.ebpf.get_stack(4) as stack:
             self.ebpf.append(Opcode.ST, 10, 0, stack, self.count)
             self.ebpf.r1 = self.ebpf.get_fd(self.fd)
             self.ebpf.r2 = self.ebpf.r10 + stack
@@ -59,8 +74,7 @@ class HashGlobalVar(Expression):
             with self.ebpf.r0 == 0:
                 self.ebpf.exit()
             if dst != 0 and force:
-                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG, dst,
-                                 0, 0, 0)
+                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG, dst, 0, 0, 0)
             else:
                 dst = 0
         yield dst, self.fmt
@@ -90,13 +104,15 @@ class HashGlobalVarDesc:
     def __set__(self, ebpf, value):
         if ebpf.loaded:
             fd = ebpf.__dict__[self.name].fd
-            update_elem(fd, pack("B", self.count),
-                        pack("q" if self.fmt.islower() else "Q", value))
+            update_elem(
+                fd,
+                pack("B", self.count),
+                pack("q" if self.fmt.islower() else "Q", value),
+            )
             return
         with ebpf.save_registers([3]):
             with value.get_address(3, True, True):
-                with ebpf.save_registers([0, 1, 2, 4, 5]), \
-                        ebpf.get_stack(4) as stack:
+                with ebpf.save_registers([0, 1, 2, 4, 5]), ebpf.get_stack(4) as stack:
                     ebpf.r1 = ebpf.get_fd(ebpf.__dict__[self.name].fd)
                     ebpf.append(Opcode.ST, 10, 0, stack, self.count)
                     ebpf.r2 = ebpf.r10 + stack
@@ -106,6 +122,7 @@ class HashGlobalVarDesc:
 
 class HashMap(Map):
     """global variables as a eBPF hash map"""
+
     count = 0
 
     def __init__(self):
@@ -143,7 +160,7 @@ class KeyValue(MemoryDesc):
         return instance.__dict__[self.name]
 
 
-class FmtOffset(namedtuple('_FmtOffset', ['fmt', 'addr_offset'])):
+class FmtOffset(namedtuple("_FmtOffset", ["fmt", "addr_offset"])):
     @property
     def stack(self):
         return fmtsize(self.fmt)
@@ -159,16 +176,16 @@ class TheDict(MutableMapping):
     def __init__(self, ht, ebpf, fd):
         self.ebpf = ebpf
         if isinstance(ht.Key, str):
-            self.__dict__['key'] = FmtOffset(ht.Key, ht.key_offset)
+            self.__dict__["key"] = FmtOffset(ht.Key, ht.key_offset)
         else:
-            self.__dict__['key'] = ht.Key()
+            self.__dict__["key"] = ht.Key()
             self.key.addr_offset = ht.key_offset
             self.key.data = None
             self.key.ebpf = ebpf
         if isinstance(ht.Value, str):
-            self.__dict__['value'] = FmtOffset(ht.Value, ht.value_offset)
+            self.__dict__["value"] = FmtOffset(ht.Value, ht.value_offset)
         else:
-            self.__dict__['value'] = ht.Value()
+            self.__dict__["value"] = ht.Value()
             self.value.addr_offset = ht.value_offset
             self.value.data = None
             self.value.ebpf = ebpf
@@ -181,15 +198,15 @@ class TheDict(MutableMapping):
         update_elem(self.fd, self.key.pack(key), self.value.pack(value))
 
     def __getitem__(self, key):
-        return self.value.unpack(lookup_elem(self.fd, self.key.pack(key),
-                                             self.value.stack))
+        return self.value.unpack(
+            lookup_elem(self.fd, self.key.pack(key), self.value.stack)
+        )
 
     __marker = object()
 
     def pop(self, key, default=__marker):
         try:
-            data = lookup_and_delete_elem(
-                self.fd, self.key.pack(key), self.value.stack)
+            data = lookup_and_delete_elem(self.fd, self.key.pack(key), self.value.stack)
         except KeyError:
             if default is self.__marker:
                 raise
@@ -221,8 +238,9 @@ class TheDict(MutableMapping):
         ebpf = self.ebpf
         with ebpf.save_registers([1, 2, 3, 4, 5]):
             ebpf.r1 = ebpf.get_fd(self.fd)
-            with self.key.get_address(2, True, True), \
-                    self.value.get_address(3, True, True):
+            with self.key.get_address(2, True, True), self.value.get_address(
+                3, True, True
+            ):
                 ebpf.r4 = flags.value
                 ebpf.call(FuncId.map_update_elem)
         ebpf.owners.add(0)
@@ -242,7 +260,7 @@ class TheDict(MutableMapping):
                 value.data = None
                 value.ebpf = ebpf
             else:
-                value = Memory(ebpf, self.__dict__['value'][0], ebpf.r0)
+                value = Memory(ebpf, self.__dict__["value"][0], ebpf.r0)
             yield value, Else
 
 
@@ -334,6 +352,7 @@ class Dict(Map):
 
     def init(self, ebpf, fd):
         if fd is None:
-            fd = create_map(self.mapType, fmtsize(self.Key),
-                            fmtsize(self.Value), self.size)
+            fd = create_map(
+                self.mapType, fmtsize(self.Key), fmtsize(self.Value), self.size
+            )
         setattr(ebpf, self.name, TheDict(self, ebpf, fd))

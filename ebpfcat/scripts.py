@@ -26,20 +26,22 @@ from struct import unpack
 import sys
 
 from .ebpfcat import ParallelEtherCat
-from .ethercat import EtherCat, MachineState, Terminal, ECCmd, EtherCatError
+from .ethercat import EtherCat, MachineState, Terminal, EtherCatError
+
 
 def entrypoint(func):
     @wraps(func)
     def wrapper():
         asyncio.run(func())
+
     return wrapper
 
 
 @entrypoint
 async def scanbus():
     parser = ArgumentParser(
-        prog = "ec-scanbus",
-        description = "Retrieve information from an EtherCat bus")
+        prog="ec-scanbus", description="Retrieve information from an EtherCat bus"
+    )
     parser.add_argument("interface")
     parser.add_argument("-i", "--ids", action="store_true")
     parser.add_argument("-f", "--fmmu", action="store_true")
@@ -48,22 +50,22 @@ async def scanbus():
     ec = ParallelEtherCat(args.interface)
     async with ec.run():
         no = await ec.count()
-        print('counted', no)
+        print("counted", no)
         if args.ids:
             ids = await ec.scan_serial_numbers()
             for addr, (id, pos) in ids.items():
-                print(f'{pos:8}{addr:8}{id:8}')
+                print(f"{pos:8}{addr:8}{id:8}")
         if args.fmmu:
             fmmus = await ec.scan_fmmu()
             for logical, size, pos in fmmus:
-                print(f'{logical:8x}{size:8}{pos:8}')
+                print(f"{logical:8x}{size:8}{pos:8}")
 
 
 @entrypoint
 async def info():
     parser = ArgumentParser(
-        prog = "ec-info",
-        description = "Retrieve information from an EtherCat bus")
+        prog="ec-info", description="Retrieve information from an EtherCat bus"
+    )
 
     parser.add_argument("interface")
     parser.add_argument("-t", "--terminal", type=int)
@@ -89,7 +91,7 @@ async def info():
         if args.serial_number is not None:
             addr_by_serial = await ec.scan_serial_numbers()
             addr = addr_by_serial[args.serial_number]
-            print(f'terminal {addr}')
+            print(f"terminal {addr}")
             term = Terminal(ec)
             await term.gentle_initialize(absolute=addr[0])
         elif args.terminal is not None:
@@ -101,11 +103,13 @@ async def info():
             for t in terms:
                 t.ec = ec
             if args.reset:
-                await asyncio.gather(*(t.initialize(-i)
-                                       for i, t in zip(terminals, terms)))
+                await asyncio.gather(
+                    *(t.initialize(-i) for i, t in zip(terminals, terms))
+                )
             else:
-                await asyncio.gather(*(t.gentle_initialize(-i)
-                                       for i, t in zip(terminals, terms)))
+                await asyncio.gather(
+                    *(t.gentle_initialize(-i) for i, t in zip(terminals, terms))
+                )
             term = None
 
         if term is not None:
@@ -116,8 +120,10 @@ async def info():
         for i, t in enumerate(terms, args.terminal if args.terminal else 0):
             print(f"terminal no {i}")
             if args.ids:
-                print(f"{t.vendorId:X}:{t.productCode:X} "
-                      f"revision {t.revisionNo:X} serial {t.serialNo}")
+                print(
+                    f"{t.vendorId:X}:{t.productCode:X} "
+                    f"revision {t.revisionNo:X} serial {t.serialNo}"
+                )
             if args.names:
                 infos = t.eeprom.get(10)
                 if infos is None:
@@ -125,7 +131,7 @@ async def info():
                 else:
                     i = 1
                     while i < len(infos):
-                        print(infos[i+1 : i+infos[i]+1].decode("latin1"))
+                        print(infos[i + 1 : i + infos[i] + 1].decode("latin1"))
                         i += infos[i] + 1
 
             if args.eeprom:
@@ -159,13 +165,12 @@ async def info():
 
 def encode(name):
     r = int.from_bytes(sha1(name.encode("ascii")).digest(), "little")
-    return r % 0xffffffff + 1
+    return r % 0xFFFFFFFF + 1
+
 
 @entrypoint
 async def eeprom():
-    parser = ArgumentParser(
-        prog = "ec-eeprom",
-        description = "Read and write the eeprom")
+    parser = ArgumentParser(prog="ec-eeprom", description="Read and write the eeprom")
 
     parser.add_argument("interface")
     parser.add_argument("-t", "--terminal", type=int)
@@ -185,7 +190,7 @@ async def eeprom():
     await t.gentle_initialize(-args.terminal)
 
     if args.read or args.check is not None:
-        r, = unpack("<4xI", await t._eeprom_read_one(0xc))
+        (r,) = unpack("<4xI", await t._eeprom_read_one(0xC))
         if args.check is not None:
             c = encode(args.check)
             print(f"{r:8X} {c:8X} {r == c}")
@@ -199,8 +204,8 @@ async def eeprom():
         w = encode(args.name)
         print(f"{w:8X} {w}")
     if w is not None:
-        await t.eeprom_write_one(0xe, w & 0xffff)
-        await t.eeprom_write_one(0xf, w >> 16)
+        await t.eeprom_write_one(0xE, w & 0xFFFF)
+        await t.eeprom_write_one(0xF, w >> 16)
 
 
 @entrypoint

@@ -33,9 +33,9 @@ class Opcode(Enum):
     RSH = 0x74
     NEG = 0x84
     MOD = 0x94
-    XOR = 0xa4
-    MOV = 0xb4
-    ARSH = 0xc4
+    XOR = 0xA4
+    MOV = 0xB4
+    ARSH = 0xC4
 
     JMP = 5
     JEQ = 0x15
@@ -45,10 +45,10 @@ class Opcode(Enum):
     JNE = 0x55
     JSGT = 0x65
     JSGE = 0x75
-    JLT = 0xa5
-    JLE = 0xb5
-    JSLT = 0xc5
-    JSLE = 0xd5
+    JLT = 0xA5
+    JLE = 0xB5
+    JSLT = 0xC5
+    JSLE = 0xD5
     SHORT = 1
 
     CALL = 0x85
@@ -65,14 +65,14 @@ class Opcode(Enum):
     LD = 0x61
     ST = 0x62
     STX = 0x63
-    XADD = 0xc3
-    LE = 0xd4
-    BE = 0xdc
+    XADD = 0xC3
+    LE = 0xD4
+    BE = 0xDC
 
     SIGNED = 0x80
     ABS = 0x20
     IND = 0x40
-    JCOND = 0xe0
+    JCOND = 0xE0
 
     def __mul__(self, value):
         if value:
@@ -84,10 +84,10 @@ class Opcode(Enum):
         return OpcodeFlags({self}) + value
 
     def __repr__(self):
-        return 'O.' + self.name
+        return "O." + self.name
 
     def __hash__(self):
-        return hash(self.value & 0xf8)
+        return hash(self.value & 0xF8)
 
 
 class OpcodeFlags:
@@ -111,8 +111,7 @@ class OpcodeFlags:
         return self.value == value.value
 
 
-BaseInstruction = namedtuple("BaseInstruction",
-                             ["opcode", "dst", "src", "off", "imm"])
+BaseInstruction = namedtuple("BaseInstruction", ["opcode", "dst", "src", "off", "imm"])
 
 
 class Comparer:
@@ -130,7 +129,7 @@ class Comparer:
         return self.opcode.value & self.mask
 
     def __repr__(self):
-        return f'<{self.opcode} {self.opcode.value:x} {self.mask}>'
+        return f"<{self.opcode} {self.opcode.value:x} {self.mask}>"
 
 
 class CompareDesc:
@@ -150,13 +149,18 @@ class Instruction(BaseInstruction):
         pass
 
     def assemble(self):
-        return pack("<BBHI", self.opcode.value, self.dst | self.src << 4,
-                    self.off % 0x10000, self.imm % 0x100000000)
+        return pack(
+            "<BBHI",
+            self.opcode.value,
+            self.dst | self.src << 4,
+            self.off % 0x10000,
+            self.imm % 0x100000000,
+        )
 
     opclass = CompareDesc(7)
     opsize = CompareDesc(0x18)
-    opmode = CompareDesc(0xe0)
-    op = CompareDesc(0xf0)
+    opmode = CompareDesc(0xE0)
+    op = CompareDesc(0xF0)
 
     @property
     def opsrc(self):
@@ -168,10 +172,15 @@ class Instruction(BaseInstruction):
 
     def __str__(self):
         return (
-                self.format_ld, self.format_ldx, self.format_st,
-                self.format_stx, self.format_alu, self.format_jmp,
-                self.format_jmp, self.format_alu
-                )[self.opclass]()
+            self.format_ld,
+            self.format_ldx,
+            self.format_st,
+            self.format_stx,
+            self.format_alu,
+            self.format_jmp,
+            self.format_jmp,
+            self.format_alu,
+        )[self.opclass]()
 
     def format_alu(self):
         if self.op == Opcode.LE:
@@ -181,9 +190,9 @@ class Instruction(BaseInstruction):
                 endian = "le" if self.opsrc else "be"
                 return f"w{self.dst} = {endian}{self.imm} w{self.dst}"
         if self.opclass == Opcode.ADD:  # not long
-            reg = 'w'
+            reg = "w"
         else:
-            reg = 'r'
+            reg = "r"
         if self.op == Opcode.NEG:
             return f"{reg}{self.dst} = -{reg}{self.dst}"
         if self.opcode == Opcode.MOV + Opcode.LONG + Opcode.REG:
@@ -195,17 +204,19 @@ class Instruction(BaseInstruction):
                 return f"r{self.dst} = &(void __percpu *)(r{self.src})"
         op_str = alu_string.get(self.op, "??")
         if self.off == 1:
-            op_str = 's' + op_str
+            op_str = "s" + op_str
         if not self.opsrc:
             return f"{reg}{self.dst} {op_str} {self.imm}"
-        suffix = f"(s{insn.off})" if self.off else ''
+        suffix = f"(s{insn.off})" if self.off else ""
         return f"{reg}{self.dst} {op_str} {suffix}{reg}{self.src}"
 
     def format_stx(self):
         if self.opmode == Opcode.STX:
             return f"*(u{self.size_str} *)(r{self.dst} {self.off:+d}) = r{self.src}"
         if self.imm == 0:
-            return f"lock *(u{self.size_str} *)(r{self.dst} {self.off:+d}) += r{self.src}"
+            return (
+                f"lock *(u{self.size_str} *)(r{self.dst} {self.off:+d}) += r{self.src}"
+            )
         immopcode = Opcode(inst.imm + 2)
         atomic = "64" if self.opsize == Opcode.DW else ""
         if immopcode in {Opcode.ADD, Opcode.AND, Opcode.OR, Opcode.H}:
@@ -224,17 +235,17 @@ class Instruction(BaseInstruction):
                 f"r{self.src} = atomic{atomic}_xchg("
                 f"(u{self.size_str} *)(r{insn.dst} {insn.off:+d}), r{insn.src})"
             )
-        raise RuntimeError('unknown instruction')
+        raise RuntimeError("unknown instruction")
 
     def format_st(self):
         if self.opmode == Opcode.ST:
             return f"*(u{self.size_str} *)(r{self.dst} {self.off:+d}) = {self.imm}"
         if self.opmode == Opcode.XADD:
             return f"nospec"
-        raise RuntimeError('unknown instruction')
+        raise RuntimeError("unknown instruction")
 
     def format_ldx(self):
-        signed = 's' if self.opmode == Opcode.SIGNED else 'u'
+        signed = "s" if self.opmode == Opcode.SIGNED else "u"
         return f"r{self.dst} = *({signed}{self.size_str} *)(r{self.src} {self.off:+d})"
 
     def format_ld(self):
@@ -242,7 +253,7 @@ class Instruction(BaseInstruction):
             return f"r0 = *({self.size_str} *)skb[{self.imm}]"
         if self.opmode == Opcode.IND:
             return f"r0 = *({size} *)skb[r{self.src} + {self.imm}]"
-        raise RuntimeError('unknown instruction')
+        raise RuntimeError("unknown instruction")
 
     def format_jmp(self):
         if self.op == Opcode.CALL:
@@ -273,8 +284,14 @@ class HugeInstruction(Instruction):
     opcode_size = 2
 
     def assemble(self):
-        return pack("<BB2xIB3xI", Opcode.DW.value, self.dst | self.src << 4,
-                    self.imm & 0xffffffff, Opcode.W.value, self.imm >> 32)
+        return pack(
+            "<BB2xIB3xI",
+            Opcode.DW.value,
+            self.dst | self.src << 4,
+            self.imm & 0xFFFFFFFF,
+            Opcode.W.value,
+            self.imm >> 32,
+        )
 
     def __str__(self):
         if self.src:
@@ -298,12 +315,7 @@ alu_string = {
     Opcode.ARSH: "s>>=",
 }
 
-size_str = {
-    Opcode.B: "8",
-    Opcode.H: "16",
-    Opcode.W: "32",
-    Opcode.DW: "64"
-}
+size_str = {Opcode.B: "8", Opcode.H: "16", Opcode.W: "32", Opcode.DW: "64"}
 
 jmp_string = {
     Opcode.JEQ: "==",

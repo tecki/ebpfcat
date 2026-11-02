@@ -57,28 +57,29 @@ class Serial(Device):
         loop = asyncio.get_event_loop()
         reader = asyncio.StreamReader()
         await loop.connect_read_pipe(
-            lambda: asyncio.StreamReaderProtocol(reader),
-            open(self.in_read, 'rb'))
-        writer, _ = await loop.connect_write_pipe(asyncio.Protocol,
-                                                  open(self.out_write, 'wb'))
+            lambda: asyncio.StreamReaderProtocol(reader), open(self.in_read, "rb")
+        )
+        writer, _ = await loop.connect_write_pipe(
+            asyncio.Protocol, open(self.out_write, "wb")
+        )
 
         init = await reader.readexactly(1)
         os.close(self.in_write)
         os.close(self.out_read)
-        assert init == b'A'
+        assert init == b"A"
         return reader, writer
 
     last_transmit_request = False
     last_receive_accept = False
     current_transmit = None
-    remainder = b''
+    remainder = b""
 
     def update(self):
         self.init_request = False
         if not self.connected:
             if self.init_accept:
                 self.connected = True
-                os.write(self.in_write, b'A')
+                os.write(self.in_write, b"A")
                 self.last_transmit_accept = self.transmit_accept
                 self.last_receive_request = self.receive_request
             else:

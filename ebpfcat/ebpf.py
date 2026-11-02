@@ -32,7 +32,7 @@ from struct import pack, pack_into, unpack, unpack_from, calcsize
 from enum import Enum
 
 from . import bpf
-from .instruction import HugeInstruction, Instruction, Opcode, OpcodeFlags
+from .instruction import HugeInstruction, Instruction, Opcode
 from .util import sub
 
 
@@ -43,7 +43,7 @@ class JumpTarget:
         self.position = position
 
     def assemble(self):
-        return b''
+        return b""
 
 
 class FuncId(Enum):
@@ -223,6 +223,7 @@ def comparison(uposop, unegop, sposop, snegop):
             return SimpleComparison(self.ebpf, myself, value, (sposop, snegop))
         else:
             return SimpleComparison(self.ebpf, myself, value, (uposop, unegop))
+
     return ret
 
 
@@ -241,6 +242,7 @@ class Comparison(ABC):
             self.Else()
             yield
             self.ElseExit()
+
         return Elser()
 
     def __exit__(self, exc_type, exc, tb):
@@ -251,8 +253,7 @@ class Comparison(ABC):
         self.else_target = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(self.jump_target)
         self.ebpf.opcodes.extend(self.saved_targets)
-        self.ebpf.owners, self.owners = \
-                self.ebpf.owners & self.owners, self.ebpf.owners
+        self.ebpf.owners, self.owners = self.ebpf.owners & self.owners, self.ebpf.owners
 
     @abstractmethod
     def compare(self, negative):
@@ -271,12 +272,12 @@ class Comparison(ABC):
         raise NotImplementedError
 
     def Else(self):
-        self.saved_targets = self.ebpf.opcodes[self.comparison_end:]
-        self.ebpf.opcodes = self.ebpf.opcodes[:self.comparison_end]
+        self.saved_targets = self.ebpf.opcodes[self.comparison_end :]
+        self.ebpf.opcodes = self.ebpf.opcodes[: self.comparison_end]
         self.jump_target = JumpTarget()
-        self.ebpf.opcodes.insert(self.else_origin,
-                                 Instruction(Opcode.JMP, 0, 0,
-                                             self.jump_target, 0))
+        self.ebpf.opcodes.insert(
+            self.else_origin, Instruction(Opcode.JMP, 0, 0, self.jump_target, 0)
+        )
         return self
 
     def __and__(self, value):
@@ -306,8 +307,8 @@ class SimpleComparison(Comparison):
             with ExitStack() as exitStack:
                 if not self.right.small_constant:
                     self.src, r_long = exitStack.enter_context(
-                        self.right.calculate(
-                            None, self.left.signed and l_long or None))
+                        self.right.calculate(None, self.left.signed and l_long or None)
+                    )
                 else:
                     r_long = False
                 self.opcode = self.opcode[negative]
@@ -321,24 +322,30 @@ class SimpleComparison(Comparison):
                 self.jump_target = JumpTarget()
 
                 if self.opcode == Opcode.JMP:
-                    inst = Instruction(Opcode.JMP, 0, 0,
-                                       self.jump_target, 0)
+                    inst = Instruction(Opcode.JMP, 0, 0, self.jump_target, 0)
                 elif self.right.small_constant:
                     inst = Instruction(
-                        self.opcode, self.dst, 0,
-                        self.jump_target, int(self.right.value))
+                        self.opcode,
+                        self.dst,
+                        0,
+                        self.jump_target,
+                        int(self.right.value),
+                    )
                 else:
                     inst = Instruction(
-                        self.opcode + Opcode.REG, self.dst, self.src,
-                        self.jump_target, 0)
+                        self.opcode + Opcode.REG,
+                        self.dst,
+                        self.src,
+                        self.jump_target,
+                        0,
+                    )
                 self.ebpf.opcodes.append(inst)
         self.owners = self.ebpf.owners.copy()
 
     def target(self):
         self.else_origin = len(self.ebpf.opcodes)
         self.ebpf.opcodes.append(self.jump_target)
-        self.ebpf.owners, self.owners = \
-            self.ebpf.owners & self.owners, self.ebpf.owners
+        self.ebpf.owners, self.owners = self.ebpf.owners & self.owners, self.ebpf.owners
 
 
 class AndOrComparison(Comparison):
@@ -403,8 +410,9 @@ class Expression:
 
     def _binary(self, value, opcode):
         value = ensure_expression(self.ebpf, value)
-        return Binary(self.ebpf, self, value, opcode,
-                      self.signed or value.signed, False)
+        return Binary(
+            self.ebpf, self, value, opcode, self.signed or value.signed, False
+        )
 
     __ror__ = __or__ = lambda self, value: self._binary(value, Opcode.OR)
     __lshift__ = lambda self, value: self._binary(value, Opcode.LSH)
@@ -428,8 +436,14 @@ class Expression:
             else:
                 myself *= self.FIXED_BASE
 
-        return Binary(self.ebpf, myself, value, opcode,
-                      self.signed or value.signed, self.fixed or value.fixed)
+        return Binary(
+            self.ebpf,
+            myself,
+            value,
+            opcode,
+            self.signed or value.signed,
+            self.fixed or value.fixed,
+        )
 
     __radd__ = __add__ = lambda self, value: self._sum(value, Opcode.ADD)
     __sub__ = lambda self, value: self._sum(value, Opcode.SUB)
@@ -441,11 +455,18 @@ class Expression:
         if not isinstance(value, Expression) and value == 1:
             return self
         value = ensure_expression(self.ebpf, value)
-        ret = Binary(self.ebpf, self, value, Opcode.MUL,
-                     self.signed or value.signed, self.fixed or value.fixed)
+        ret = Binary(
+            self.ebpf,
+            self,
+            value,
+            Opcode.MUL,
+            self.signed or value.signed,
+            self.fixed or value.fixed,
+        )
         if self.fixed and value.fixed:
             ret /= self.FIXED_BASE
         return ret
+
     __rmul__ = __mul__
 
     def __truediv__(self, value):
@@ -454,12 +475,13 @@ class Expression:
         value = ensure_expression(self.ebpf, value)
         myself = self
         if not self.fixed and value.fixed:
-            myself *= self.FIXED_BASE ** 2
+            myself *= self.FIXED_BASE**2
         elif self.fixed == value.fixed:
             myself *= self.FIXED_BASE
 
-        return Binary(self.ebpf, myself, value, Opcode.DIV,
-                      self.signed or value.signed, True)
+        return Binary(
+            self.ebpf, myself, value, Opcode.DIV, self.signed or value.signed, True
+        )
 
     def _reverse(self, op, value):
         return op(Constant(self.ebpf, value), self)
@@ -474,8 +496,9 @@ class Expression:
         elif self.fixed and not value.fixed:
             value *= self.FIXED_BASE
 
-        return Binary(self.ebpf, myself, value, Opcode.DIV,
-                      self.signed or value.signed, False)
+        return Binary(
+            self.ebpf, myself, value, Opcode.DIV, self.signed or value.signed, False
+        )
 
     def __rfloordiv__(self, value):
         if self.fixed:
@@ -485,19 +508,25 @@ class Expression:
         else:
             value = Constant(self.ebpf, int(value))
 
-        return Binary(self.ebpf, value, self, Opcode.DIV,
-                      self.signed or value.signed, False)
+        return Binary(
+            self.ebpf, value, self, Opcode.DIV, self.signed or value.signed, False
+        )
 
     def __rshift__(self, value):
         opcode = Opcode.ARSH if self.signed else Opcode.RSH
-        return Binary(self.ebpf, self, ensure_expression(self.ebpf, value),
-                      opcode, self.signed, False)
+        return Binary(
+            self.ebpf,
+            self,
+            ensure_expression(self.ebpf, value),
+            opcode,
+            self.signed,
+            False,
+        )
 
     __rrshift__ = lambda self, value: Constant(self.ebpf, value) >> self
 
     def __and__(self, value):
-        return AndExpression(self.ebpf, self,
-                             ensure_expression(self.ebpf, value))
+        return AndExpression(self.ebpf, self, ensure_expression(self.ebpf, value))
 
     def __eq__(self, value):
         return ~(self != value)
@@ -527,11 +556,11 @@ class Expression:
         return self.as_comparison.__exit__(exc_type, exc, tb)
 
     def load(self, dst, src, offset, fmt, long):
-         self.ebpf.append(Opcode.LD + fmt_to_opcode(fmt), dst, src, offset, 0)
-         if isinstance(fmt, str) and (fmt in "hb" or long and fmt == 'i'):
-             shift = (64 if long else 32) - calcsize(fmt) * 8
-             regs = self.ebpf.sr if long else self.ebpf.sw
-             regs[dst] = (regs[dst] << shift) >> shift
+        self.ebpf.append(Opcode.LD + fmt_to_opcode(fmt), dst, src, offset, 0)
+        if isinstance(fmt, str) and (fmt in "hb" or long and fmt == "i"):
+            shift = (64 if long else 32) - calcsize(fmt) * 8
+            regs = self.ebpf.sr if long else self.ebpf.sw
+            regs[dst] = (regs[dst] << shift) >> shift
 
     @contextmanager
     def calculate(self, dst, long, force=False):
@@ -573,10 +602,8 @@ class Expression:
         """
         with self.ebpf.get_stack(4 + 4 * long) as stack:
             with self.calculate(dst, long) as (src, _):
-                self.ebpf.append(Opcode.STX + Opcode.DW * long,
-                                 10, src, stack, 0)
-                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG,
-                                 dst, 10, 0, 0)
+                self.ebpf.append(Opcode.STX + Opcode.DW * long, 10, src, stack, 0)
+                self.ebpf.append(Opcode.MOV + Opcode.LONG + Opcode.REG, dst, 10, 0, 0)
                 self.ebpf.append(Opcode.ADD + Opcode.LONG, dst, 0, 0, stack)
             yield dst, "Q" if long else "I"
 
@@ -587,6 +614,7 @@ class Expression:
 
 class Binary(Expression):
     """represent all binary expressions"""
+
     def __init__(self, ebpf, left, right, operator, signed, fixed):
         self.ebpf = ebpf
         self.left = left
@@ -603,25 +631,36 @@ class Binary(Expression):
                 if long is None:
                     long = l_long
             if self.right.small_constant:
-                self.ebpf.append(self.operator + Opcode.LONG * long,
-                                 new_dst, 0, 0, int(self.right.value))
+                self.ebpf.append(
+                    self.operator + Opcode.LONG * long,
+                    new_dst,
+                    0,
+                    0,
+                    int(self.right.value),
+                )
             else:
                 with self.right.calculate(None, long) as (src, r_long):
                     self.ebpf.append(
-                        self.operator + Opcode.REG
-                        + Opcode.LONG * ((r_long or l_long)
-                                         if long is None else long),
-                        new_dst, src, 0, 0)
+                        self.operator
+                        + Opcode.REG
+                        + Opcode.LONG * ((r_long or l_long) if long is None else long),
+                        new_dst,
+                        src,
+                        0,
+                        0,
+                    )
             if dst is None or new_dst == dst:
                 yield new_dst, long
                 return
-        self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * long,
-                         dst, new_dst, 0, 0)
+        self.ebpf.append(
+            Opcode.MOV + Opcode.REG + Opcode.LONG * long, dst, new_dst, 0, 0
+        )
         yield dst, long
 
     def contains(self, no):
-        return self.left.contains(no) or (isinstance(self.right, Expression)
-                                          and self.right.contains(no))
+        return self.left.contains(no) or (
+            isinstance(self.right, Expression) and self.right.contains(no)
+        )
 
 
 class AsLong(Expression):
@@ -697,13 +736,17 @@ class Sum(Binary):
 
     this is used to optimize memory addressing code.
     """
+
     def __init__(self, ebpf, left, right):
         super().__init__(ebpf, left, right, Opcode.ADD, right.value < 0, False)
 
     def __add__(self, value):
         try:
-            return Sum(self.ebpf, self.left,
-                       Constant(self.ebpf, self.right.value + index(value)))
+            return Sum(
+                self.ebpf,
+                self.left,
+                Constant(self.ebpf, self.right.value + index(value)),
+            )
         except TypeError:
             return super().__add__(value)
 
@@ -711,8 +754,11 @@ class Sum(Binary):
 
     def __sub__(self, value):
         try:
-            return Sum(self.ebpf, self.left,
-                       Constant(self.ebpf, self.right.value - index(value)))
+            return Sum(
+                self.ebpf,
+                self.left,
+                Constant(self.ebpf, self.right.value - index(value)),
+            )
         except TypeError:
             return super().__sub__(value)
 
@@ -741,8 +787,7 @@ class AndComparison(SimpleComparison):
         if negative:
             jump_target = JumpTarget()
             self.invert = len(self.ebpf.opcodes)
-            self.ebpf.opcodes.append(
-                    Instruction(Opcode.JMP, 0, 0, jump_target, 0))
+            self.ebpf.opcodes.append(Instruction(Opcode.JMP, 0, 0, jump_target, 0))
             self.target()
             self.jump_target = jump_target
 
@@ -750,8 +795,9 @@ class AndComparison(SimpleComparison):
         if self.invert is None:
             return super().ElseExit()
         oldlen = len(self.ebpf.opcodes)
-        self.ebpf.opcodes[self.invert:self.invert] = \
-                    self.ebpf.opcodes[self.else_origin:]
+        self.ebpf.opcodes[self.invert : self.invert] = self.ebpf.opcodes[
+            self.else_origin :
+        ]
         del self.ebpf.opcodes[oldlen:]
 
     def Else(self):
@@ -787,8 +833,7 @@ class Constant(Expression):
             if self.small_constant:
                 self.ebpf.append(Opcode.MOV + Opcode.LONG, dst, 0, 0, value)
             else:
-                self.ebpf.opcodes.append(
-                    HugeInstruction(Opcode.DW, dst, 0, 0, value))
+                self.ebpf.opcodes.append(HugeInstruction(Opcode.DW, dst, 0, 0, value))
             yield dst, not (-0x80000000 <= value < 0x100000000)
 
     def switch_endian(self, fmt):
@@ -799,6 +844,7 @@ class Constant(Expression):
 
 class Register(Expression):
     """represent one EBPF register"""
+
     offset = 0
 
     def __init__(self, no, ebpf, long, signed, fixed=False):
@@ -831,8 +877,9 @@ class Register(Expression):
         if self.no not in self.ebpf.owners:
             raise AssembleError(f"register r{self.no} has no value")
         if dst != self.no and force:
-            self.ebpf.append(Opcode.MOV + Opcode.REG + Opcode.LONG * self.long,
-                             dst, self.no, 0, 0)
+            self.ebpf.append(
+                Opcode.MOV + Opcode.REG + Opcode.LONG * self.long, dst, self.no, 0, 0
+            )
             yield dst, self.long
         else:
             yield self.no, self.long
@@ -843,6 +890,7 @@ class Register(Expression):
 
 class IAdd:
     """represent an in-place addition"""
+
     def __init__(self, ebpf, value):
         if isinstance(value, Expression):
             self.value = value
@@ -851,13 +899,23 @@ class IAdd:
 
 
 def fmt_to_opcode(fmt):
-    fmt_to_opcode = {'I': Opcode.W, 'H': Opcode.H, 'B': Opcode.B, 'Q': Opcode.DW,
-                     'i': Opcode.W, 'h': Opcode.H, 'b': Opcode.B, 'q': Opcode.DW,
-                     'A': Opcode.W, 'x': Opcode.DW}
+    fmt_to_opcode = {
+        "I": Opcode.W,
+        "H": Opcode.H,
+        "B": Opcode.B,
+        "Q": Opcode.DW,
+        "i": Opcode.W,
+        "h": Opcode.H,
+        "b": Opcode.B,
+        "q": Opcode.DW,
+        "A": Opcode.W,
+        "x": Opcode.DW,
+    }
     if isinstance(fmt, str):
         return fmt_to_opcode[fmt[-1]]
     else:
         return Opcode.B
+
 
 class Memory(Expression):
     bits_to_opcode = {32: Opcode.W, 16: Opcode.H, 8: Opcode.B, 64: Opcode.DW}
@@ -882,18 +940,19 @@ class Memory(Expression):
     @contextmanager
     def calculate(self, dst, long, force=False):
         if self.has_endian():
-            with self.without_endian().switch_endian(self.fmt) \
-                 .calculate(dst, long, force) as (dst, long):
+            with self.without_endian().switch_endian(self.fmt).calculate(
+                dst, long, force
+            ) as (dst, long):
                 yield dst, long
                 return
         with ExitStack() as exitStack:
             if isinstance(self.address, Sum):
                 dst = exitStack.enter_context(self.ebpf.get_free_register(dst))
-                self.load(dst, self.address.left.no, self.address.right.value,
-                          self.fmt, long)
+                self.load(
+                    dst, self.address.left.no, self.address.right.value, self.fmt, long
+                )
             else:
-                dst, _ = exitStack.enter_context(
-                    super().calculate(dst, long, force))
+                dst, _ = exitStack.enter_context(super().calculate(dst, long, force))
             if isinstance(self.fmt, tuple):
                 self.ebpf.r[dst] &= ((1 << self.fmt[1]) - 1) << self.fmt[0]
                 if self.fmt[0] > 0:
@@ -932,8 +991,7 @@ class Memory(Expression):
         return self == 0
 
     def __ne__(self, value):
-        if isinstance(self.fmt, tuple) and isinstance(value, int) \
-                and value == 0:
+        if isinstance(self.fmt, tuple) and isinstance(value, int) and value == 0:
             mask = ((1 << self.fmt[1]) - 1) << self.fmt[0]
             return Memory(self.ebpf, "B", self.address) & mask != 0
         return super().__ne__(value)
@@ -964,7 +1022,7 @@ class Memory(Expression):
                         value = self.ebpf.wtmp
                 else:
                     mask = ((1 << bits) - 1) << pos
-                    value = (mask & (value << pos) | ~mask & self)
+                    value = mask & (value << pos) | ~mask & self
             elif isinstance(value, IAdd):
                 value = value.value
                 opcode = Opcode.XADD
@@ -978,27 +1036,34 @@ class Memory(Expression):
                 dst = self.address.left.no
                 offset = self.address.right.value
             else:
-                dst, _ = exitStack.enter_context(
-                    self.address.calculate(None, True))
+                dst, _ = exitStack.enter_context(self.address.calculate(None, True))
                 offset = 0
             value = value.switch_endian(self.fmt)
             if value.small_constant and opcode == Opcode.STX:
-                self.ebpf.append(Opcode.ST + fmt_to_opcode(self.fmt), dst, 0,
-                                 offset, int(value.value))
+                self.ebpf.append(
+                    Opcode.ST + fmt_to_opcode(self.fmt),
+                    dst,
+                    0,
+                    offset,
+                    int(value.value),
+                )
                 return
             src, _ = exitStack.enter_context(
-                value.calculate(None, isinstance(self.fmt, str)
-                                      and self.fmt[-1] in 'qQx'))
-            self.ebpf.append(opcode + fmt_to_opcode(self.fmt),
-                             dst, src, offset, 0)
+                value.calculate(
+                    None, isinstance(self.fmt, str) and self.fmt[-1] in "qQx"
+                )
+            )
+            self.ebpf.append(opcode + fmt_to_opcode(self.fmt), dst, src, offset, 0)
 
     def __setitem__(self, key, value):
-        getattr(self.ebpf, f'm{self.fmt[-1]}') \
-                [self.address + calcsize(self.fmt[-1]) * key] = value
+        getattr(self.ebpf, f"m{self.fmt[-1]}")[
+            self.address + calcsize(self.fmt[-1]) * key
+        ] = value
 
     def __getitem__(self, key):
-        return getattr(self.ebpf, f'm{self.fmt[-1]}') \
-                [self.address + calcsize(self.fmt[-1]) * key]
+        return getattr(self.ebpf, f"m{self.fmt[-1]}")[
+            self.address + calcsize(self.fmt[-1]) * key
+        ]
 
 
 class MemoryDesc:
@@ -1015,13 +1080,11 @@ class MemoryDesc:
         if instance is None:
             return self
         fmt, addr = self.fmt_addr(instance)
-        return Memory(instance.ebpf, fmt,
-                      instance.ebpf.r[self.base_register] + addr)
+        return Memory(instance.ebpf, fmt, instance.ebpf.r[self.base_register] + addr)
 
     def __set__(self, instance, value):
         fmt, addr = self.fmt_addr(instance)
-        memory = Memory(instance.ebpf, fmt,
-                        instance.ebpf.r[self.base_register] + addr)
+        memory = Memory(instance.ebpf, fmt, instance.ebpf.r[self.base_register] + addr)
         memory.value = value
 
     def __set_name__(self, owner, name):
@@ -1038,9 +1101,10 @@ class LocalVar(MemoryDesc):
 
     :param fmt: the data format as :mod:`struct` characters
     """
+
     base_register = 10
 
-    def __init__(self, fmt='I'):
+    def __init__(self, fmt="I"):
         self.fmt = fmt
         self.fixed = fmt == "x"
 
@@ -1053,8 +1117,7 @@ class LocalVar(MemoryDesc):
 
     def fmt_addr(self, instance):
         if isinstance(instance, SubProgram):
-            return (self.fmt,
-                    (instance.ebpf.stack & -8) + self.relative_addr)
+            return (self.fmt, (instance.ebpf.stack & -8) + self.relative_addr)
         else:
             return self.fmt, self.relative_addr
 
@@ -1070,12 +1133,12 @@ class Structure(Sequence):
             x = Member('i')
             y = Member('i')
     """
+
     stack = 0
     base_register = 10
 
     def __init_subclass__(cls):
-        cls._fields = tuple(k for k, v in cls.__dict__.items()
-                            if isinstance(v, Member))
+        cls._fields = tuple(k for k, v in cls.__dict__.items() if isinstance(v, Member))
 
     def __init__(self, *args, **kwargs):
         self.data = bytearray(self.stack)
@@ -1109,7 +1172,7 @@ class Structure(Sequence):
     @contextmanager
     def get_address(self, dst, long, force=False):
         self.ebpf.r[dst] = self.ebpf.r[self.base_register] + self.addr_offset
-        yield dst, f'structure {self.__class__.__name__}'
+        yield dst, f"structure {self.__class__.__name__}"
 
     @classmethod
     def pack(cls, value):
@@ -1175,6 +1238,7 @@ class MemoryMap:
 
 class Map(ABC):
     """The base class for all maps"""
+
     def __set_name__(self, owner, name):
         self.filename = name
 
@@ -1192,6 +1256,7 @@ class Map(ABC):
 
 class PseudoFd(Expression):
     """represent a file descriptor to a map"""
+
     def __init__(self, ebpf, fd):
         self.ebpf = ebpf
         self.fd = fd
@@ -1206,6 +1271,7 @@ class PseudoFd(Expression):
 
 class ktime(Expression):
     """a function that returns the current ktime in ns"""
+
     signed = False
 
     def __init__(self, ebpf):
@@ -1224,6 +1290,7 @@ class ktime(Expression):
 
 class prandom(Expression):
     """a function that returns the current ktime in ns"""
+
     def __init__(self, ebpf):
         self.ebpf = ebpf
 
@@ -1273,7 +1340,6 @@ class RegisterArray:
         return Register(no, self.ebpf, self.long, self.signed, self.fixed)
 
 
-
 class Temporary(Register):
     def __init__(self, ebpf, long, signed, fixed):
         super().__init__(None, ebpf, long, signed, fixed)
@@ -1302,8 +1368,9 @@ class TemporaryDesc(RegisterDesc):
         arr = getattr(instance, self.array)
         ret = instance.__dict__.get(self.name, None)
         if ret is None:
-            ret = instance.__dict__[self.name] = \
-                    Temporary(instance, arr.long, arr.signed, arr.fixed)
+            ret = instance.__dict__[self.name] = Temporary(
+                instance, arr.long, arr.signed, arr.fixed
+            )
         return ret
 
     def __set__(self, instance, value):
@@ -1346,11 +1413,13 @@ class EBPF(EBPFBase):
     :param load_maps: a prefix to load pinned maps from. Must be existing in a
         bpf file system, and usually ends in a "/".
     """
+
     stack = 0
     license = None
 
-    def __init__(self, prog_type=0, license=None, *, kern_version=0,
-                 load_maps=None, **kwargs):
+    def __init__(
+        self, prog_type=0, license=None, *, kern_version=0, load_maps=None, **kwargs
+    ):
         self.opcodes = []
         self.prog_type = prog_type
         if license is not None:
@@ -1388,7 +1457,6 @@ class EBPF(EBPFBase):
                     else:
                         v.init(self, bpf.obj_get(load_maps + k))
                     unique.add(k)
-
 
     def pin_maps(self, path):
         """pin the maps of this program to files with prefix `path`
@@ -1430,8 +1498,11 @@ class EBPF(EBPFBase):
         for op in self.opcodes:
             if isinstance(op, Instruction):
                 if isinstance(op.off, JumpTarget):
-                    opcodes.append(Instruction(op.opcode, op.dst, op.src,
-                                               op.off.position - i, op.imm))
+                    opcodes.append(
+                        Instruction(
+                            op.opcode, op.dst, op.src, op.off.position - i, op.imm
+                        )
+                    )
                 else:
                     opcodes.append(op)
             i += op.opcode_size
@@ -1440,11 +1511,16 @@ class EBPF(EBPFBase):
 
     def load(self, log_level=0, log_size=10 * 4096):
         """load the program into the kernel"""
-        name = ''.join(c if c in bpf.allowed_chars else '_'
-                       for c in self.name[:15])
-        fd, log = bpf.prog_load(self.prog_type, self.assemble(), self.license,
-                                log_level, log_size, self.kern_version,
-                                name=name)
+        name = "".join(c if c in bpf.allowed_chars else "_" for c in self.name[:15])
+        fd, log = bpf.prog_load(
+            self.prog_type,
+            self.assemble(),
+            self.license,
+            log_level,
+            log_size,
+            self.kern_version,
+            name=name,
+        )
         self.loaded = True
         self.file_descriptor = fd
 
@@ -1517,12 +1593,11 @@ class EBPF(EBPFBase):
             for i in registers:
                 if i in oldowners:
                     tmp = exitStack.enter_context(self.get_free_register(None))
-                    self.append(Opcode.MOV+Opcode.LONG+Opcode.REG,
-                                tmp, i, 0, 0)
+                    self.append(Opcode.MOV + Opcode.LONG + Opcode.REG, tmp, i, 0, 0)
                     save.append((tmp, i))
             yield
             for tmp, i in save:
-                self.append(Opcode.MOV+Opcode.LONG+Opcode.REG, i, tmp, 0, 0)
+                self.append(Opcode.MOV + Opcode.LONG + Opcode.REG, i, tmp, 0, 0)
             self.owners = oldowners
 
     @contextmanager

@@ -22,7 +22,13 @@
 """
 
 from .ebpfcat import (
-    BaseType, EBPFTerminal, PacketDesc, ProcessDesc, ServiceDesc, Struct)
+    BaseType,
+    EBPFTerminal,
+    PacketDesc,
+    ProcessDesc,
+    ServiceDesc,
+    Struct,
+)
 from .ethercat import ECCmd, SyncManager
 from .safety import SafetyMain, SafetySub
 
@@ -42,12 +48,15 @@ class Calibrated(Struct):
     the :class:`ProcessDesc` to be calibrated should be called :attr:`value`.
     This value should be multiplied by :attr:`factor` and :attr:`offset` added.
     """
+
     factor = 1
     offset = 0
 
 
 class EL1124(EBPFTerminal):
-    compatibility = {(2, 0x4643052), }
+    compatibility = {
+        (2, 0x4643052),
+    }
 
     channel1 = ProcessDesc(0x6000, 1)
     channel2 = ProcessDesc(0x6010, 1)
@@ -122,12 +131,12 @@ class EL2819(EBPFTerminal):
     channel8 = Channel(0x70)
     channel9 = Channel(0x80)
     channel10 = Channel(0x90)
-    channel11 = Channel(0xa0)
-    channel12 = Channel(0xb0)
-    channel13 = Channel(0xc0)
-    channel14 = Channel(0xd0)
-    channel15 = Channel(0xe0)
-    channel16 = Channel(0xf0)
+    channel11 = Channel(0xA0)
+    channel12 = Channel(0xB0)
+    channel13 = Channel(0xC0)
+    channel14 = Channel(0xD0)
+    channel15 = Channel(0xE0)
+    channel16 = Channel(0xF0)
 
 
 class EL2624(EBPFTerminal):
@@ -155,9 +164,9 @@ class EL3154(EBPFTerminal):
     compatibility = {(2, 0xC523052)}
 
     class Channel(Calibrated):
-        attrs = ProcessDesc(0x6000, 1, 'H')
-        value = ProcessDesc(0x6000, 0x11, 'h')
-        factor = 16/32767
+        attrs = ProcessDesc(0x6000, 1, "H")
+        value = ProcessDesc(0x6000, 0x11, "h")
+        factor = 16 / 32767
         offset = 4
 
     channel1 = Channel(0)
@@ -167,12 +176,12 @@ class EL3154(EBPFTerminal):
 
 
 class EL3164(EBPFTerminal):
-    compatibility = {(2, 0x0c5c3052), (2, 0xc203052)}
+    compatibility = {(2, 0x0C5C3052), (2, 0xC203052)}
 
     class Channel(Calibrated):
-        attrs = ProcessDesc(0x6000, 1, 'H')
-        value = ProcessDesc(0x6000, 0x11, 'h')
-        factor = 10/32767
+        attrs = ProcessDesc(0x6000, 1, "H")
+        value = ProcessDesc(0x6000, 0x11, "h")
+        factor = 10 / 32767
         offset = 0
 
     channel1 = Channel(0)
@@ -185,8 +194,8 @@ class EL4102(EBPFTerminal):
     compatibility = {(2, 268841042)}
 
     class Channel(Calibrated):
-        value = ProcessDesc(0x3000, 1, 'h')
-        factor = 10/32767
+        value = ProcessDesc(0x3000, 1, "h")
+        factor = 10 / 32767
 
     channel1 = Channel(1)
     channel2 = Channel(2)
@@ -196,8 +205,8 @@ class EL4122(EBPFTerminal):
     compatibility = {(2, 0x101A3052)}
 
     class Channel(Calibrated):
-        value = ProcessDesc(0x3000, 1, 'h')
-        factor = 16/32767
+        value = ProcessDesc(0x3000, 1, "h")
+        factor = 16 / 32767
         offset = 4
 
     channel1 = Channel(1)
@@ -209,8 +218,8 @@ class EL4134(EBPFTerminal):
     compatibility = {(2, 0x10263052)}
 
     class Channel(Calibrated):
-        value = ProcessDesc(0x7000, 1, 'h')
-        factor = 10/32767
+        value = ProcessDesc(0x7000, 1, "h")
+        factor = 10 / 32767
         offset = 0
 
     channel1 = Channel(0)
@@ -225,7 +234,7 @@ class EK1101(EBPFTerminal):
 
 class EPP1322(EBPFTerminal):
     # EtherCAT to EtherCAT P, 3 ports
-    compatibility = {(2, 0x647618a9)}
+    compatibility = {(2, 0x647618A9)}
 
 
 class EK1814(EBPFTerminal):
@@ -241,8 +250,9 @@ class EK1814(EBPFTerminal):
 
 class EL5042(EBPFTerminal):
     compatibility = {(2, 330444882)}
+
     class Channel(Struct):
-        position = ProcessDesc(0x6000, 0x11, 'q')
+        position = ProcessDesc(0x6000, 0x11, "q")
         warning = ProcessDesc(0x6000, 1)
         error = ProcessDesc(0x6000, 2)
         ready = ProcessDesc(0x6000, 3)
@@ -289,7 +299,6 @@ class EL6002(EBPFTerminal):
     channel2 = Channel(24, 24, 0x10)
 
 
-
 class EL6022(EBPFTerminal):
     compatibility = {(2, 0x17863052)}
 
@@ -306,16 +315,16 @@ class EL7041(EBPFTerminal):
     out_pdos = [0x1601, 0x1602, 0x1604]
     in_pdos = [0x1A01, 0x1A03]
     velocity = ProcessDesc(0x7010, 0x21, "h")
-    control = ProcessDesc(0x7010, 1, 'H')
+    control = ProcessDesc(0x7010, 1, "H")
     enable = ProcessDesc(0x7010, 1)
     reset = ProcessDesc(0x7010, 2)
     reduced_current = ProcessDesc(0x7010, 3)
     status = ProcessDesc(0x6010, 1, "H")
     enabled = ProcessDesc(0x6010, 2)
     error = ProcessDesc(0x6010, 4)
-    high_switch = ProcessDesc(0x6010, 0xc)
-    low_switch = ProcessDesc(0x6010, 0xd)
-    stepcounter = ProcessDesc(0x6000, 0x11, 'i')
+    high_switch = ProcessDesc(0x6010, 0xC)
+    low_switch = ProcessDesc(0x6010, 0xD)
+    stepcounter = ProcessDesc(0x6000, 0x11, "i")
 
     max_current = ServiceDesc(0x8010, 1)
     max_voltage = ServiceDesc(0x8010, 3)
@@ -324,23 +333,23 @@ class EL7041(EBPFTerminal):
     invLogicLim1 = ServiceDesc(0x8012, 0x30)
     invLogicLim2 = ServiceDesc(0x8012, 0x31)
 
-    baseFrequency = 128000 / 0x7fff
+    baseFrequency = 128000 / 0x7FFF
 
 
 class EL7041_1000(EBPFTerminal):
     compatibility = {(2, 0x1B813052)}
 
     velocity = ProcessDesc(0x7010, 0x21, "h")
-    control = ProcessDesc(0x7010, 1, 'H')
+    control = ProcessDesc(0x7010, 1, "H")
     enable = ProcessDesc(0x7010, 1)
     reset = ProcessDesc(0x7010, 2)
     reduced_current = ProcessDesc(0x7010, 3)
     status = ProcessDesc(0x6010, 1, "H")
     enabled = ProcessDesc(0x6010, 2)
     error = ProcessDesc(0x6010, 4)
-    high_switch = ProcessDesc(0x6010, 0xc)
-    low_switch = ProcessDesc(0x6010, 0xd)
-    stepcounter = ProcessDesc(0x6000, 0x11, 'i')
+    high_switch = ProcessDesc(0x6010, 0xC)
+    low_switch = ProcessDesc(0x6010, 0xD)
+    stepcounter = ProcessDesc(0x6000, 0x11, "i")
 
     max_current = ServiceDesc(0x8010, 1)
     max_voltage = ServiceDesc(0x8010, 3)
@@ -356,11 +365,11 @@ class EL7062(EBPFTerminal):
     in_pdos = [0x1A00, 0x1A01, 0x1A10, 0x1A80, 0x1A81, 0x1A90]
 
     class Channel(Struct):
-        velocity = ProcessDesc(0x7010, 6, 'i')
+        velocity = ProcessDesc(0x7010, 6, "i")
         enable = ProcessDesc(0x7010, 1, 1)
         reset = ProcessDesc(0x7010, 1, 7)
         control = ProcessDesc(0x7010, 1)
-        reduced_current = ProcessDesc(0x7010, 0xb)
+        reduced_current = ProcessDesc(0x7010, 0xB)
 
         status = ProcessDesc(0x6010, 1)
         ready_switch_on = ProcessDesc(0x6010, 1, 0)
@@ -376,7 +385,7 @@ class EL7062(EBPFTerminal):
         # parameter 9010:15, where I found 0x100000 as steps per
         # revolution (probably implicitly taking 200 steps per revolution
         # for the motor) which works well with the motor
-        stepcounter = ProcessDesc(0x6000, 0x11, 'i')
+        stepcounter = ProcessDesc(0x6000, 0x11, "i")
 
         max_current = ServiceDesc(0x8011, 0x34)
         operation_mode = ServiceDesc(0x7010, 3)
@@ -393,8 +402,8 @@ class EL7332(EBPFTerminal):
     class Channel(Struct):
         moving_positive = ProcessDesc(0x6020, 5)
         moving_negative = ProcessDesc(0x6020, 6)
-        low_switch = ProcessDesc(0x6020, 0xc)
-        high_switch = ProcessDesc(0x6020, 0xd)
+        low_switch = ProcessDesc(0x6020, 0xC)
+        high_switch = ProcessDesc(0x6020, 0xD)
         enable = ProcessDesc(0x7020, 1)
         velocity = ProcessDesc(0x7020, 0x21, "h")
 
@@ -416,7 +425,7 @@ class EPP2308(EBPFTerminal):
 
 
 class EPP3184(EBPFTerminal):
-    compatibility = {(2, 0x64768d09)}
+    compatibility = {(2, 0x64768D09)}
 
     class Channel(Calibrated):
         value = ProcessDesc(0x6000, 0x11)
@@ -430,7 +439,7 @@ class EPP3184(EBPFTerminal):
 
 
 class EPP3204(EBPFTerminal):
-    compatibility = {(2, 0x64768e49), (2, 0x64769529)}
+    compatibility = {(2, 0x64768E49), (2, 0x64769529)}
 
     class Channel(Calibrated):
         value = ProcessDesc(0x6000, 0x11)
@@ -451,8 +460,8 @@ class EL3102(EBPFTerminal):
 
     class Input(Calibrated):
         status = ProcessDesc(0x3100, 1)
-        value = ProcessDesc(0x3100, 2, 'h')
-        factor = 10/32767
+        value = ProcessDesc(0x3100, 2, "h")
+        factor = 10 / 32767
 
     channel1 = Input(1)
     channel2 = Input(2)
@@ -476,7 +485,7 @@ class EPP4304(EBPFTerminal):
     class Input(Calibrated):
         underrange = ProcessDesc(0x6010, 1)
         overrange = ProcessDesc(0x6010, 2)
-        value = ProcessDesc(0x6010, 0x11, 'h')
+        value = ProcessDesc(0x6010, 0x11, "h")
 
         factor = 327.68e-6  # see manual version 1.3, Section 3.2.4.1
 
@@ -486,7 +495,7 @@ class EPP4304(EBPFTerminal):
     class Output(Calibrated):
         impedanceError = ProcessDesc(0x6030, 1)
         error = ProcessDesc(0x6030, 7)
-        value = ProcessDesc(0x7030, 1, 'h')
+        value = ProcessDesc(0x7030, 1, "h")
 
         factor = 305.19e-6  # see manual version 1.3, Section 3.2.5.1
 
@@ -498,7 +507,7 @@ class EPP4304(EBPFTerminal):
 
 
 class TurboVac(EBPFTerminal):
-    compatibility = {(0x723, 0xb5)}
+    compatibility = {(0x723, 0xB5)}
     pump_on = ProcessDesc(0x20D3, 0, 0)
     stand_by = ProcessDesc(0x20D3, 0, 5)
     reset = ProcessDesc(0x20D3, 0, 7)
@@ -530,11 +539,11 @@ class Bronkhorst(EBPFTerminal):
 
 
 class ELMO(EBPFTerminal):
-    compatibility = {(0x9a, 0x30924)}
+    compatibility = {(0x9A, 0x30924)}
     out_pdos = [0x1601]
     in_pdos = [0x1A00, 0x1A0D]
 
-    velocity = ProcessDesc(0x60ff, 0, 'i')
+    velocity = ProcessDesc(0x60FF, 0, "i")
     enable = ProcessDesc(0x6040, 0, 1)
     reset = ProcessDesc(0x6040, 0, 7)
     control = ProcessDesc(0x6040, 0)
@@ -547,9 +556,9 @@ class ELMO(EBPFTerminal):
     switch_on_disabled = ProcessDesc(0x6041, 0, 6)
     encoder = ProcessDesc(0x6064, 0)
 
-    low_switch = ProcessDesc(0x60fd, 0, 0)
-    high_switch = ProcessDesc(0x60fd, 0, 1)
-    stepcounter = ProcessDesc(0x6063, 0, 'i')
+    low_switch = ProcessDesc(0x60FD, 0, 0)
+    high_switch = ProcessDesc(0x60FD, 0, 1)
+    stepcounter = ProcessDesc(0x6063, 0, "i")
 
     max_current = ServiceDesc(0x6073, 0)
     operation_mode = ServiceDesc(0x6060, 0)
@@ -581,12 +590,19 @@ class AerotechBase(EBPFTerminal):
             packet.fmmu_in_size += self.in_size
             packet.fmmu_in_count += 1
 
-            packet.append(ECCmd.FPRD, b"0", 0,
-                          self.position, self.pdo_in_off + self.pdo_in_sz - 1)
+            packet.append(
+                ECCmd.FPRD, b"0", 0, self.position, self.pdo_in_off + self.pdo_in_sz - 1
+            )
         if readwrite and self.pdo_out_sz:
             bases[SyncManager.OUT] = (BaseType.NO_FMMU, packet.size)
-            packet.append_writer(ECCmd.FPWR, b"\0" * self.out_size, 0,
-                                 self.position, self.pdo_out_off)
-            packet.append_writer(ECCmd.FPWR, b"3", 0, self.position,
-                                 self.pdo_out_off + self.pdo_out_sz - 1)
+            packet.append_writer(
+                ECCmd.FPWR, b"\0" * self.out_size, 0, self.position, self.pdo_out_off
+            )
+            packet.append_writer(
+                ECCmd.FPWR,
+                b"3",
+                0,
+                self.position,
+                self.pdo_out_off + self.pdo_out_sz - 1,
+            )
         return bases
