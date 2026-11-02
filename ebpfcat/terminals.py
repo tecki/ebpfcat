@@ -371,12 +371,17 @@ class EL7062(EBPFTerminal):
 
         low_switch = ProcessDesc(0x6020, 1)
         high_switch = ProcessDesc(0x6020, 2)
+
+        # the resolution for the stepcounter can be found in CoE
+        # parameter 9010:15, where I found 0x100000 as steps per
+        # revolution (probably implicitly taking 200 steps per revolution
+        # for the motor) which works well with the motor
         stepcounter = ProcessDesc(0x6000, 0x11, 'i')
 
         max_current = ServiceDesc(0x8011, 0x34)
         operation_mode = ServiceDesc(0x7010, 3)
 
-        baseFrequency = 16384 * 16000 / 0x7fffffff  # guesstimated
+        baseFrequency = 1048576 / 268435
 
     channel1 = Channel(0)
     channel2 = Channel(0x100)
