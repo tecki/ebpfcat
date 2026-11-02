@@ -749,6 +749,13 @@ class MotorDevice(Device):
     now = LocalVar('Q')
 
     def calculate_speed(self):
+        """Calculate speed necessary to feed back
+
+        the default is a usual proportional-feedback controller, where the error
+        is in ``self.delta``, while the resulting speed goes into ``self.velocity_raw``.
+
+        Overwrite to implement different control loops.
+        """
         self.velocity_raw = (self.proportional * self.delta) >> 16
 
     def program(self):
@@ -767,7 +774,7 @@ class MotorDevice(Device):
                 self.delta = self.target - self.encoder
             with Else:
                 self.delta = self.target - self.stepcounter
-        with abs(self.ebpf.stmp) > self.deadband as Else:
+        with abs(self.delta) > self.deadband as Else:
             self.reduced_current = self.full_current
             self.deadband_exceeded = 1
         with Else:
@@ -1114,8 +1121,8 @@ class RotationDevice(MotorDevice):
     def calculate_speed(self):
         if self.goAround:
             # we need to add a huge number to avoid signed modulo
-            self.ebpf.stmp = (
-                self.ebpf.stmp
+            self.delta = (
+                self.delta
                 + (self.modulo + 2 * (0x80000000 // self.modulo + 1)
                    * self.modulo)) % (2 * self.modulo) - self.modulo
         super().calculate_speed()
@@ -1188,7 +1195,7 @@ class FollowerDevice(MotorDevice):
     def calculate_speed(self):
         super().calculate_speed()
         with (self.doFollow != 0) & (self.leader.device.enabled != 0):
-            self.ebpf.stmp += \
+            self.velocity_raw += \
                 (int(self.motors_factor * self.follow_factor * (1 << 16)) \
                 * self.leader.device.velocity) >> 16
 
@@ -1266,7 +1273,7 @@ class RotationFollower(MotorFollower, RotationMotor):
 class FixedFollowerDevice(MotorDevice):
     def calculate_speed(self):
         super().calculate_speed()
-        self.ebpf.stmp += \
+        self.velocity_raw += \
             (int(self.motors_factor * self.follow_factor * (1 << 16)) \
             * self.leader.device.velocity) >> 16
 
@@ -1356,7 +1363,7 @@ class SynchronizeDevice(RotationDevice):
     def calculate_speed(self):
         super().calculate_speed()
         with self.doSynchronize != 0:
-            self.ebpf.stmp = self.set_velocity
+            self.velocity_raw = self.set_velocity
 
     def program(self):
         with (self.high_switch == 0) & (self.lastswitch == 1) \
