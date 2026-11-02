@@ -76,6 +76,7 @@ class TerminalTable(ml.Configurable):
 class CoETable(ml.Configurable):
     index = ml.UInt16(displayType='hex')
     subIndex = ml.UInt8(displayType='hex')
+    address = ml.String()
     comment = ml.String()
     format = ml.String()
     value = ml.Int64()
@@ -556,12 +557,16 @@ class EtherCATTerminal(Device):
             self.status = 'setting custom CoE parameters'
             new_coes = []
             for coe in self.coe:
+                if not coe['address']:
+                    index = coe['index'].value
+                    subindex = coe['subIndex'].value
+                else:
+                    index, subindex = [int(i, 16)
+                                       for i in coe['address'].split(':')]
                 await self.terminal.sdo_write(
-                    pack(coe['format'], coe['value']),
-                    coe['index'], coe['subIndex'])
-                ret = await self.terminal.sdo_read(coe['index'],
-                                                   coe['subIndex'])
-                new_coes.append((coe['index'], coe['subIndex'],
+                        pack(coe['format'], coe['value']), index, subindex)
+                ret = await self.terminal.sdo_read(index, subindex)
+                new_coes.append((0, 0, f'{index:04X}:{subindex:02X}',
                                  coe['comment'], coe['format'],
                                  unpack(coe['format'], ret)[0]))
             self.coe = new_coes
@@ -623,12 +628,15 @@ class EtherCATTerminal(Device):
                 try:
                     value = await vv.read()
                 except EtherCatError as e:
-                    coe.append((k, kk, str(vv), f"Error {e.args[0]}", 0))
+                    coe.append((0, 0, f'{k:04X}:{kk:02X}', str(vv),
+                                f"Error {e.args[0]}", 0))
                 else:
-                    if isinstance(value, int) and -2 ** 64 <= value < 2 ** 64:
-                        coe.append((k, kk, str(vv), '', value))
+                    if isinstance(value, int) and -2 ** 63 <= value < 2 ** 63:
+                        coe.append((0, 0, f'{k:04X}:{kk:02X}', str(vv),
+                                    f'{value:x}', value))
                     else:
-                        coe.append((k, kk, str(vv), repr(value), 0))
+                        coe.append((0, 0, f'{k:04X}:{kk:02X}', str(vv),
+                                    repr(value), 0))
         self.currentCoE = coe
 
     @classmethod
